@@ -1,14 +1,21 @@
 // Draws Mac TV's app icon and builds AppIcon.icns.
 //   swift scripts/make-icon.swift            → Assets/AppIcon.png and Assets/AppIcon.icns
 //
-// The design: an afternoon show. A glowing screen with a warm sunset gradient and a soft
-// white play symbol, on a deep twilight ground, in the macOS rounded-square shape.
+// The design: a chunky retro CRT whose phosphor screen glows with the Mac ⌘ symbol.
+//
+// Built on Apple's macOS icon grid:
+// - 1024 px canvas; the icon body is the 824 px squircle inset 100 px on every side.
+// - The squircle is a quintic superellipse (|x|⁵ + |y|⁵ = 1), close to Apple's continuous corners.
+// - Nothing is drawn outside the squircle, not even a drop shadow: macOS adds its own, and
+//   macOS 26 puts icons with pixels outside the shape on a grey backing plate.
+// - The TV sits centred with equal margins: 80 px left and right, 142 px top and bottom
+//   (feet included), measured from the squircle's edges.
+// - Small sizes (64 px and under) drop fine detail so they stay crisp.
 
 import AppKit
 
-let canvas: CGFloat = 1024
-let tile = CGRect(x: 100, y: 100, width: 824, height: 824) // Apple's macOS icon grid
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
+let body = CGRect(x: 100, y: 100, width: 824, height: 824)
 
 func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
@@ -16,107 +23,155 @@ func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
 }
 
 func gradient(_ stops: [(UInt32, CGFloat, CGFloat)]) -> CGGradient {
-    CGGradient(colorsSpace: space, colors: stops.map { color($0.0, $0.1) } as CFArray,
-               locations: stops.map(\.2))!
+    CGGradient(colorsSpace: space, colors: stops.map { color($0.0, $0.1) } as CFArray, locations: stops.map(\.2))!
 }
 
 func roundedRect(_ rect: CGRect, _ radius: CGFloat) -> CGPath {
     CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
 }
 
+/// Apple-style squircle: a quintic superellipse filling `rect`.
+func squircle(_ rect: CGRect) -> CGPath {
+    let path = CGMutablePath()
+    let steps = 720
+    for i in 0...steps {
+        let t = CGFloat(i) / CGFloat(steps) * 2 * .pi
+        let c = cos(t), s = sin(t)
+        let x = rect.midX + rect.width / 2 * (c < 0 ? -1 : 1) * pow(abs(c), 2 / 5)
+        let y = rect.midY + rect.height / 2 * (s < 0 ? -1 : 1) * pow(abs(s), 2 / 5)
+        i == 0 ? path.move(to: CGPoint(x: x, y: y)) : path.addLine(to: CGPoint(x: x, y: y))
+    }
+    path.closeSubpath()
+    return path
+}
+
+func vertical(_ ctx: CGContext, _ grad: CGGradient, top: CGFloat, bottom: CGFloat) {
+    ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: top), end: CGPoint(x: 0, y: bottom), options: [])
+}
+
 func render(size: Int) -> CGImage {
+    let detailed = size > 64
     let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.scaleBy(x: CGFloat(size) / canvas, y: CGFloat(size) / canvas)
+    ctx.scaleBy(x: CGFloat(size) / 1024, y: CGFloat(size) / 1024)
     ctx.interpolationQuality = .high
 
-    let shape = roundedRect(tile, 185)
-
-    // Soft shadow under the tile.
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 30, color: color(0x000000, 0.35))
-    ctx.addPath(shape)
-    ctx.setFillColor(color(0x15112E))
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // Twilight ground.
-    ctx.saveGState()
-    ctx.addPath(shape)
+    // Everything is clipped to the squircle.
+    ctx.addPath(squircle(body))
     ctx.clip()
-    ctx.drawLinearGradient(gradient([(0x2B2266, 1, 0), (0x15112E, 1, 0.55), (0x0A0816, 1, 1)]),
-                           start: CGPoint(x: 512, y: tile.maxY), end: CGPoint(x: 512, y: tile.minY), options: [])
-    // Warm glow rising behind the screen.
-    ctx.drawRadialGradient(gradient([(0xFF7A59, 0.55, 0), (0xFF7A59, 0, 1)]),
-                           startCenter: CGPoint(x: 512, y: 470), startRadius: 0,
-                           endCenter: CGPoint(x: 512, y: 470), endRadius: 430, options: [])
+
+    // Ground: warm cream, lighter at the top.
+    vertical(ctx, gradient([(0xF6EEDD, 1, 0), (0xE9DCC0, 1, 0.6), (0xDCCAA5, 1, 1)]), top: body.maxY, bottom: body.minY)
+
+    // Layout (CG coordinates, y up).
+    let tv = CGRect(x: 180, y: 282, width: 664, height: 500)
+    let screen = CGRect(x: 222, y: 324, width: 466, height: 416)
+    // Centre of the panel between the bezel (700) and the cabinet edge (844).
+    let panelX: CGFloat = 772
+
+    // Contact shadow: a flat ellipse right under the feet.
+    ctx.saveGState()
+    ctx.translateBy(x: 512, y: 244)
+    ctx.scaleBy(x: 1, y: 0.12)
+    ctx.drawRadialGradient(gradient([(0x5A4326, 0.38, 0), (0x5A4326, 0, 1)]),
+                           startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: 360, options: [])
     ctx.restoreGState()
 
-    // The screen.
-    let screen = CGRect(x: 512 - 290, y: 400, width: 580, height: 380)
-    let screenPath = roundedRect(screen, 70)
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -18), blur: 40, color: color(0x000000, 0.45))
-    ctx.addPath(screenPath)
-    ctx.setFillColor(color(0xFF6A5C))
-    ctx.fillPath()
-    ctx.restoreGState()
+    // Feet.
+    for x in [262.0, 712.0] {
+        ctx.addPath(roundedRect(CGRect(x: x, y: 242, width: 50, height: 56), 16))
+        ctx.setFillColor(color(0x2A221B))
+        ctx.fillPath()
+    }
 
+    // Cabinet: charcoal with a soft top light and a crisp lit edge.
+    let cabinet = roundedRect(tv, 96)
     ctx.saveGState()
-    ctx.addPath(screenPath)
+    ctx.addPath(cabinet)
     ctx.clip()
-    // Sunset: gold at the top, coral, then magenta.
-    ctx.drawLinearGradient(gradient([(0xFFC65A, 1, 0), (0xFF7A59, 1, 0.5), (0xC93A8E, 1, 1)]),
-                           start: CGPoint(x: 512, y: screen.maxY), end: CGPoint(x: 512, y: screen.minY), options: [])
-    // A low sun on the horizon.
-    ctx.drawRadialGradient(gradient([(0xFFF1C9, 0.9, 0), (0xFFE29A, 0.35, 0.45), (0xFFE29A, 0, 1)]),
-                           startCenter: CGPoint(x: 512, y: screen.minY + 150), startRadius: 0,
-                           endCenter: CGPoint(x: 512, y: screen.minY + 150), endRadius: 260, options: [])
-    // Glass sheen across the top half.
-    ctx.drawLinearGradient(gradient([(0xFFFFFF, 0.28, 0), (0xFFFFFF, 0.0, 0.55)]),
-                           start: CGPoint(x: 512, y: screen.maxY), end: CGPoint(x: 512, y: screen.minY), options: [])
+    vertical(ctx, gradient([(0x4A4A50, 1, 0), (0x2B2B30, 1, 0.45), (0x1C1C20, 1, 1)]), top: tv.maxY, bottom: tv.minY)
     ctx.restoreGState()
-
-    // A thin lit edge on the screen.
-    ctx.addPath(screenPath)
-    ctx.setStrokeColor(color(0xFFFFFF, 0.35))
-    ctx.setLineWidth(3)
-    ctx.strokePath()
-
-    // Play symbol with rounded corners.
-    let play = CGMutablePath()
-    let cx: CGFloat = 524, cy = screen.midY
-    play.move(to: CGPoint(x: cx - 62, y: cy + 82))
-    play.addLine(to: CGPoint(x: cx + 86, y: cy))
-    play.addLine(to: CGPoint(x: cx - 62, y: cy - 82))
-    play.closeSubpath()
-    // Drawn as one layer so the shadow falls outside the symbol, not into it.
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -6), blur: 18, color: color(0x7A1E52, 0.45))
-    ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-    ctx.addPath(play)
-    ctx.setFillColor(color(0xFFFFFF))
-    ctx.setStrokeColor(color(0xFFFFFF))
-    ctx.setLineWidth(34)
-    ctx.setLineJoin(.round)
-    ctx.drawPath(using: .fillStroke)
-    ctx.endTransparencyLayer()
-    ctx.restoreGState()
-
-    // The stand: a soft bar beneath the screen.
-    ctx.addPath(roundedRect(CGRect(x: 512 - 120, y: 318, width: 240, height: 26), 13))
-    ctx.setFillColor(color(0xFFFFFF, 0.55))
-    ctx.fillPath()
-
-    // Glass rim on the tile: bright at the top, fading down.
-    ctx.saveGState()
-    ctx.addPath(shape)
-    ctx.setLineWidth(4)
+    ctx.addPath(cabinet)
+    ctx.setLineWidth(6)
     ctx.replacePathWithStrokedPath()
     ctx.clip()
-    ctx.drawLinearGradient(gradient([(0xFFFFFF, 0.45, 0), (0xFFFFFF, 0.05, 0.6)]),
-                           start: CGPoint(x: 512, y: tile.maxY), end: CGPoint(x: 512, y: tile.minY), options: [])
+    vertical(ctx, gradient([(0xFFFFFF, 0.28, 0), (0xFFFFFF, 0.0, 0.5)]), top: tv.maxY, bottom: tv.minY)
     ctx.restoreGState()
+
+    // Bezel around the glass.
+    ctx.addPath(roundedRect(screen.insetBy(dx: -12, dy: -12), 104))
+    ctx.setFillColor(color(0x121214))
+    ctx.fillPath()
+
+    // CRT glass: deep phosphor green, lighter at the centre, darker at the curved edges.
+    let glass = roundedRect(screen, 92)
+    ctx.saveGState()
+    ctx.addPath(glass)
+    ctx.clip()
+    ctx.setFillColor(color(0x020A05))
+    ctx.fill(screen)
+    ctx.drawRadialGradient(gradient([(0x0F3A20, 1, 0), (0x062012, 1, 0.55), (0x020A05, 1, 1)]),
+                           startCenter: CGPoint(x: screen.midX, y: screen.midY), startRadius: 0,
+                           endCenter: CGPoint(x: screen.midX, y: screen.midY), endRadius: 300, options: [])
+
+    if detailed {
+        // Faint scanlines behind the glyph, so the ⌘ itself stays one clean shape.
+        ctx.setFillColor(color(0x000000, 0.22))
+        var y = screen.minY
+        while y < screen.maxY {
+            ctx.fill(CGRect(x: screen.minX, y: y, width: screen.width, height: 3))
+            y += 8
+        }
+    }
+
+    // The ⌘, glowing: a wide bloom, then a bright core.
+    let glyphSize: CGFloat = detailed ? 250 : 290
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: glyphSize, weight: detailed ? .semibold : .heavy),
+        .foregroundColor: NSColor(cgColor: color(0xA6FFCB))!,
+    ]
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: "⌘", attributes: attributes))
+    let ink = CTLineGetImageBounds(line, ctx)
+    let origin = CGPoint(x: screen.midX - ink.midX, y: screen.midY - ink.midY)
+    for (blur, alpha) in [(46.0, 0.7), (16.0, 0.9)] {
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: blur, color: color(0x2BFF7E, alpha))
+        ctx.textPosition = origin
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
+    }
+
+    // Curved glass reflection, top left.
+    ctx.drawRadialGradient(gradient([(0xFFFFFF, 0.16, 0), (0xFFFFFF, 0, 1)]),
+                           startCenter: CGPoint(x: screen.minX + 110, y: screen.maxY - 80), startRadius: 0,
+                           endCenter: CGPoint(x: screen.minX + 110, y: screen.maxY - 80), endRadius: 230, options: [])
+    ctx.restoreGState()
+
+    // Control panel: two brass knobs and a speaker grille, centred on one axis.
+    for y in [652.0, 548.0] {
+        let knob = CGRect(x: panelX - 38, y: y - 38, width: 76, height: 76)
+        ctx.saveGState()
+        ctx.addEllipse(in: knob)
+        ctx.clip()
+        ctx.drawLinearGradient(gradient([(0xE8C88A, 1, 0), (0xB88E4E, 1, 0.55), (0x7E5E2E, 1, 1)]),
+                               start: CGPoint(x: knob.minX, y: knob.maxY), end: CGPoint(x: knob.maxX, y: knob.minY), options: [])
+        ctx.restoreGState()
+        ctx.addEllipse(in: knob.insetBy(dx: 18, dy: 18))
+        ctx.setFillColor(color(0x6E5228))
+        ctx.fillPath()
+        // Pointer.
+        ctx.addPath(roundedRect(CGRect(x: panelX - 4, y: y + 6, width: 8, height: 22), 4))
+        ctx.setFillColor(color(0xF6E2B4))
+        ctx.fillPath()
+    }
+    if detailed {
+        for i in 0..<5 {
+            ctx.addPath(roundedRect(CGRect(x: panelX - 34, y: 344 + CGFloat(i) * 22, width: 68, height: 9), 4.5))
+            ctx.setFillColor(color(0x0E0E10))
+            ctx.fillPath()
+        }
+    }
 
     return ctx.makeImage()!
 }
