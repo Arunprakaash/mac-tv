@@ -1,0 +1,233 @@
+import AppKit
+import SwiftUI
+
+extension NSScreen {
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    }
+
+    /// The first external display, falling back to the main one.
+    static var tvScreen: NSScreen {
+        screens.first { CGDisplayIsBuiltin($0.displayID) == 0 } ?? main ?? screens[0]
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let tv = TVController()
+    var window: NSWindow!
+    var server: RemoteServer?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--selftest-drm") {
+            DRMSelfTest.start()
+            return
+        }
+        // `--export-tiles <folder>` writes every dock tile as a PNG, for checking the icon layout.
+        if let flag = CommandLine.arguments.firstIndex(of: "--export-tiles"), flag + 1 < CommandLine.arguments.count {
+            let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            for service in AppLibrary().services() {
+                guard let tile = Icons.tile(for: service), let tiff = tile.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+                try? png.write(to: folder.appendingPathComponent("\(service.id).png"))
+            }
+            exit(0)
+        }
+        // `--export-home <folder>` renders the home screen in a few focus states, for design checks.
+        if let flag = CommandLine.arguments.firstIndex(of: "--export-home"), flag + 1 < CommandLine.arguments.count {
+            let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            let states: [(String, TVController.Focus)] = [("dock-netflix", .app(0)), ("dock-prime", .app(2)),
+                                                          ("shelf-netflix", .shelf(0)), ("grid", .app(6))]
+            // 16:9 for a TV, 16:10 for a MacBook screen.
+            for (shape, canvas) in [("tv", CGSize(width: 1920, height: 1080)), ("mac", CGSize(width: 1920, height: 1200))] {
+                for (name, focus) in states {
+                    let tv = TVController()
+                    if case .shelf = focus { tv.setFocus(.app(0)) }
+                    tv.setFocus(focus)
+                    let renderer = ImageRenderer(content: ZStack { Wallpaper(); HomeView(tv: tv) }
+                        .environment(\.canvasSize, canvas)
+                        .frame(width: canvas.width, height: canvas.height).environment(\.colorScheme, .dark))
+                    renderer.scale = 1
+                    if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                       let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                        try? png.write(to: folder.appendingPathComponent("\(shape)-\(name).png"))
+                    }
+                }
+            }
+            let saver = ImageRenderer(content: Screensaver().frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
+            saver.scale = 1
+            if let image = saver.nsImage, let tiff = image.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: folder.appendingPathComponent("screensaver.png"))
+            }
+            exit(0)
+        }
+
+        NSApp.mainMenu = makeMainMenu()
+
+        // A normal window; the green button or ⌃⌘F takes it full screen.
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
+        window.title = "Matinee"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = .black
+        window.collectionBehavior = [.fullScreenPrimary]
+        window.minSize = NSSize(width: 640, height: 360)
+        window.acceptsMouseMovedEvents = true
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: RootView(tv: tv))
+        tv.window = window
+        if !window.setFrameUsingName("MatineeWindow") { placeOnTV() }
+        window.setFrameAutosaveName("MatineeWindow")
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        startRemoteServer()
+        installLauncherKeys()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
+
+        if !tv.phonePaired {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1.5))
+                self?.tv.showToast("Pair your phone as a remote: open Settings below")
+            }
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// First launch: a 16:9 window filling most of the TV display.
+    private func placeOnTV() {
+        let area = NSScreen.tvScreen.visibleFrame
+        var size = NSSize(width: area.width * 0.8, height: area.width * 0.8 * 9 / 16)
+        if size.height > area.height * 0.85 {
+            size = NSSize(width: area.height * 0.85 * 16 / 9, height: area.height * 0.85)
+        }
+        window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
+                               width: size.width, height: size.height), display: true)
+    }
+
+    @objc private func screensChanged() {
+        tv.refreshRemoteURL()
+    }
+
+    private func startRemoteServer() {
+        let token = RemoteServer.pairingCode()
+        tv.remoteToken = token
+        let server = RemoteServer(
+            token: token,
+            onCommand: { [weak self] in self?.tv.handle($0) },
+            state: { [weak self] in self?.tv.remoteState() ?? [:] },
+            icon: { [weak self] in self?.tv.iconPNG(for: $0) },
+            routes: { [weak self] in self?.tv.handleAppsRequest($0) })
+        server.start(ports: Array(8765...8775)) { [weak self] port in self?.tv.remotePort = port }
+        self.server = server
+    }
+
+    private var scrollTotal: CGFloat = 0
+    private var scrollReadyAt = Date.distantPast
+
+    /// Arrows, Return and Escape drive the home screen. In a player, keys go to the page.
+    /// Trackpad or wheel scrolling moves between the Top Shelf, the dock and the grid.
+    private func installLauncherKeys() {
+        // Any pointer input counts as activity; a click that only wakes the screensaver goes no further.
+        NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) { [weak self] event in
+            guard let self, event.window === window else { return event }
+            let woke = tv.noteActivity()
+            return woke && event.type == .leftMouseDown ? nil : event
+        }
+        NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, event.window === window else { return event }
+            if tv.noteActivity() { return nil }
+            guard tv.mode == .launcher, !tv.pairing else { return event }
+            // One move per swipe: ignore momentum, and pause briefly after each move.
+            guard event.momentumPhase.isEmpty else { return nil }
+            if event.phase == .began { scrollTotal = 0 }
+            scrollTotal += event.scrollingDeltaY
+            if abs(scrollTotal) > 30, Date() >= scrollReadyAt {
+                // Content follows the fingers: swiping up reveals what's below.
+                tv.handle(.move(scrollTotal < 0 ? .down : .up))
+                scrollTotal = 0
+                scrollReadyAt = Date().addingTimeInterval(0.45)
+            }
+            return nil
+        }
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let tv = self?.tv, event.window === self?.window else { return event }
+            if tv.noteActivity() { return nil }
+            guard tv.mode == .launcher else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
+            guard mods.isEmpty else { return event }
+            switch event.keyCode {
+            case 123: tv.handle(.move(.left))
+            case 124: tv.handle(.move(.right))
+            case 125: tv.handle(.move(.down))
+            case 126: tv.handle(.move(.up))
+            case 36, 76, 49: tv.handle(.select)
+            case 53: tv.handle(.back)
+            default: return event
+            }
+            return nil
+        }
+    }
+
+    @objc func goHome(_ sender: Any?) { tv.handle(.home) }
+    @objc func reloadPage(_ sender: Any?) { tv.webView?.reload() }
+
+    private func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+
+        let app = NSMenu()
+        app.addItem(withTitle: "Home", action: #selector(goHome(_:)), keyEquivalent: "H")
+        app.addItem(.separator())
+        app.addItem(withTitle: "Hide Matinee", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Quit Matinee", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(submenu: app, title: "Matinee")
+
+        // Standard editing so ⌘V works in sign-in fields.
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addItem(submenu: edit, title: "Edit")
+
+        let view = NSMenu(title: "View")
+        let fullScreen = view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fullScreen.keyEquivalentModifierMask = [.control, .command]
+        view.addItem(withTitle: "Reload Page", action: #selector(reloadPage(_:)), keyEquivalent: "r")
+        main.addItem(submenu: view, title: "View")
+
+        let window = NSMenu(title: "Window")
+        window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        main.addItem(submenu: window, title: "Window")
+        NSApp.windowsMenu = window
+
+        return main
+    }
+}
+
+private extension NSMenu {
+    func addItem(submenu: NSMenu, title: String) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        addItem(item)
+    }
+}
+
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.regular)
+    app.run()
+}
