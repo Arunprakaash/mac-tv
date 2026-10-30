@@ -9,9 +9,12 @@ enum RemotePage {
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Matinee">
+    <meta name="apple-mobile-web-app-title" content="Mac TV">
     <meta name="theme-color" content="#0a0b0e">
-    <title>Matinee Remote</title>
+    <title>Mac TV Remote</title>
+    <link rel="apple-touch-icon" href="/appicon.png">
+    <link rel="icon" type="image/png" href="/appicon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
     <style>
       :root {
         --bg:#0a0b0e; --glass:rgba(255,255,255,.08); --glass-hi:rgba(255,255,255,.18); --line:rgba(255,255,255,.1);
@@ -117,7 +120,7 @@ enum RemotePage {
     <main>
       <header>
         <div style="min-width:0">
-          <h1>Matinee</h1>
+          <h1>Mac TV</h1>
           <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
         </div>
         <div class="actions">
@@ -189,7 +192,7 @@ enum RemotePage {
           <input class="field" id="web-url" inputmode="url" placeholder="Website, e.g. crunchyroll.com" aria-label="Website address" autocapitalize="off" autocorrect="off" spellcheck="false">
           <input class="field" id="web-name" placeholder="Name (optional)" aria-label="Name">
           <button class="cancel" type="submit">Add to TV</button>
-          <p class="note">Matinee looks up the app's official icon for you.</p>
+          <p class="note">Mac TV looks up the app's official icon for you.</p>
         </form>
         <div id="mac-form" hidden>
           <input class="field" id="mac-q" placeholder="Search apps on the Mac" aria-label="Search apps on the Mac" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -265,8 +268,8 @@ enum RemotePage {
     });
 
     const store = {
-      get() { try { return localStorage.getItem('matineeKey') || localStorage.getItem('couchKey') || ''; } catch { return ''; } },
-      set(v) { try { localStorage.setItem('matineeKey', v); } catch {} },
+      get() { try { return localStorage.getItem('mactvKey') || localStorage.getItem('matineeKey') || localStorage.getItem('couchKey') || ''; } catch { return ''; } },
+      set(v) { try { localStorage.setItem('mactvKey', v); } catch {} },
     };
     let key = new URLSearchParams(location.search).get('k') || store.get();
     if (key) store.set(key);
@@ -496,11 +499,11 @@ enum RemotePage {
       $('#tab-touch').classList.toggle('on', which === 'touch');
       $('#clickpad').style.display = which === 'click' ? 'block' : 'none';
       $('#touchpad').style.display = which === 'touch' ? 'block' : 'none';
-      try { localStorage.setItem('matineeTab', which); } catch {}
+      try { localStorage.setItem('mactvTab', which); } catch {}
     }
     $('#tab-click').onclick = () => { haptic('tick'); tab('click'); };
     $('#tab-touch').onclick = () => { haptic('tick'); tab('touch'); };
-    try { if (localStorage.getItem('matineeTab') === 'touch') tab('touch'); } catch {}
+    try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
 
     // Clickpad: tap an edge or swipe anywhere; hold an edge to repeat; tap the middle for OK.
     (() => {

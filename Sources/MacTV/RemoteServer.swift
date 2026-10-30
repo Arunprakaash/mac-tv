@@ -38,7 +38,7 @@ final class RemoteServer {
     /// Listens on the first free port in `ports`.
     func start(ports: [UInt16], onReady: @escaping @MainActor (UInt16) -> Void) {
         guard let port = ports.first, let nwPort = NWEndpoint.Port(rawValue: port) else {
-            NSLog("Matinee: no free port for the phone remote")
+            NSLog("Mac TV: no free port for the phone remote")
             return
         }
         let tryNext = { [weak self] in self?.start(ports: Array(ports.dropFirst()), onReady: onReady) }
@@ -97,6 +97,20 @@ final class RemoteServer {
     private func respond(to request: HTTPRequest) -> HTTPResponse {
         if request.method == "GET", request.path == "/" {
             return HTTPResponse(contentType: "text/html; charset=utf-8", body: Data(RemotePage.html.utf8))
+        }
+        if request.method == "GET", request.path == "/appicon.png",
+           let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"), let png = try? Data(contentsOf: url) {
+            return HTTPResponse(contentType: "image/png", body: png)
+        }
+        if request.method == "GET", request.path == "/manifest.webmanifest" {
+            let manifest: [String: Any] = [
+                "name": "Mac TV Remote", "short_name": "Mac TV", "display": "standalone",
+                "background_color": "#0a0b0e", "theme_color": "#0a0b0e", "start_url": "/",
+                "icons": [["src": "/appicon.png", "sizes": "1024x1024", "type": "image/png"]],
+            ]
+            var response = HTTPResponse.json(manifest)
+            response.contentType = "application/manifest+json"
+            return response
         }
         // App icons are public artwork; the phone shows them before pairing too.
         if request.method == "GET", request.path.hasPrefix("/icon/") {

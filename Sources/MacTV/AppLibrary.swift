@@ -1,5 +1,20 @@
 import AppKit
 
+/// ~/Library/Application Support/Mac TV, where history, added apps and their icons live.
+/// Data from the app's earlier name ("Matinee") moves over on first run.
+enum AppFolder {
+    static let url: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let folder = support.appendingPathComponent("Mac TV", isDirectory: true)
+        let earlier = support.appendingPathComponent("Matinee", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: folder.path), FileManager.default.fileExists(atPath: earlier.path) {
+            try? FileManager.default.moveItem(at: earlier, to: folder)
+        }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }()
+}
+
 /// An app the user added: a website, or a Mac app.
 struct AddedApp: Codable, Hashable {
     let id: String
@@ -11,7 +26,7 @@ struct AddedApp: Codable, Hashable {
 }
 
 /// The home screen's apps: the built-in catalog minus any the user removed, plus the apps they
-/// added, then Settings. Kept in ~/Library/Application Support/Matinee/apps.json.
+/// added, then Settings. Kept in ~/Library/Application Support/Mac TV/apps.json.
 @MainActor
 final class AppLibrary {
     private struct Saved: Codable {
@@ -24,8 +39,7 @@ final class AppLibrary {
     let iconsFolder: URL
 
     init() {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Matinee", isDirectory: true)
+        let folder = AppFolder.url
         iconsFolder = folder.appendingPathComponent("Icons", isDirectory: true)
         try? FileManager.default.createDirectory(at: iconsFolder, withIntermediateDirectories: true)
         file = folder.appendingPathComponent("apps.json")

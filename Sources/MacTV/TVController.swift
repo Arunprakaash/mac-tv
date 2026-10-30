@@ -478,7 +478,7 @@ final class TVController: NSObject, ObservableObject {
         default: break
         }
 
-        // A Mac app Matinee opened is in front: forward the basics to it.
+        // A Mac app Mac TV opened is in front: forward the basics to it.
         if let launchedAppID, !NSApp.isActive,
            NSWorkspace.shared.frontmostApplication?.bundleIdentifier == launchedAppID {
             forwardToFrontApp(command)
@@ -517,7 +517,7 @@ final class TVController: NSObject, ObservableObject {
         webView = web
         mode = .player(service)
         pointer = nil
-        keepAwake.hold(reason: "Watching \(service.name) in Matinee")
+        keepAwake.hold(reason: "Watching \(service.name) in Mac TV")
         startCapturing(service)
         bringToFront()
         Task { @MainActor [weak self] in self?.window?.makeFirstResponder(web) }

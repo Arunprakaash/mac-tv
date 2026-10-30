@@ -1,66 +1,83 @@
-# Matinee
+<p align="center"><img src="docs/screenshots/icon.png" width="128" alt="Mac TV icon"></p>
 
-Turns a Mac into a TV box with an Apple TV-style home screen. Streaming services run in their official web players with Apple's FairPlay DRM, and your phone is the remote.
+<h1 align="center">Mac TV</h1>
 
-## Build and run
+<p align="center">Turn a Mac into an Apple TV-style box: a tvOS-style home screen, your streaming apps at full quality, and your phone as the remote.</p>
 
-```bash
-./build.sh
-open build/Matinee.app
-```
+![Home screen](docs/screenshots/home.png)
 
-Matinee opens as a normal window on your external display, or the main display if none is connected. Use the green button or ⌃⌘F to go full screen. It remembers where you left the window.
+## Screenshots
 
-The first time it runs after each build, macOS asks whether Matinee may accept incoming network connections. Choose **Allow**, or phones won't reach the remote.
+| Top Shelf | App grid |
+|---|---|
+| ![Top Shelf](docs/screenshots/top-shelf.png) | ![App grid](docs/screenshots/app-grid.png) |
+| **Row Top Shelf (Prime Video)** | **Screensaver** |
+| ![Row Top Shelf](docs/screenshots/home-row-shelf.png) | ![Screensaver](docs/screenshots/screensaver.png) |
 
-## Home screen
+| Phone remote | Apps | TV controls |
+|---|---|---|
+| ![Remote](docs/screenshots/remote.png) | ![Apps](docs/screenshots/remote-apps.png) | ![TV controls](docs/screenshots/remote-controls.png) |
 
-- **Dock:** the top row, on frosted glass. Focusing an app fills the Top Shelf behind it with what you last watched there.
-- **Top Shelf:** move up from the dock to expand it, with Resume and Open buttons.
-- **App grid:** move down from the dock to see the rest of your apps.
-- **Pairing:** Settings shows the QR codes for pairing a phone.
+## Install
 
-Keyboard: arrows, Return, and Escape to go back. ⌘⇧H goes home and ⌘Q quits.
+1. Download `MacTV-<version>.dmg` from [Releases](../../releases), open it, and drag **Mac TV** to Applications.
+2. The first time you open it, macOS says it can't check the app, because it isn't notarized by Apple. Open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
+3. When macOS asks whether Mac TV may accept incoming network connections, choose **Allow**. Without it, phones can't reach the remote.
+
+Requires macOS 14 or later.
+
+## How it works
+
+Mac TV is a native Mac app. Each streaming service runs in its official web player inside Apple's Safari engine (WebKit), so it gets FairPlay DRM, the same playback quality as Safari, up to 4K on Netflix. It isn't Android TV and doesn't emulate anything.
+
+- **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. Move up to expand the Top Shelf (Resume, Open) and down for the full app grid. It fills any screen shape edge to edge.
+- **Window:** opens as a normal window on your external display and remembers its place. Use the green button or ⌃⌘F for full screen.
+- **Keyboard and trackpad:** arrows, Return and Escape. Scroll to move between the dock and the grid. ⌘⇧H goes home.
+- **Websites built for a mouse:** a focus ring slides between links and buttons, so the D-pad works everywhere.
 
 ## Phone remote
 
-In Settings, scan the QR code with your phone's camera. The Tailscale code works when your Wi-Fi keeps devices apart or when you're away from home. Add the page to your home screen to keep the remote as an icon.
+Open **Settings** on the TV and scan the QR code with your phone's camera. No app to install: it's a web page the Mac serves to your phone. Add it to your home screen to keep it one tap away.
 
-The remote has a Clickpad (swipe, tap edges, hold to repeat, tap the middle for OK) and a Touchpad (drag, tap, two-finger scroll). It also has media keys, volume, typing on the TV, an app launcher, and screen off and sleep. Every press gives haptic feedback: vibration on Android, and a light tick on iPhone with iOS 18 or later.
+- **Clickpad:** swipe or tap the edges; hold to repeat; tap the middle for OK.
+- **Touchpad:** drag the pointer, tap to click, two fingers to scroll.
+- **Keys:** media keys, volume, and typing on the TV.
+- **Haptics:** light haptic feedback on every press.
+- **Tailscale:** the Tailscale QR code works away from home, or when your Wi-Fi keeps devices apart.
 
 ## Watching
 
-- **Skip intros, recaps and play next episode:** Matinee presses the players' own Skip Intro, Skip Recap and Next Episode buttons when they appear (Netflix, Prime Video, JioHotstar and others). It never presses an ad's "Skip" button. Turn either one off in **TV controls** on the remote (the power button).
-- **Sleep timer:** in **TV controls**, pick 15, 30, 60 or 90 minutes. When it ends, playback stops, Matinee goes home and the screen turns off.
-- **Screensaver:** after 5 idle minutes on the home screen, a large clock appears at the top over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour. Any key, click or remote press brings you back.
-- **Privacy:** the home screen never shows pictures of what you watched; the Top Shelf uses each app's own colours.
+- **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **TV controls** on the remote.
+- **Sleep timer:** 15, 30, 60 or 90 minutes. When it ends, playback stops, Mac TV goes home and the screen turns off.
+- **Screensaver:** after 5 idle minutes, a lock-screen-style clock appears over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour.
+- **Privacy:** the home screen never shows pictures of what you watched.
 
-## Adding and removing apps
+## Your apps
 
-On the phone remote, open **Apps** (the grid button):
+The built-in apps are Netflix, YouTube, Prime Video, JioHotstar, Apple TV, Spotify, YouTube Music and IINA (if it's installed).
 
-- **Add app → Website:** type an address, such as `crunchyroll.com`. The name is optional. Matinee finds the official icon itself: first the matching App Store app's icon, otherwise the largest home-screen icon the site publishes. It also picks up the brand colour for the Top Shelf.
-- **Add app → Mac app:** search the apps installed on the Mac and tap one. Its own icon is used.
-- **Edit:** tap the red badge to remove an app. You can bring back built-in apps you removed with **Restore built-in apps**.
+On the phone remote, open **Apps**:
+- **Add app → Website:** type an address. Mac TV finds the app's official icon itself and turns it into a tile that matches the rest.
+- **Add app → Mac app:** pick any app installed on the Mac.
+- **Edit:** removes apps. Removed built-in apps can be restored.
 
-Added apps and their icons are kept in `~/Library/Application Support/Matinee/`.
+Tiles are generated automatically from any square app icon (`TileArt.swift`). Mac TV reads the icon's background, finds the logo, sizes it to a standard visual weight, and extends the background to the 5:3 tile.
 
-## Apps and icons
-
-The built-in apps are listed in `Sources/Matinee/Catalog.swift`, and their icons are in `Icons/`. These are each service's official App Store icons.
-
-Tiles are generated from the icons automatically (`TileArt.swift`), so any square app icon works with no tuning. Matinee reads the icon's background, finds its logo, sizes the logo to a standard visual weight, and extends the background to the 5:3 tile.
-
-To check all tiles side by side:
+## Build from source
 
 ```bash
-build/Matinee.app/Contents/MacOS/Matinee --export-tiles /path/to/folder
-build/Matinee.app/Contents/MacOS/Matinee --export-home /path/to/folder
+./build.sh                  # builds "build/Mac TV.app"
+open "build/Mac TV.app"
+./scripts/make-dmg.sh       # builds build/MacTV-<version>.dmg
+swift scripts/make-icon.swift   # redraws Assets/AppIcon.png and .icns
 ```
+
+These checks run on their own and don't need the app open, unless noted:
+- `MacTV --selftest-drm` prints the DRM systems available.
+- `--export-tiles <folder>` renders the dock tiles, `--export-home <folder>` the home screen, and `--export-remote <file.png> [apps|controls]` the phone remote. The remote export needs Mac TV running.
+
+Sign-ins, added apps and history are kept in `~/Library/Application Support/Mac TV`.
 
 ## Notes
 
-- **Sign-ins:** each service needs signing in once inside Matinee. Matinee keeps its own sign-ins, separate from Safari or Chrome.
-- **Top Shelf:** it fills in as you watch. Matinee notes the title, artwork and progress of what's playing.
-- **DRM check:** `Matinee --selftest-drm` prints the DRM systems available. FairPlay is available, the same as in Safari.
-- **Mac apps:** when a Mac app tile (such as IINA) is in front, the remote forwards arrows, OK, Back and Play. This needs Accessibility permission.
+- "Mac" is an Apple trademark. This is a personal project, not affiliated with Apple, Netflix, Google, Amazon, JioStar or Spotify. App icons belong to their owners.

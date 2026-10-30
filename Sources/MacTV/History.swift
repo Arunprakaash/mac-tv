@@ -1,6 +1,6 @@
 import Foundation
 
-/// Something watched in Matinee, shown in the Top Shelf.
+/// Something watched in Mac TV, shown in the Top Shelf.
 struct WatchItem: Codable, Hashable, Identifiable {
     let serviceID: String
     let url: URL
@@ -12,16 +12,14 @@ struct WatchItem: Codable, Hashable, Identifiable {
     var id: URL { url }
 }
 
-/// What you've watched, newest first, kept in ~/Library/Application Support/Matinee.
+/// What you've watched, newest first, kept in ~/Library/Application Support/Mac TV.
 @MainActor
 final class WatchHistory: ObservableObject {
     @Published private(set) var items: [WatchItem] = []
     private let file: URL
 
     init() {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Matinee", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = AppFolder.url
         file = folder.appendingPathComponent("history.json")
         if let data = try? Data(contentsOf: file),
            let saved = try? JSONDecoder().decode([WatchItem].self, from: data) {

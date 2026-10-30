@@ -23,6 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DRMSelfTest.start()
             return
         }
+        if let flag = CommandLine.arguments.firstIndex(of: "--export-remote"), flag + 1 < CommandLine.arguments.count {
+            let sheet = flag + 2 < CommandLine.arguments.count ? CommandLine.arguments[flag + 2] : nil
+            RemoteSnapshot.start(to: URL(fileURLWithPath: CommandLine.arguments[flag + 1]), sheet: sheet)
+            return
+        }
         // `--export-tiles <folder>` writes every dock tile as a PNG, for checking the icon layout.
         if let flag = CommandLine.arguments.firstIndex(of: "--export-tiles"), flag + 1 < CommandLine.arguments.count {
             let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
@@ -70,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        window.title = "Matinee"
+        window.title = "Mac TV"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = .black
@@ -80,8 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: RootView(tv: tv))
         tv.window = window
-        if !window.setFrameUsingName("MatineeWindow") { placeOnTV() }
-        window.setFrameAutosaveName("MatineeWindow")
+        if !window.setFrameUsingName("MacTVWindow") { placeOnTV() }
+        window.setFrameAutosaveName("MacTVWindow")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -185,9 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let app = NSMenu()
         app.addItem(withTitle: "Home", action: #selector(goHome(_:)), keyEquivalent: "H")
         app.addItem(.separator())
-        app.addItem(withTitle: "Hide Matinee", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        app.addItem(withTitle: "Quit Matinee", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        main.addItem(submenu: app, title: "Matinee")
+        app.addItem(withTitle: "Hide Mac TV", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Quit Mac TV", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(submenu: app, title: "Mac TV")
 
         // Standard editing so ⌘V works in sign-in fields.
         let edit = NSMenu(title: "Edit")

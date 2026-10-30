@@ -3,14 +3,14 @@
 /// are never touched: only the exact phrases below count.
 enum AutoPlay {
     static func script(skip: Bool, next: Bool) -> String {
-        "window.__matineeAuto = { skip: \(skip), next: \(next) };\n" + body
+        "window.__mactvAuto = { skip: \(skip), next: \(next) };\n" + body
     }
 
     private static let body = #"""
     (() => {
-      if (window.__matineeAutoInstalled) return;
-      window.__matineeAutoInstalled = true;
-      const settings = window.__matineeAuto || {};
+      if (window.__mactvAutoInstalled) return;
+      window.__mactvAutoInstalled = true;
+      const settings = window.__mactvAuto || {};
       if (!settings.skip && !settings.next) return;
 
       const SKIP_LABEL = /\bskip\s+(the\s+)?(intro|introduction|recap|opening|opening credits|credits|summary)\b/i;

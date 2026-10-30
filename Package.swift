@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "Matinee",
+    name: "MacTV",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "Matinee", path: "Sources/Matinee")
+        .executableTarget(name: "MacTV", path: "Sources/MacTV")
     ]
 )

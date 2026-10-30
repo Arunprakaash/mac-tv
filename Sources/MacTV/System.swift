@@ -30,7 +30,7 @@ enum SystemControl {
     private static func runAppleScript(_ source: String) {
         var error: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&error)
-        if let error { NSLog("Matinee: AppleScript failed: \(error)") }
+        if let error { NSLog("Mac TV: AppleScript failed: \(error)") }
     }
 
     private static func pmset(_ argument: String) {

@@ -1,6 +1,8 @@
-/// D-pad navigation for websites built for a mouse: arrow keys move a visible focus ring
-/// between links and buttons, Return activates. Stays out of the way while a video fills
-/// the screen (so arrows seek) and while typing in a text field.
+/// D-pad navigation for websites built for a mouse: arrow keys move focus between links and
+/// buttons, Return activates. Focus is shown by a ring drawn over the page, not by restyling
+/// the page's own elements, so it looks the same on every site and slides from item to item
+/// like Apple TV's focus. Stays out of the way while a video fills the screen (so arrows seek)
+/// and while typing in a text field.
 enum SpatialNav {
     static let script = #"""
     (() => {
@@ -8,17 +10,42 @@ enum SpatialNav {
       window.__couchNav = true;
 
       const SELECTOR = 'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [tabindex]:not([tabindex="-1"])';
-      const FOCUS = '__couch-focus';
       const DIRS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+      const PAD = 6;
       let current = null;
+      let ring = null;
 
-      const addStyle = () => {
-        const style = document.createElement('style');
-        style.textContent = `.${FOCUS}{outline:4px solid #fff!important;outline-offset:3px!important;box-shadow:0 0 0 9px rgba(122,162,255,.55)!important;border-radius:8px}`;
-        (document.head || document.documentElement).appendChild(style);
-      };
-      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addStyle);
-      else addStyle();
+      // The ring: one fixed element above the page, following the focused item's box.
+      function ensureRing() {
+        if (ring && document.contains(ring)) return ring;
+        ring = document.createElement('div');
+        ring.setAttribute('aria-hidden', 'true');
+        ring.style.cssText = [
+          'position:fixed', 'left:0', 'top:0', 'width:0', 'height:0', 'z-index:2147483647', 'pointer-events:none',
+          'box-sizing:border-box', 'border:3px solid #0A84FF', 'border-radius:12px', 'background:rgba(10,132,255,.07)',
+          'box-shadow:0 0 0 4px rgba(10,132,255,.22), 0 10px 28px rgba(0,0,0,.18)', 'opacity:0',
+          'transition:transform .22s cubic-bezier(.2,.8,.2,1), width .22s cubic-bezier(.2,.8,.2,1), height .22s cubic-bezier(.2,.8,.2,1), opacity .15s, border-radius .22s',
+        ].join(';');
+        (document.body || document.documentElement).appendChild(ring);
+        return ring;
+      }
+
+      // Keep the ring on its item while the page scrolls or the item moves.
+      function place() {
+        if (!current || !document.contains(current) || !shown(current)) {
+          if (ring) ring.style.opacity = '0';
+          return;
+        }
+        const r = current.getBoundingClientRect();
+        const el = ensureRing();
+        const radius = parseFloat(getComputedStyle(current).borderTopLeftRadius) || 0;
+        el.style.transform = `translate(${r.left - PAD}px, ${r.top - PAD}px)`;
+        el.style.width = `${r.width + PAD * 2}px`;
+        el.style.height = `${r.height + PAD * 2}px`;
+        el.style.borderRadius = `${Math.min(Math.max(radius + PAD, 10), (r.height + PAD * 2) / 2)}px`;
+        el.style.opacity = '1';
+      }
+      (function follow() { place(); requestAnimationFrame(follow); })();
 
       const shown = el => {
         const r = el.getBoundingClientRect();
@@ -38,10 +65,9 @@ enum SpatialNav {
       const center = r => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 
       function focusOn(el) {
-        if (current) current.classList.remove(FOCUS);
         current = el;
-        el.classList.add(FOCUS);
-        el.focus({ preventScroll: true });
+        // Keep the browser's own focus outline away; the ring is the indicator.
+        el.focus({ preventScroll: true, focusVisible: false });
         el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
       }
 
@@ -95,6 +121,9 @@ enum SpatialNav {
           else current.click();
         }
       }, true);
+
+      // The mouse takes over: hide the ring until the D-pad is used again.
+      window.addEventListener('mousedown', () => { current = null; }, true);
     })();
     """#
 }

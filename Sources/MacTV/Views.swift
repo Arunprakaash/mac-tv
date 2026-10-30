@@ -661,7 +661,7 @@ struct PairSheet: View {
                 }
             }
             VStack(alignment: .leading, spacing: 18) {
-                Text("MATINEE REMOTE").font(.system(size: 20, weight: .bold)).tracking(2.4).opacity(0.6)
+                Text("MAC TV REMOTE").font(.system(size: 20, weight: .bold)).tracking(2.4).opacity(0.6)
                 Text("Use your phone as a remote")
                     .font(.system(size: 46, weight: .heavy)).tracking(-1)
                 Text("Scan with your phone's camera, then add the page to your home screen. Use the Tailscale code when you're away from home or your Wi-Fi keeps devices apart.")
