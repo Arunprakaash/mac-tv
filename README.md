@@ -24,7 +24,7 @@
 2. The first time you open it, macOS says it can't check the app, because it isn't notarized by Apple. Open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
 3. When macOS asks whether Mac TV may accept incoming network connections, choose **Allow**. Without it, phones can't reach the remote.
 
-Requires macOS 14 or later.
+Requires macOS 14 or later, on an Apple silicon or Intel Mac. One download runs on both.
 
 ## How it works
 
