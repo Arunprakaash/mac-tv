@@ -578,6 +578,8 @@ final class TVController: NSObject, ObservableObject {
             "keepMacAwake": keepMacAwake,
             "lidOverride": lidOverride,
             "lidStatus": lidStatus,
+            // Whether macOS lets Mac TV pass presses to other apps and size game windows.
+            "accessibilityAllowed": AXIsProcessTrusted(),
             // Minutes left on the sleep timer; 0 when it's off.
             "sleepMinutes": sleepMinutesLeft,
         ]
