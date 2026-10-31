@@ -188,16 +188,25 @@
   })();
 
   // The brass knobs turn: Channel moves to the next app, Volume turns it up.
+  // In Safari on a Mac, a firm press (force click) turns a knob too: macOS plays the trackpad's
+  // own click feel, which is the only haptic a web page can get on a Mac. The ordinary click that
+  // follows a force click is skipped, so the knob turns once.
   document.querySelectorAll("[data-knob]").forEach(knob => {
-    let turn = 0;
-    knob.addEventListener("click", () => {
+    let turn = 0, forced = false;
+    function turnKnob(phoneTick) {
       turn += 45;
-      try { tickHaptic(); } catch (e) {}
+      if (phoneTick) { try { tickHaptic(); } catch (e) {} }
       knob.querySelector(".face").style.transform = `rotate(${turn}deg)`;
       const led = document.querySelector(".led");
       led.classList.remove("blink"); void led.offsetWidth; led.classList.add("blink");
       if (knob.dataset.knob === "channel") { expanded = false; focus = (focus + 1) % APPS.length; render(); }
       else volumeUp();
+    }
+    knob.addEventListener("webkitmouseforcedown", () => { forced = true; turnKnob(false); });
+    knob.addEventListener("mousedown", () => { forced = false; });
+    knob.addEventListener("click", () => {
+      if (forced) { forced = false; return; }
+      turnKnob(true);
     });
   });
 
