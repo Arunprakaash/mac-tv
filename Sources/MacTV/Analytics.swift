@@ -5,9 +5,9 @@ import TelemetryDeck
 /// really used. Off until the user says yes (in setup, once after an update, or in Settings › About).
 ///
 /// What's sent: which features are used (Control Center, Settings sections, the screen saver's
-/// wallpaper type, how Mac TV is controlled), which built-in apps are opened, setup progress, and the
-/// SDK's basics (Mac TV and macOS versions, Mac model, language). The user is a random ID kept only in
-/// Mac TV's own settings, hashed before it leaves the Mac.
+/// wallpaper type, how Mac TV is controlled), which built-in apps are opened and whether in Mac TV or
+/// Brave, setup progress, and the SDK's basics (Mac TV and macOS versions, Mac model, language). The
+/// user is a random ID kept only in Mac TV's own settings, hashed before it leaves the Mac.
 ///
 /// Never sent: what anyone watches, titles, web addresses, added websites or apps by name, file or
 /// folder names, profile names. Every event is defined in `Event` below, and nowhere else.

@@ -271,8 +271,8 @@ enum RemotePage {
         <label class="toggle"><span>Skip intros and recaps</span><input type="checkbox" id="auto-skip"></label>
         <label class="toggle"><span>Play next episode automatically</span><input type="checkbox" id="auto-next"></label>
         <p class="note">Applies the next time you open an app.</p>
-        <label class="toggle" for="website-player"><span>Website player</span><select class="field" id="website-player" style="width:auto;max-width:58%"><option value="embedded">Built-in WebKit</option><option value="brave">Brave</option></select></label>
-        <p class="note">Brave chooses the browser profile; its sign-ins and Shields apply across Mac TV profiles. Web controls differ. Applies the next time you open a website.</p>
+        <label class="toggle" for="website-player"><span>Website player</span><select class="field" id="website-player" style="width:auto;max-width:58%"><option value="embedded">Built-in</option><option value="brave">Brave</option></select></label>
+        <p class="note">Brave uses its own sign-ins and Shields. Applies the next time you open a website.</p>
         <p class="note" id="browser-msg" role="status" aria-live="polite" hidden></p>
         <div class="group-label">Power</div>
         <p class="note" id="lid-status"></p>
