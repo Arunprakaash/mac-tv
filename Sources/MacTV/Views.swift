@@ -49,7 +49,8 @@ struct RootView: View {
                     // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
                     TVCanvas { MoviesScreen(tv: tv) }
                         .ignoresSafeArea()
-                } else {
+                } else if !tv.screensaver {
+                    // Not drawn under the screen saver, which covers it completely: nothing behind it keeps working.
                     Wallpaper().ignoresSafeArea()
                     TVCanvas { HomeView(tv: tv) }
                         .ignoresSafeArea()
@@ -208,29 +209,6 @@ struct AerialPlayer: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
         (nsView.layer as? AVPlayerLayer)?.player?.pause()
-    }
-}
-
-/// The fallback: soft colour drifting slowly across the screen.
-struct DriftingColor: View {
-    @Environment(\.canvasSize) private var canvas
-    private static let palette = ["#1E3A8A", "#6D28D9", "#0E7490", "#9D174D", "#155E75", "#4338CA"]
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            ZStack {
-                Color(hex: "#05060A")
-                ForEach(Array(Self.palette.enumerated()), id: \.offset) { index, hex in
-                    // Each glow wanders on its own slow orbit.
-                    let phase = t / (38 + Double(index) * 7) + Double(index) * 1.7
-                    RadialGradient(colors: [Color(hex: hex).opacity(0.55), .clear],
-                                   center: UnitPoint(x: 0.5 + 0.42 * cos(phase), y: 0.5 + 0.38 * sin(phase * 1.3)),
-                                   startRadius: 0, endRadius: canvas.width * 0.45)
-                        .blendMode(.screen)
-                }
-            }
-        }
     }
 }
 
@@ -583,7 +561,7 @@ struct AppBanner: View {
         let shows = feed.shows(for: service.id)
         guard !shows.isEmpty else { return nil }
         let show = shows[feed.turn % shows.count]
-        return feed.images[show.id].map { (String(show.id), $0, show.square) }
+        return feed.image(for: show.id).map { (String(show.id), $0, show.square) }
     }
 
     var body: some View {
@@ -594,15 +572,14 @@ struct AppBanner: View {
                 .clipped()
             // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
             if let show {
-                Group {
-                    if show.cover {
-                        AlbumBackdrop(image: show.image, since: feed.turnStarted)
-                    } else {
-                        ShowBackdrop(image: show.image, since: feed.turnStarted)
-                    }
+                if show.cover {
+                    AlbumBackdrop(image: show.image)
+                        .id(show.id)
+                        .transition(.opacity)
+                } else {
+                    // One view for every show: it cross-fades to the next picture itself, in Core Animation.
+                    ShowBackdrop(image: show.image, since: feed.turnStarted)
                 }
-                .id(show.id)
-                .transition(.opacity)
             }
             // Legibility: a soft top-left wash for the name, a bottom wash for the dock or button.
             LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil ? 0.55 : 0.18)), location: 0),
@@ -624,7 +601,6 @@ struct AppBanner: View {
                     // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
                     Text(service.name)
                         .font(.tv(.title1, emphasized: true))
-
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)

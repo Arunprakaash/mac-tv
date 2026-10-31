@@ -44,13 +44,18 @@ final class TopShelfFeed: ObservableObject {
     /// When the current show came up, for its slow drift.
     private(set) var turnStarted = Date()
     private var clock: Timer?
-    private(set) var images: [Int: NSImage] = [:]
     private var lists: [String: [Show]] = [:]
     private let folder = AppFolder.url.appendingPathComponent("Top Shelf", isDirectory: true)
     private var listFile: URL { folder.appendingPathComponent("shows.json") }
     private var started = false
 
     private init() {}
+
+    /// A show's picture, read from the cache folder when it comes up: only the last few stay decoded,
+    /// rather than every show's full picture for as long as Mac TV runs.
+    func image(for id: Int) -> NSImage? {
+        ScreenImages.image(folder.appendingPathComponent("\(id).jpg"), maxPixels: 1920)
+    }
 
     /// An app's own shows; apps with none (websites, Mac apps, games) get the top of every app's.
     func shows(for serviceID: String) -> [Show] {
@@ -202,22 +207,21 @@ final class TopShelfFeed: ObservableObject {
         for (serviceID, shows) in services {
             for show in shows {
                 let file = folder.appendingPathComponent("\(show.id).jpg")
-                if let image = images[show.id] ?? NSImage(contentsOf: file) {
-                    add(show, image, to: serviceID)
+                if FileManager.default.fileExists(atPath: file.path) {
+                    add(show, to: serviceID)
                     continue
                 }
                 Task {
                     guard let (data, response) = try? await URLSession.shared.data(from: show.image),
-                          (response as? HTTPURLResponse)?.statusCode == 200, let image = NSImage(data: data) else { return }
+                          (response as? HTTPURLResponse)?.statusCode == 200, NSImage(data: data) != nil else { return }
                     try? data.write(to: file, options: .atomic)
-                    add(show, image, to: serviceID)
+                    add(show, to: serviceID)
                 }
             }
         }
     }
 
-    private func add(_ show: Show, _ image: NSImage, to serviceID: String) {
-        images[show.id] = image
+    private func add(_ show: Show, to serviceID: String) {
         // Keep the list's order (most popular first), whatever order the images arrive in.
         let order = lists[serviceID] ?? []
         let have = Set((ready[serviceID] ?? []).map(\.id)).union([show.id])
@@ -230,26 +234,10 @@ struct ShowBackdrop: View {
     let image: NSImage
     let since: Date
     @Environment(\.canvasSize) private var canvas
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if reduceMotion {
-            picture(progress: 0)
-        } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                picture(progress: min(1, context.date.timeIntervalSince(since) / 10))
-            }
-        }
-    }
-
-    private func picture(progress: Double) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
+        DriftingPicture(image: image, since: since)
             .frame(width: canvas.width, height: canvas.height)
-            .scaleEffect(1 + 0.06 * progress)
-            .offset(x: -18 * progress)
-            .clipped()
     }
 }
 
@@ -257,9 +245,7 @@ struct ShowBackdrop: View {
 /// colours blurred across the screen.
 struct AlbumBackdrop: View {
     let image: NSImage
-    let since: Date
     @Environment(\.canvasSize) private var canvas
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -271,18 +257,13 @@ struct AlbumBackdrop: View {
                 .saturation(1.3)
                 .overlay(Color.black.opacity(0.35))
                 .clipped()
-            if reduceMotion {
-                cover(progress: 0)
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                    cover(progress: min(1, context.date.timeIntervalSince(since) / 10))
-                }
-            }
+            // Still: the cross-fade from one album to the next is the motion.
+            cover
         }
         .frame(width: canvas.width, height: canvas.height)
     }
 
-    private func cover(progress: Double) -> some View {
+    private var cover: some View {
         // Square album covers, or tall movie posters.
         let aspect = image.size.height > 0 ? image.size.width / image.size.height : 1
         return Image(nsImage: image)
@@ -291,7 +272,6 @@ struct AlbumBackdrop: View {
             .frame(width: aspect >= 1 ? 560 : 640 * aspect, height: aspect >= 1 ? 560 / aspect : 640)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 40, y: 24)
-            .scaleEffect(1 + 0.03 * progress)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .padding(.top, 150)
             .padding(.trailing, 150)
