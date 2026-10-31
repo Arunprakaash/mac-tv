@@ -39,7 +39,7 @@ Mac TV is a native Mac app. Each streaming service runs in its official web play
 
 Open **Settings** on the TV, choose **Phone remote** and scan the QR code with your phone's camera. No app to install: it's a web page the Mac serves to your phone. Add it to your home screen to keep it one tap away.
 
-- **Clickpad:** swipe or tap the edges; hold to repeat; tap the middle for OK.
+- **Clickpad:** swipe anywhere, or tap an arrow on the ring; hold to repeat; tap the middle for OK.
 - **Touchpad:** drag the pointer, tap to click, two fingers to scroll.
 - **Keys:** media keys, volume, and typing on the TV.
 - **Haptics:** light haptic feedback on every press.

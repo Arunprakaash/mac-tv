@@ -32,9 +32,9 @@ enum RemotePage {
       .round.pressed, .key.pressed, .pill.pressed, .row-btn.pressed { background:var(--glass-hi); }
       header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
       header h1 { margin:0; font-size:20px; font-weight:800; letter-spacing:-.02em; }
+      .status[hidden] { display:none; }
       .status { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none; }
-      .dot.on { background:var(--ok); }
       .actions { display:flex; gap:10px; flex:none; }
       .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:44px; flex:none; border-radius:14px; background:var(--glass); }
       .tabs button { border:0; border-radius:10px; background:transparent; font-size:14px; font-weight:600; }
@@ -115,7 +115,7 @@ enum RemotePage {
       <header>
         <div style="min-width:0">
           <h1>Mac TV</h1>
-          <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+          <div class="status" hidden><span class="dot" id="dot"></span><span id="status"></span></div>
         </div>
         <div class="actions">
           <button class="round" id="open-apps" aria-label="Apps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
@@ -128,7 +128,7 @@ enum RemotePage {
         <button role="tab" id="tab-touch">Touchpad</button>
       </div>
 
-      <div class="surface" id="clickpad" aria-label="Swipe or tap an edge to move, tap the middle to select">
+      <div class="surface" id="clickpad" aria-label="Swipe or tap an arrow to move, tap the middle to select">
         <div class="ring">
         <div class="chev up" data-dir="up"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></div>
         <div class="chev down" data-dir="down"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
@@ -262,11 +262,11 @@ enum RemotePage {
     };
     let key = new URLSearchParams(location.search).get('k') || store.get();
     if (key) store.set(key);
-    const via = location.hostname.startsWith('100.') ? 'via Tailscale' : 'on Wi-Fi';
 
-    function online(ok, device) {
-      $('#dot').classList.toggle('on', ok);
-      $('#status').textContent = ok ? `${device || 'Mac'} · ${via}` : 'Can’t reach the TV';
+    // The status line only shows when something's wrong.
+    function online(ok) {
+      $('.status').hidden = ok;
+      $('#status').textContent = ok ? '' : 'Can’t reach the TV';
     }
 
     async function api(path, body) {
@@ -294,7 +294,7 @@ enum RemotePage {
       if (!key) return showPair();
       try {
         const s = await api('/state');
-        online(true, s.device);
+        online(true);
         apps = s.apps;
         canRestore = s.canRestore;
         showSleep(s.sleepMinutes || 0);
@@ -487,14 +487,17 @@ enum RemotePage {
     $('#tab-touch').onclick = () => { haptic('tick'); tab('touch'); };
     try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
 
-    // Clickpad: tap an edge or swipe anywhere; hold an edge to repeat; tap the middle for OK.
+    // Clickpad: tap an arrow on the ring or swipe anywhere; hold an arrow to repeat; tap the middle
+    // for OK. Taps outside the ring do nothing.
     (() => {
       const pad = $('#clickpad');
       let start = null, timer = null, repeated = false;
       const zoneAt = (x, y) => {
         const r = pad.getBoundingClientRect();
         const cx = x - (r.left + r.width / 2), cy = y - (r.top + r.height / 2);
-        if (Math.hypot(cx, cy) < $('#ok').getBoundingClientRect().width / 2 + 8) return 'ok';
+        const distance = Math.hypot(cx, cy);
+        if (distance < $('#ok').getBoundingClientRect().width / 2 + 8) return 'ok';
+        if (distance > pad.querySelector('.ring').getBoundingClientRect().width / 2 + 6) return null;
         return Math.abs(cx) > Math.abs(cy) ? (cx > 0 ? 'right' : 'left') : (cy > 0 ? 'down' : 'up');
       };
       const flash = zone => {
@@ -507,7 +510,7 @@ enum RemotePage {
         pad.setPointerCapture(e.pointerId);
         start = { x: e.clientX, y: e.clientY, zone: zoneAt(e.clientX, e.clientY) };
         repeated = false;
-        if (start.zone !== 'ok') {
+        if (start.zone && start.zone !== 'ok') {
           timer = setTimeout(() => {
             repeated = true;
             timer = setInterval(() => { flash(start.zone); send(start.zone, {}, 'repeat'); }, 130);
@@ -524,7 +527,7 @@ enum RemotePage {
         let zone = start.zone;
         start = null;
         if (Math.hypot(dx, dy) > 28) zone = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-        else if (repeated) return;
+        else if (repeated || !zone) return;
         flash(zone);
         send(zone, {}, zone === 'ok' ? 'tap' : 'tick');
       });
