@@ -88,6 +88,10 @@ These checks run on their own and don't need the app open, unless noted:
 
 Sign-ins and added apps are kept in `~/Library/Application Support/Mac TV`.
 
+## License
+
+MIT. See [LICENSE](LICENSE). App icons and service names belong to their owners and aren't covered by it.
+
 ## Notes
 
 - "Mac" is an Apple trademark. This is a personal project, not affiliated with Apple, Netflix, Google, Amazon, JioStar or Spotify. App icons belong to their owners.
