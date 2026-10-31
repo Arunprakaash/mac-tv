@@ -92,6 +92,8 @@ final class TVController: NSObject, ObservableObject {
     enum Mode: Equatable {
         case launcher
         case player(Service)
+        /// A movie from the Movies app, in Mac TV's own player.
+        case movie
     }
 
     /// What has focus on the home screen: an app tile, or an item in the Top Shelf.
@@ -111,6 +113,10 @@ final class TVController: NSObject, ObservableObject {
     @Published var settings: SettingsPanel?
     /// The add-app sheet on the TV, while it's open.
     @Published var adder: AppAdder?
+    /// The Movies app's screen, while it's open.
+    @Published var movies: MoviesBrowser?
+    /// The movie playing, in `.movie` mode.
+    @Published private(set) var moviePlayer: MoviePlayer?
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
     @Published private(set) var screensaver = false
     @Published private(set) var sleepAt: Date?
@@ -459,7 +465,7 @@ final class TVController: NSObject, ObservableObject {
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
         switch shelfService.kind {
-        case .web, .app, .steam: return 1
+        case .web, .app, .steam, .movies: return 1
         case .addApp, .settings: return 0
         }
     }
@@ -534,6 +540,10 @@ final class TVController: NSObject, ObservableObject {
             handleSettings(command)
             return
         }
+        if movies != nil {
+            handleMovies(command)
+            return
+        }
         switch command {
         case .move(let direction): moveFocus(direction)
         case .select:
@@ -586,6 +596,11 @@ final class TVController: NSObject, ObservableObject {
         if case .player(let service) = mode {
             state["mode"] = "player"
             state["current"] = ["id": service.id, "name": service.name]
+        } else if mode == .movie, let player = moviePlayer {
+            state["mode"] = "player"
+            state["current"] = ["id": "movies", "name": player.movie.displayTitle]
+            state["movie"] = ["time": player.time, "duration": player.duration, "playing": player.playing,
+                              "failure": player.engine.renderFailure ?? ""]
         }
         return state
     }
@@ -640,6 +655,7 @@ final class TVController: NSObject, ObservableObject {
         switch mode {
         case .launcher: handleInLauncher(command)
         case .player(let service): handleInPlayer(command, service: service)
+        case .movie: handleInMovie(command)
         }
     }
 
@@ -658,6 +674,8 @@ final class TVController: NSObject, ObservableObject {
             openedSteam = true
             if appID != SteamLibrary.bigPicture.appID { watchForSteamGame() }
             showToast("Opening \(service.name) in Steam")
+        case .movies:
+            openMovies()
         case .addApp:
             adder = AppAdder()
         case .settings:
@@ -678,6 +696,11 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func goHome() {
+        if let moviePlayer {
+            moviePlayer.stop()
+            self.moviePlayer = nil
+        }
+        movies = nil
         if let web = webView {
             // Releasing the page stops playback; pause first so audio cuts immediately.
             web.pauseAllMediaPlayback(completionHandler: nil)
@@ -693,6 +716,110 @@ final class TVController: NSObject, ObservableObject {
         launchedAppID = nil
         keepAwake.release()
         bringToFront()
+    }
+
+    // MARK: Movies
+
+    /// Plays a movie in Mac TV's own player; files it can't play open in IINA or VLC.
+    func playMovie(_ movie: Movie, from seconds: Double) {
+        Task { @MainActor in
+            let opened: Result<PlaybackEngine, PlaybackProblem>
+            if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
+                opened = await Task.detached(priority: .userInitiated) { MatroskaPlayback.open(movie.url) }.value
+                    .map { $0 as PlaybackEngine }
+            } else {
+                opened = await AVPlayback.open(movie.url).map { $0 as PlaybackEngine }
+            }
+            switch opened {
+            case .success(let engine): startMovie(movie, engine: engine, from: seconds)
+            case .failure: openElsewhere(movie)
+            }
+        }
+    }
+
+    private func startMovie(_ movie: Movie, engine: PlaybackEngine, from seconds: Double) {
+        let player = MoviePlayer(movie: movie, engine: engine)
+        player.onEnd = { [weak self] in self?.closeMovie() }
+        player.onClose = { [weak self] in self?.closeMovie() }
+        player.onFailure = { [weak self] _ in
+            self?.closeMovie()
+            self?.openElsewhere(movie)
+        }
+        // Straight to the picture: no fade through other screens.
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            if movies == nil { movies = MoviesBrowser() }
+            moviePlayer = player
+            mode = .movie
+        }
+        keepAwake.hold(reason: "Watching \(movie.title) in Mac TV")
+        bringToFront()
+        player.start(at: seconds)
+    }
+
+    /// Back to the Movies screen, on what was playing: first in Continue Watching, unless it's finished.
+    func closeMovie() {
+        moviePlayer?.stop()
+        if let path = moviePlayer?.movie.path {
+            for (row, line) in movieRows.enumerated() {
+                if let column = line.items.firstIndex(of: .movie(path)) {
+                    movies?.row = row
+                    movies?.column = column
+                    break
+                }
+            }
+        }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            moviePlayer = nil
+            mode = .launcher
+        }
+        keepAwake.release()
+    }
+
+    /// IINA or VLC play almost anything; IINA opens full screen. Remote presses go to it as keys.
+    private func openElsewhere(_ movie: Movie) {
+        let iina = "com.colliderli.iina", vlc = "org.videolan.vlc"
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iina) != nil {
+            var link = URLComponents(string: "iina://open")!
+            link.queryItems = [URLQueryItem(name: "url", value: movie.url.absoluteString), URLQueryItem(name: "full_screen", value: "1")]
+            if let url = link.url { NSWorkspace.shared.open(url) }
+            launchedAppID = iina
+            showToast("Playing \(movie.title) in IINA. Home comes back here.")
+        } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: vlc) {
+            NSWorkspace.shared.open([movie.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            launchedAppID = vlc
+            showToast("Playing \(movie.title) in VLC. Home comes back here.")
+        } else {
+            showToast("Mac TV can't play this file. IINA, free from iina.io, can.")
+        }
+    }
+
+    private func handleInMovie(_ command: RemoteCommand) {
+        guard let player = moviePlayer else { return }
+        if player.menu != nil {
+            switch command {
+            case .move(let direction): player.moveInMenu(direction)
+            case .select: player.chooseInMenu()
+            case .back: player.menu = nil; player.showControls()
+            case .playPause: player.togglePlayback()
+            default: break
+            }
+            return
+        }
+        switch command {
+        case .select, .playPause: player.togglePlayback()
+        case .move(.left): player.skip(-10)
+        case .move(.right): player.skip(10)
+        case .seek(let forward): player.skip(forward ? 10 : -10)
+        case .move(.down): player.openMenu()
+        case .move(.up): player.showControls()
+        case .back: closeMovie()
+        case .pointer, .click, .scroll: player.showControls()
+        default: break
+        }
     }
 
     // MARK: Player

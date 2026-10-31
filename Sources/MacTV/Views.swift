@@ -42,10 +42,19 @@ struct RootView: View {
         ZStack {
             if case .player = tv.mode, let web = tv.webView {
                 WebViewHost(webView: web).id(ObjectIdentifier(web))
+            } else if tv.mode == .movie, let player = tv.moviePlayer {
+                MoviePlayerView(player: player).id(ObjectIdentifier(player))
             } else {
-                Wallpaper().ignoresSafeArea()
-                TVCanvas { HomeView(tv: tv) }
-                    .ignoresSafeArea()
+                if tv.movies != nil {
+                    // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
+                    TVCanvas { MoviesScreen(tv: tv) }
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                } else {
+                    Wallpaper().ignoresSafeArea()
+                    TVCanvas { HomeView(tv: tv) }
+                        .ignoresSafeArea()
+                }
                 if tv.settings != nil {
                     TVCanvas { SettingsSheet(tv: tv) }
                         .ignoresSafeArea()
@@ -117,6 +126,7 @@ struct RootView: View {
         .animation(Motion.appear, value: tv.pairing)
         .animation(Motion.appear, value: tv.settings != nil)
         .animation(Motion.appear, value: tv.adder != nil)
+        .animation(Motion.appear, value: tv.movies != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
     }
 }
@@ -454,6 +464,14 @@ struct AppTile: View {
                     .font(.system(size: 64, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
             }
+        } else if case .movies = service.kind {
+            ZStack {
+                LinearGradient(colors: [Color(hex: "#5E5CE6"), Color(hex: "#1F1A6B")],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: "film.stack")
+                    .font(.system(size: 70, weight: .medium))
+                    .foregroundStyle(.white)
+            }
         } else if case .settings = service.kind {
             ZStack {
                 LinearGradient(colors: [Color(hex: "#8E8E93"), Color(hex: "#3A3A3C")],
@@ -498,24 +516,40 @@ struct TopShelf: View {
 struct AppBanner: View {
     @ObservedObject var tv: TVController
     @ObservedObject private var feed = TopShelfFeed.shared
+    @ObservedObject private var movieLibrary = MovieLibrary.shared
     @Environment(\.canvasSize) private var canvas
     let service: Service
     let expanded: Bool
 
-    var body: some View {
+    /// What the Top Shelf shows now: the Movies app's own movies, or the app's popular shows.
+    private var backdrop: (id: String, image: NSImage, cover: Bool)? {
+        if case .movies = service.kind {
+            let shelf = movieLibrary.shelf
+            if !shelf.isEmpty {
+                let pick = shelf[feed.turn % shelf.count]
+                // Posters sit on the right like album covers; frames from the film fill the screen.
+                return (pick.path, pick.image, pick.image.size.height > pick.image.size.width)
+            }
+        }
         let shows = feed.shows(for: service.id)
-        let show = shows.isEmpty ? nil : shows[feed.turn % shows.count]
+        guard !shows.isEmpty else { return nil }
+        let show = shows[feed.turn % shows.count]
+        return feed.images[show.id].map { (String(show.id), $0, show.square) }
+    }
+
+    var body: some View {
+        let show = backdrop
         ZStack(alignment: .topLeading) {
             Artwork(accent: service.accent, deep: service.deep)
                 .frame(width: canvas.width, height: canvas.height)
                 .clipped()
             // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
-            if let show, let image = feed.images[show.id] {
+            if let show {
                 Group {
-                    if show.square {
-                        AlbumBackdrop(image: image, since: feed.turnStarted)
+                    if show.cover {
+                        AlbumBackdrop(image: show.image, since: feed.turnStarted)
                     } else {
-                        ShowBackdrop(image: image, since: feed.turnStarted)
+                        ShowBackdrop(image: show.image, since: feed.turnStarted)
                     }
                 }
                 .id(show.id)

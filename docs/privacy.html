@@ -42,13 +42,14 @@
       <li>It has no sign-up and no Mac TV account.</li>
       <li>It sends no analytics, crash reports, usage data or advertising identifiers.</li>
       <li>It has no servers. Nothing you do in Mac TV is sent to me.</li>
-      <li>It doesn't record what you watch or listen to.</li>
+      <li>It doesn't record what you watch or listen to in streaming apps. For your own movie files, it remembers where you stopped, on your Mac only.</li>
     </ul>
 
     <h2>What stays on your Mac</h2>
     <ul>
       <li><strong>Sign-ins and website data.</strong> Streaming services run in Apple's WebKit engine. Their cookies and sign-ins are stored by WebKit in your Mac user account's Library, like Safari's, and only those services can read them.</li>
       <li><strong>Your apps.</strong> The apps you add and their icons are kept in <code>~/Library/Application Support/Mac TV</code>.</li>
+      <li><strong>Movies.</strong> The Movies app reads the video files in the folders you choose. Their list, posters, and where you stopped each one are kept in <code>~/Library/Application Support/Mac TV/Movies</code>.</li>
       <li><strong>Settings.</strong> Options such as the sleep timer, playback and power settings, and the remote's pairing code are kept in Mac TV's preferences on your Mac.</li>
     </ul>
     <p>Deleting Mac TV and those folders removes all of it.</p>
@@ -57,6 +58,7 @@
     <ul>
       <li><strong>Streaming services you open.</strong> Netflix, YouTube, Prime Video and the others load directly from their own websites. What they collect is covered by their own privacy policies, exactly as when you use them in Safari.</li>
       <li><strong>Finding icons for apps you add.</strong> When you add an app, Mac TV looks up its name on Apple's App Store search (iTunes Search API), with your country, to find its official icon. It may also download the icon from the website you added.</li>
+      <li><strong>Movie posters.</strong> For each movie file, Mac TV searches Apple's public catalogue (iTunes Search API) for the title it reads from the file name, with your country, and downloads the poster when one matches. Nothing else about the file is sent. When there's no match, the poster is a frame from the film, made on your Mac.</li>
       <li><strong>Steam games you add.</strong> Mac TV reads which games are installed from Steam's files on your Mac, and downloads the game's artwork from Steam's servers to make its tile. Games open through the Steam app.</li>
       <li><strong>Top Shelf shows.</strong> The home screen shows the latest shows on each streaming app. Once a day Mac TV asks TVmaze's public schedule which shows have new episodes, and Apple's public music charts which albums are most played in your country. It downloads their pictures and keeps them on your Mac. These are the same for everyone and have nothing to do with what you watch. Nothing else is sent.</li>
     </ul>

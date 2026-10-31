@@ -6,6 +6,8 @@ struct Service: Identifiable, Hashable {
         case app(bundleID: String)
         /// A Steam game, or Steam Big Picture, launched through Steam.
         case steam(appID: String)
+        /// The movies in folders on this Mac.
+        case movies
         case addApp
         case settings
     }
@@ -72,6 +74,7 @@ enum Catalog {
                 icon: "spotify.png", accent: "#1ED760", deep: "#06210F"),
         Service(id: "ytmusic", name: "YouTube Music", kind: .web(URL(string: "https://music.youtube.com")!),
                 icon: "ytmusic.png", accent: "#FF2D2D", deep: "#2B0606"),
+        Service(id: "movies", name: "Movies", kind: .movies, accent: "#5E5CE6", deep: "#14133A"),
         Service(id: "iina", name: "IINA", kind: .app(bundleID: "com.colliderli.iina"),
                 icon: "iina.png"),
         Service(id: "add-app", name: "Add App", kind: .addApp),

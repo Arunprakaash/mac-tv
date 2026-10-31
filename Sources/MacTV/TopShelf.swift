@@ -283,10 +283,12 @@ struct AlbumBackdrop: View {
     }
 
     private func cover(progress: Double) -> some View {
-        Image(nsImage: image)
+        // Square album covers, or tall movie posters.
+        let aspect = image.size.height > 0 ? image.size.width / image.size.height : 1
+        return Image(nsImage: image)
             .resizable()
-            .aspectRatio(1, contentMode: .fit)
-            .frame(width: 560, height: 560)
+            .aspectRatio(aspect, contentMode: .fit)
+            .frame(width: aspect >= 1 ? 560 : 640 * aspect, height: aspect >= 1 ? 560 / aspect : 640)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 40, y: 24)
             .scaleEffect(1 + 0.03 * progress)

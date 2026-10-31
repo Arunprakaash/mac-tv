@@ -42,6 +42,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // `--movie-probe <file> [frame.jpg]` prints what Mac TV makes of a video file: its title,
+        // tracks and whether it plays here, and saves the frame a poster would use.
+        if let flag = CommandLine.arguments.firstIndex(of: "--movie-probe"), flag + 1 < CommandLine.arguments.count {
+            let url = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            let frameFile = flag + 2 < CommandLine.arguments.count ? URL(fileURLWithPath: CommandLine.arguments[flag + 2]) : nil
+            Task {
+                let name = MovieName(url.deletingPathExtension().lastPathComponent)
+                print("title: \(name.title)  year: \(name.year.map(String.init) ?? "-")  episode: \(name.episode ?? "-")")
+                var frame: CGImage?
+                if ["mkv", "webm"].contains(url.pathExtension.lowercased()) {
+                    if let reader = try? MatroskaReader(url: url) {
+                        print("duration: \(Double(reader.duration) / 1e9)s  cues: \(reader.cues.count)")
+                        for track in reader.tracks {
+                            print("track \(track.number): \(track.kind) \(track.codec) \(track.language) \(track.width)x\(track.height) \(track.sampleRate)Hz \(track.channels)ch")
+                        }
+                        var counts: [UInt64: Int] = [:]
+                        for _ in 0..<500 { guard let block = reader.nextBlock() else { break }; counts[block.track, default: 0] += block.frames.count }
+                        print("first 500 blocks, frames per track: \(counts)")
+                    }
+                    switch MatroskaPlayback.open(url) {
+                    case .success(let engine): print("plays here: audio \(engine.audioOptions.map(\.title)), subtitles \(engine.subtitleOptions.map(\.title))")
+                    case .failure(let problem): print("doesn't play here: \(problem)")
+                    }
+                    frame = MatroskaPlayback.frame(of: url, at: 0.12)
+                } else {
+                    switch await AVPlayback.open(url) {
+                    case .success(let engine): print("plays here: \(engine.duration)s, audio \(engine.audioOptions.map(\.title))")
+                    case .failure(let problem): print("doesn't play here: \(problem)")
+                    }
+                    frame = await AVPlayback.frame(of: url, at: 0.12)
+                }
+                print("frame: \(frame.map { "\($0.width)x\($0.height)" } ?? "none")")
+                if let frame, let frameFile,
+                   let jpeg = NSBitmapImageRep(cgImage: frame).representation(using: .jpeg, properties: [:]) {
+                    try? jpeg.write(to: frameFile)
+                }
+                exit(0)
+            }
+            return
+        }
         // `--steam-games` prints the Steam games Mac TV finds (MACTV_STEAM_ROOT points at other Steam files).
         if CommandLine.arguments.contains("--steam-games") {
             let games = SteamLibrary.installedGames().map { ["appID": $0.appID, "name": $0.name] }
@@ -229,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let tv = self?.tv, event.window === self?.window else { return event }
             if tv.noteActivity() { return nil }
-            guard tv.mode == .launcher else { return event }
+            guard tv.mode == .launcher || tv.mode == .movie else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
             // The add-app sheet takes typing: letters, Space, Delete and ⌘V go to its fields.
             if tv.adder != nil {
