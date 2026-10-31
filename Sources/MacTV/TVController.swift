@@ -107,6 +107,8 @@ final class TVController: NSObject, ObservableObject {
     /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
     @Published var tilt: CGSize = .zero
     @Published var pairing = false
+    /// The Settings sheet on the TV, while it's open.
+    @Published var settings: SettingsPanel?
     /// The add-app sheet on the TV, while it's open.
     @Published var adder: AppAdder?
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
@@ -211,7 +213,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, !pairing, !screensaver, Date().timeIntervalSince(lastActivity) > Self.screensaverDelay {
+        if mode == .launcher, !pairing, settings == nil, !screensaver, Date().timeIntervalSince(lastActivity) > Self.screensaverDelay {
             screensaver = true
         }
     }
@@ -505,6 +507,10 @@ final class TVController: NSObject, ObservableObject {
             }
             return
         }
+        if settings != nil {
+            handleSettings(command)
+            return
+        }
         switch command {
         case .move(let direction): moveFocus(direction)
         case .select:
@@ -543,14 +549,14 @@ final class TVController: NSObject, ObservableObject {
             },
             "canRestore": library.hasHiddenBuiltIns,
             // Which sheet is open on the TV, if any: the remote can show it.
-            "sheet": adder != nil ? "add-app" : (pairing ? "pairing" : ""),
+            "sheet": adder != nil ? "add-app" : pairing ? "pairing" : settings != nil ? "settings" : "",
             "autoSkip": autoSkip,
             "autoNext": autoNext,
             "keepMacAwake": keepMacAwake,
             "lidOverride": lidOverride,
             "lidStatus": lidStatus,
             // Minutes left on the sleep timer; 0 when it's off.
-            "sleepMinutes": sleepAt.map { max(1, Int(($0.timeIntervalSinceNow / 60).rounded(.up))) } ?? 0,
+            "sleepMinutes": sleepMinutesLeft,
         ]
         if case .player(let service) = mode {
             state["mode"] = "player"
@@ -588,6 +594,8 @@ final class TVController: NSObject, ObservableObject {
             if key == "autoNext" { autoNext = value }
             if key == "keepMacAwake" { keepMacAwake = value }
             if key == "lidOverride" { lidOverride = value }
+            // These live in UserDefaults; tell an open Settings sheet to redraw.
+            objectWillChange.send()
             return
         case .sleepMac:
             goHome()
@@ -622,7 +630,7 @@ final class TVController: NSObject, ObservableObject {
         case .addApp:
             adder = AppAdder()
         case .settings:
-            pairing = true
+            openSettings()
         }
     }
 
@@ -657,6 +665,7 @@ final class TVController: NSObject, ObservableObject {
         webView = nil
         mode = .launcher
         pairing = false
+        settings = nil
         pointer = nil
         launchedAppID = nil
         keepAwake.release()

@@ -59,6 +59,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+            do {
+                let tv = TVController()
+                tv.settings = SettingsPanel(row: .lidOverride)
+                let renderer = ImageRenderer(content: ZStack { Wallpaper(); HomeView(tv: tv); Color.black.opacity(0.55); SettingsSheet(tv: tv) }
+                    .frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
+                renderer.scale = 1
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: folder.appendingPathComponent("settings.png"))
+                }
+            }
             for (name, adder) in [("add-website", AppAdder(tab: .website, row: 1, address: "crunchyroll.co")),
                                   ("add-macapp", AppAdder(tab: .macApp, row: 2, query: "", selected: 1))] {
                 let tv = TVController()
@@ -167,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, event.window === window else { return event }
             if tv.noteActivity() { return nil }
-            guard tv.mode == .launcher, !tv.pairing, tv.adder == nil else { return event }
+            guard tv.mode == .launcher, !tv.pairing, tv.settings == nil, tv.adder == nil else { return event }
             // One move per swipe: ignore momentum, and pause briefly after each move.
             guard event.momentumPhase.isEmpty else { return nil }
             if event.phase == .began { scrollTotal = 0 }

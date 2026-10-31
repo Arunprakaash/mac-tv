@@ -45,6 +45,12 @@ struct RootView: View {
                 Wallpaper().ignoresSafeArea()
                 TVCanvas { HomeView(tv: tv) }
                     .ignoresSafeArea()
+                if tv.settings != nil {
+                    TVCanvas { SettingsSheet(tv: tv) }
+                        .ignoresSafeArea()
+                        .background(.ultraThinMaterial.opacity(0.9))
+                        .transition(.opacity)
+                }
                 if tv.pairing {
                     TVCanvas { PairSheet(links: tv.remoteLinks, code: tv.remoteToken) { tv.pairing = false } }
                         .ignoresSafeArea()
@@ -81,6 +87,7 @@ struct RootView: View {
         .background(Color.black.ignoresSafeArea())
         .animation(.easeOut(duration: 0.25), value: tv.toast)
         .animation(.easeOut(duration: 0.25), value: tv.pairing)
+        .animation(.easeOut(duration: 0.25), value: tv.settings != nil)
         .animation(.easeOut(duration: 0.25), value: tv.adder != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
     }

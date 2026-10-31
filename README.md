@@ -37,7 +37,7 @@ Mac TV is a native Mac app. Each streaming service runs in its official web play
 
 ## Phone remote
 
-Open **Settings** on the TV and scan the QR code with your phone's camera. No app to install: it's a web page the Mac serves to your phone. Add it to your home screen to keep it one tap away.
+Open **Settings** on the TV, choose **Phone remote** and scan the QR code with your phone's camera. No app to install: it's a web page the Mac serves to your phone. Add it to your home screen to keep it one tap away.
 
 - **Clickpad:** swipe or tap the edges; hold to repeat; tap the middle for OK.
 - **Touchpad:** drag the pointer, tap to click, two fingers to scroll.
@@ -47,16 +47,18 @@ Open **Settings** on the TV and scan the QR code with your phone's camera. No ap
 
 ## Watching
 
-- **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **TV controls** on the remote.
+- **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **Settings** on the TV or **TV controls** on the remote.
 - **Sleep timer:** 15, 30, 60 or 90 minutes. When it ends, playback stops, Mac TV goes home and the screen turns off.
 - **Screensaver:** after 5 idle minutes, a lock-screen-style clock appears over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour.
 - **Privacy:** the home screen never shows pictures of what you watched.
 
 ## Power and the lid
 
-- **Keep Mac awake:** while Mac TV is open, the Mac doesn't go to sleep on its own, so the phone remote always reaches it. The screen can still turn off. On by default; switch it in **TV controls** on the remote.
-- **Closing the lid:** on power with the TV connected, macOS keeps the Mac running with the lid closed (Apple's closed-display mode). **TV controls** says whether closing the lid right now would sleep the Mac.
-- **Stay awake with lid closed:** an option in **TV controls** for battery, or without the TV connected, like playing music with the lid shut. No admin password needed. "Lid sleep off" shows on the home screen while it's on. It turns off by itself when the battery drops below 20% or the Mac gets hot, and when Mac TV quits, even if it crashes. A closed Mac that stays awake runs warm, so don't put it in a bag.
+![Settings on the TV](docs/screenshots/settings.png)
+
+- **Keep Mac awake:** while Mac TV is open, the Mac doesn't go to sleep on its own, so the phone remote always reaches it. The screen can still turn off. On by default; switch it in **Settings** on the TV or **TV controls** on the remote.
+- **Closing the lid:** on power with the TV connected, macOS keeps the Mac running with the lid closed (Apple's closed-display mode). **Settings** and **TV controls** say whether closing the lid right now would sleep the Mac.
+- **Stay awake with lid closed:** an option in **Settings** and **TV controls** for battery, or without the TV connected, like playing music with the lid shut. No admin password needed. "Lid sleep off" shows on the home screen while it's on. It turns off by itself when the battery drops below 20% or the Mac gets hot, and when Mac TV quits, even if it crashes. A closed Mac that stays awake runs warm, so don't put it in a bag.
 
 ## Your apps
 

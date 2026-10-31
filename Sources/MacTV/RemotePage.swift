@@ -36,13 +36,6 @@ enum RemotePage {
       .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none; }
       .dot.on { background:var(--ok); }
       .actions { display:flex; gap:10px; flex:none; }
-      .now { display:flex; align-items:center; gap:14px; min-height:68px; padding:10px 12px; border-radius:22px; background:var(--glass); border:1px solid var(--line); }
-      .now .art { flex:none; width:46px; height:46px; border-radius:12px; background:#1c1f27 center/cover no-repeat; display:grid; place-items:center; overflow:hidden; color:var(--dim); }
-      .now .art.has-icon svg { display:none; }
-      .now .meta { flex:1; min-width:0; }
-      .now .label { font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--dim); }
-      .now .title { font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .now .play { flex:none; width:44px; height:44px; border-radius:50%; border:0; background:#fff; color:#000; display:grid; place-items:center; }
       .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:44px; flex:none; border-radius:14px; background:var(--glass); }
       .tabs button { border:0; border-radius:10px; background:transparent; font-size:14px; font-weight:600; }
       .tabs button.on { background:rgba(255,255,255,.18); }
@@ -66,12 +59,13 @@ enum RemotePage {
       .type { display:flex; align-items:center; gap:8px; height:52px; flex:none; padding:0 6px 0 16px; border-radius:16px; background:var(--glass); border:1px solid var(--line); color:var(--dim); }
       .type input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:#fff; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; }
       .type button { width:40px; height:40px; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:#fff; }
-      /* Short phones: drop the now-playing strip so the controls fit without scrolling. */
-      @media (max-height: 640px) { .now { display:none; } .surface { min-height:180px; } }
+      /* Short phones: a smaller touch surface so the controls fit without scrolling. */
+      @media (max-height: 640px) { .surface { min-height:180px; } }
 
       .scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; flex-direction:column; justify-content:flex-end; z-index:5; }
       .scrim.show { display:flex; }
       .sheet { max-width:460px; width:100%; max-height:88dvh; overflow-y:auto; margin:0 auto; padding:20px 18px calc(env(safe-area-inset-bottom) + 24px); border-radius:28px 28px 0 0; background:rgba(34,36,44,.98); border-top:1px solid rgba(255,255,255,.12); display:flex; flex-direction:column; gap:14px; }
+      .sheet > * { flex-shrink:0; }
       .sheet-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
       .sheet-head > span { font-size:18px; font-weight:800; }
       .sheet-head > div { display:flex; gap:8px; }
@@ -128,15 +122,6 @@ enum RemotePage {
           <button class="round" id="open-power" aria-label="Power"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg></button>
         </div>
       </header>
-
-      <div class="now">
-        <div class="art" id="now-art"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/></svg></div>
-        <div class="meta">
-          <div class="label" id="now-label">Home screen</div>
-          <div class="title" id="now-title">Pick something to watch</div>
-        </div>
-        <button class="play" data-a="playpause" data-h="tap" aria-label="Play or pause"><svg width="18" height="18" viewBox="0 0 24 24" fill="#000"><path d="M3 5v14l8-7z"/><rect x="14" y="5" width="3" height="14" rx="1"/><rect x="19" y="5" width="3" height="14" rx="1"/></svg></button>
-      </div>
 
       <div class="tabs" role="tablist" aria-label="Remote mode">
         <button role="tab" id="tab-click" class="on">Clickpad</button>
@@ -303,25 +288,13 @@ enum RemotePage {
       });
     }
 
-    // State: connection, what's playing, the app list.
+    // State: connection, the app list, settings.
     let appsShown = '', apps = [], canRestore = false;
     async function refresh() {
       if (!key) return showPair();
       try {
         const s = await api('/state');
         online(true, s.device);
-        const art = $('#now-art');
-        if (s.mode === 'player' && s.current) {
-          art.style.backgroundImage = `url(/icon/${s.current.id})`;
-          art.classList.add('has-icon');
-          $('#now-label').textContent = s.current.name;
-          $('#now-title').textContent = s.current.title || 'Watching';
-        } else {
-          art.style.backgroundImage = '';
-          art.classList.remove('has-icon');
-          $('#now-label').textContent = 'Home screen';
-          $('#now-title').textContent = 'Pick something to watch';
-        }
         apps = s.apps;
         canRestore = s.canRestore;
         showSleep(s.sleepMinutes || 0);
