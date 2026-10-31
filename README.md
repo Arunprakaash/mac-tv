@@ -11,8 +11,8 @@
 | Top Shelf | App grid |
 |---|---|
 | ![Top Shelf](docs/screenshots/top-shelf.png) | ![App grid](docs/screenshots/app-grid.png) |
-| **Row Top Shelf (Prime Video)** | **Screensaver** |
-| ![Row Top Shelf](docs/screenshots/home-row-shelf.png) | ![Screensaver](docs/screenshots/screensaver.png) |
+| **Settings** | **Screensaver** |
+| ![Settings](docs/screenshots/settings.png) | ![Screensaver](docs/screenshots/screensaver.png) |
 
 | Phone remote | Apps | TV controls |
 |---|---|---|
@@ -30,7 +30,7 @@ Requires macOS 14 or later.
 
 Mac TV is a native Mac app. Each streaming service runs in its official web player inside Apple's Safari engine (WebKit), so it gets FairPlay DRM, the same playback quality as Safari, up to 4K on Netflix. It isn't Android TV and doesn't emulate anything.
 
-- **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. Move up to expand the Top Shelf (Resume, Open) and down for the full app grid. It fills any screen shape edge to edge.
+- **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. The Top Shelf shows the focused app in its own colours; move up for Open, and down for the full app grid. Sheets and controls use Apple TV's Liquid Glass. It fills any screen shape edge to edge.
 - **Window:** opens as a normal window on your external display and remembers its place. Use the green button or ⌃⌘F for full screen.
 - **Keyboard and trackpad:** arrows, Return and Escape. Scroll to move between the dock and the grid. ⌘⇧H goes home.
 - **Websites built for a mouse:** a focus ring slides between links and buttons, so the D-pad works everywhere.
@@ -50,11 +50,9 @@ Open **Settings** on the TV, choose **Phone remote** and scan the QR code with y
 - **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **Settings** on the TV or **TV controls** on the remote.
 - **Sleep timer:** 15, 30, 60 or 90 minutes. When it ends, playback stops, Mac TV goes home and the screen turns off.
 - **Screensaver:** after 5 idle minutes, a lock-screen-style clock appears over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour.
-- **Privacy:** the home screen never shows pictures of what you watched.
+- **Privacy:** Mac TV doesn't keep a list of what you watch, and the home screen never shows it.
 
 ## Power and the lid
-
-![Settings on the TV](docs/screenshots/settings.png)
 
 - **Keep Mac awake:** while Mac TV is open, the Mac doesn't go to sleep on its own, so the phone remote always reaches it. The screen can still turn off. On by default; switch it in **Settings** on the TV or **TV controls** on the remote.
 - **Closing the lid:** on power with the TV connected, macOS keeps the Mac running with the lid closed (Apple's closed-display mode). **Settings** and **TV controls** say whether closing the lid right now would sleep the Mac.
@@ -88,7 +86,7 @@ These checks run on their own and don't need the app open, unless noted:
 - `MacTV --selftest-drm` prints the DRM systems available.
 - `--export-tiles <folder>` renders the dock tiles, `--export-home <folder>` the home screen, and `--export-remote <file.png> [apps|controls]` the phone remote. The remote export needs Mac TV running.
 
-Sign-ins, added apps and history are kept in `~/Library/Application Support/Mac TV`.
+Sign-ins and added apps are kept in `~/Library/Application Support/Mac TV`.
 
 ## Notes
 

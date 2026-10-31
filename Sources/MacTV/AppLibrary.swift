@@ -1,6 +1,6 @@
 import AppKit
 
-/// ~/Library/Application Support/Mac TV, where history, added apps and their icons live.
+/// ~/Library/Application Support/Mac TV, where added apps and their icons live.
 /// Data from the app's earlier name ("Matinee") moves over on first run.
 enum AppFolder {
     static let url: URL = {
@@ -11,6 +11,8 @@ enum AppFolder {
             try? FileManager.default.moveItem(at: earlier, to: folder)
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // Earlier versions kept a list of what was watched; Mac TV no longer records one.
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("history.json"))
         return folder
     }()
 }

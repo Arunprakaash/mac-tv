@@ -8,14 +8,6 @@ struct Service: Identifiable, Hashable {
         case settings
     }
 
-    /// How the Top Shelf presents this app while its icon is focused in the dock.
-    enum Shelf: Hashable {
-        /// Full-screen artwork of the last thing watched, with Resume.
-        case showcase
-        /// A labelled row of 16:9 cards.
-        case row(String)
-    }
-
     let id: String
     let name: String
     let kind: Kind
@@ -25,7 +17,6 @@ struct Service: Identifiable, Hashable {
     var iconFile: URL? = nil
     var accent = "#8E8E93"
     var deep = "#16171B"
-    var shelf: Shelf = .row("Continue Watching")
     var userAgent: String = UserAgent.safari
     /// Inject D-pad focus navigation for sites that were built for a mouse.
     var dpadNavigation = true
@@ -56,20 +47,20 @@ enum Catalog {
     /// Mac app tiles only appear when the app is installed.
     static let services: [Service] = [
         Service(id: "netflix", name: "Netflix", kind: .web(URL(string: "https://www.netflix.com/browse")!),
-                icon: "netflix.png", accent: "#E50914", deep: "#2B0204", shelf: .showcase),
+                icon: "netflix.png", accent: "#E50914", deep: "#2B0204"),
         Service(id: "youtube", name: "YouTube", kind: .web(URL(string: "https://www.youtube.com/tv")!),
                 icon: "youtube.png", accent: "#FF2D2D", deep: "#2B0606",
-                shelf: .showcase, userAgent: UserAgent.smartTV, dpadNavigation: false),
+                userAgent: UserAgent.smartTV, dpadNavigation: false),
         Service(id: "prime", name: "Prime Video", kind: .web(URL(string: "https://www.primevideo.com")!),
                 icon: "prime.png", accent: "#1A98FF", deep: "#05213F"),
         Service(id: "hotstar", name: "JioHotstar", kind: .web(URL(string: "https://www.hotstar.com")!),
                 icon: "hotstar.png", accent: "#2C6BED", deep: "#081538"),
         Service(id: "appletv", name: "Apple TV", kind: .web(URL(string: "https://tv.apple.com")!),
-                icon: "appletv.png", accent: "#9A9AA2", deep: "#18181B", shelf: .row("Up Next")),
+                icon: "appletv.png", accent: "#9A9AA2", deep: "#18181B"),
         Service(id: "spotify", name: "Spotify", kind: .web(URL(string: "https://open.spotify.com")!),
-                icon: "spotify.png", accent: "#1ED760", deep: "#06210F", shelf: .row("Recently Played")),
+                icon: "spotify.png", accent: "#1ED760", deep: "#06210F"),
         Service(id: "ytmusic", name: "YouTube Music", kind: .web(URL(string: "https://music.youtube.com")!),
-                icon: "ytmusic.png", accent: "#FF2D2D", deep: "#2B0606", shelf: .row("Recently Played")),
+                icon: "ytmusic.png", accent: "#FF2D2D", deep: "#2B0606"),
         Service(id: "iina", name: "IINA", kind: .app(bundleID: "com.colliderli.iina"),
                 icon: "iina.png"),
         Service(id: "add-app", name: "Add App", kind: .addApp),

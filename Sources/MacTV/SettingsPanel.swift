@@ -139,9 +139,7 @@ struct SettingsSheet: View {
         }
         .padding(56)
         .frame(width: 1100, alignment: .leading)
-        .background(Color(hex: "#282A32").opacity(0.9), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).strokeBorder(.white.opacity(0.16)))
-        .shadow(color: .black.opacity(0.5), radius: 50, y: 30)
+        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(.easeOut(duration: 0.18), value: panel)
@@ -173,10 +171,13 @@ struct SettingsSheet: View {
         }
         .padding(.horizontal, 24)
         .frame(height: 64)
-        .background(warning ? Color(hex: "#FF6B6B").opacity(0.3) : .white.opacity(focused ? 0.16 : 0.07),
+        // tvOS focus: a bright white platter with dark text; Sleep Mac turns red to confirm.
+        .foregroundStyle(focused && !warning ? .black : .white)
+        .background(warning ? Color(hex: "#FF453A") : focused ? .white : .white.opacity(0.08),
                     in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .strokeBorder(.white.opacity(focused ? 0.9 : 0), lineWidth: 3))
+        .scaleEffect(focused ? 1.02 : 1)
+        .shadow(color: .black.opacity(focused ? 0.3 : 0), radius: 14, y: 8)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: focused)
         .contentShape(Rectangle())
         .onTapGesture { tv.activateSetting(row) }
     }

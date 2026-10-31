@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import IOKit.pwr_mgt
 import WebKit
 
@@ -123,7 +122,6 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var services: [Service] = []
     let library = AppLibrary()
     let columns = 6
-    let history = WatchHistory()
     let deviceName = Host.current().localizedName ?? "Mac"
     weak var window: NSWindow?
     var remoteToken = ""
@@ -174,13 +172,11 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private var addressTimer: Timer?
-    private var captureTimer: Timer?
     private let keepAwake = KeepAwake()
     private var toastTask: Task<Void, Never>?
     private var launchedAppID: String?
     private var pointer: CGPoint?
     private var popups: [NSWindow] = []
-    private var historyObserver: AnyCancellable?
     private var sleepTimer: Timer?
     private var idleTimer: Timer?
     private let macAwake = KeepAwake(kIOPMAssertionTypePreventUserIdleSystemSleep)
@@ -198,7 +194,6 @@ final class TVController: NSObject, ObservableObject {
         idleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkIdle() }
         }
-        historyObserver = history.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
     }
 
     // MARK: Screensaver and sleep timer
@@ -418,7 +413,6 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Home screen
 
     var shelfService: Service { services.indices.contains(shelfAppIndex) ? services[shelfAppIndex] : services[0] }
-    var shelfItems: [WatchItem] { Array(history.items(for: shelfService.id).prefix(6)) }
 
     /// True when focus is below the top row; the Top Shelf scrolls away.
     var inGrid: Bool {
@@ -426,12 +420,11 @@ final class TVController: NSObject, ObservableObject {
         return false
     }
 
-    /// How many things in the Top Shelf can take focus.
+    /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
-        guard shelfService.isWeb else { return 0 }
-        switch shelfService.shelf {
-        case .showcase: return shelfItems.isEmpty ? 1 : 2
-        case .row: return max(shelfItems.count, 1)
+        switch shelfService.kind {
+        case .web, .app: return 1
+        case .addApp, .settings: return 0
         }
     }
 
@@ -486,13 +479,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func activateShelf(_ index: Int) {
-        let service = shelfService, items = shelfItems
-        switch service.shelf {
-        case .showcase:
-            if index == 0, let item = items.first { resume(item) } else { open(service) }
-        case .row:
-            if items.indices.contains(index) { resume(items[index]) } else { open(service) }
-        }
+        open(shelfService)
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
@@ -560,8 +547,7 @@ final class TVController: NSObject, ObservableObject {
         ]
         if case .player(let service) = mode {
             state["mode"] = "player"
-            state["current"] = ["id": service.id, "name": service.name,
-                                "title": history.items(for: service.id).first?.title ?? ""]
+            state["current"] = ["id": service.id, "name": service.name]
         }
         return state
     }
@@ -634,11 +620,6 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    func resume(_ item: WatchItem) {
-        guard let service = services.first(where: { $0.id == item.serviceID }) else { return }
-        play(service, url: item.url)
-    }
-
     private func play(_ service: Service, url: URL) {
         let web = makeWebView(for: service)
         web.load(URLRequest(url: url))
@@ -646,7 +627,6 @@ final class TVController: NSObject, ObservableObject {
         mode = .player(service)
         pointer = nil
         keepAwake.hold(reason: "Watching \(service.name) in Mac TV")
-        startCapturing(service)
         bringToFront()
         Task { @MainActor [weak self] in self?.window?.makeFirstResponder(web) }
         showToast("Home on your phone remote, or ⌘⇧H, comes back here")
@@ -654,12 +634,10 @@ final class TVController: NSObject, ObservableObject {
 
     func goHome() {
         if let web = webView {
-            captureNow(from: web)
             // Releasing the page stops playback; pause first so audio cuts immediately.
             web.pauseAllMediaPlayback(completionHandler: nil)
             web.stopLoading()
         }
-        captureTimer?.invalidate()
         popups.forEach { $0.close() }
         popups.removeAll()
         webView = nil
@@ -670,37 +648,6 @@ final class TVController: NSObject, ObservableObject {
         launchedAppID = nil
         keepAwake.release()
         bringToFront()
-    }
-
-    // MARK: Watch history
-
-    private func startCapturing(_ service: Service) {
-        captureTimer?.invalidate()
-        captureTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let web = self.webView else { return }
-                self.captureNow(from: web)
-            }
-        }
-    }
-
-    /// Notes what's playing so the Top Shelf can offer to resume it.
-    private func captureNow(from web: WKWebView) {
-        guard case .player(let service) = mode else { return }
-        web.evaluateJavaScript(WatchHistory.captureScript) { [weak self] result, _ in
-            MainActor.assumeIsolated {
-                guard let self, let json = result as? String, let data = json.data(using: .utf8),
-                      let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let url = (info["url"] as? String).flatMap(URL.init(string:))
-                else { return }
-                var title = (info["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                if title?.isEmpty == true || title == service.name { title = nil }
-                self.history.record(WatchItem(
-                    serviceID: service.id, url: url, title: title,
-                    image: (info["image"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) },
-                    progress: info["progress"] as? Double, date: Date()))
-            }
-        }
     }
 
     // MARK: Player

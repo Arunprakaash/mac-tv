@@ -76,7 +76,7 @@ struct RootView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 22).padding(.vertical, 12)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .tvGlass(in: Capsule())
                         .padding(.top, 36)
                     Spacer()
                 }
@@ -224,16 +224,15 @@ struct HomeView: View {
     }
 
     var body: some View {
-        let showcase = tv.shelfService.isWeb && tv.shelfService.shelf == .showcase
         let layout = Layout(canvas: canvas)
         ZStack(alignment: .topLeading) {
             TopShelf(tv: tv, expanded: shelfFocused)
                 .opacity(tv.inGrid ? 0 : 1)
 
             AppGrid(tv: tv)
-                // An expanded showcase takes the whole screen; the dock slides away.
-                .offset(y: tv.inGrid ? -layout.gridShift : (shelfFocused && showcase ? 360 : 0))
-                .opacity(shelfFocused && showcase ? 0 : 1)
+                // An expanded banner takes the whole screen; the dock slides away.
+                .offset(y: tv.inGrid ? -layout.gridShift : (shelfFocused ? 360 : 0))
+                .opacity(shelfFocused ? 0 : 1)
 
             if !tv.inGrid && !shelfFocused && tv.shelfCount > 0 {
                 Image(systemName: "chevron.compact.up")
@@ -250,8 +249,7 @@ struct HomeView: View {
                         .font(.system(size: 22, weight: .semibold))
                         .padding(.horizontal, 20)
                         .frame(height: 50)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
+                        .tvGlass(in: Capsule())
                 }
                 ClockPill()
             }
@@ -277,8 +275,7 @@ struct ClockPill: View {
                 .monospacedDigit()
                 .padding(.horizontal, 20)
                 .frame(height: 50)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
+                .tvGlass(in: Capsule())
         }
     }
 }
@@ -325,13 +322,9 @@ struct AppGrid: View {
 /// tvOS 26 dock: frosted Liquid Glass with a lit top edge.
 struct GlassDock: View {
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 48, style: .continuous)
-        shape
-            .fill(.ultraThinMaterial)
-            .overlay(shape.fill(.white.opacity(0.05)))
-            .overlay(shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.05)],
-                                                       startPoint: .top, endPoint: .bottom), lineWidth: 1.2))
-            .shadow(color: .black.opacity(0.35), radius: 30, y: 16)
+        Color.clear
+            .tvGlass(in: RoundedRectangle(cornerRadius: 48, style: .continuous))
+            .shadow(color: .black.opacity(0.25), radius: 30, y: 16)
     }
 }
 
@@ -440,42 +433,30 @@ struct TopShelf: View {
     var body: some View {
         let service = tv.shelfService
         Group {
-            if service.isWeb {
-                switch service.shelf {
-                case .showcase:
-                    ShowcaseShelf(tv: tv, service: service, item: tv.shelfItems.first, expanded: expanded)
-                case .row(let label):
-                    RowShelf(tv: tv, service: service, label: label, items: tv.shelfItems)
-                }
+            if tv.shelfCount > 0 {
+                AppBanner(tv: tv, service: service, expanded: expanded)
             }
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .id(service.id)
         .transition(.opacity)
     }
-
-    static func focusIndex(_ tv: TVController) -> Int? {
-        if case .shelf(let index) = tv.focus { return index }
-        return nil
-    }
 }
 
-/// Full-screen artwork of the last thing watched. With the dock focused, the title sits
-/// top-left over the art; moving up expands it with details and Resume.
-struct ShowcaseShelf: View {
+/// The focused app's colours across the screen, with its name top-left. Moving up from the
+/// dock brings up Open. Nothing about what was watched ever shows here.
+struct AppBanner: View {
     @ObservedObject var tv: TVController
     @Environment(\.canvasSize) private var canvas
     let service: Service
-    let item: WatchItem?
     let expanded: Bool
 
     var body: some View {
-        let focusIndex = TopShelf.focusIndex(tv)
         ZStack(alignment: .topLeading) {
             Artwork(accent: service.accent, deep: service.deep)
                 .frame(width: canvas.width, height: canvas.height)
                 .clipped()
-            // Legibility: a soft top-left wash for the title, a bottom wash for the dock or details.
+            // Legibility: a soft top-left wash for the name, a bottom wash for the dock or button.
             LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : 0.55), location: 0),
                                    .init(color: .black.opacity(expanded ? 0.4 : 0.15), location: 0.4),
                                    .init(color: .clear, location: 0.65)],
@@ -485,33 +466,15 @@ struct ShowcaseShelf: View {
                            startPoint: .top, endPoint: .bottom)
 
             VStack(alignment: .leading, spacing: 18) {
-                Text(item == nil ? service.name.uppercased() : "CONTINUE WATCHING ON \(service.name.uppercased())")
-                    .font(.system(size: 20, weight: .bold)).tracking(2.4)
-                    .foregroundStyle(.white.opacity(0.8))
-                Text(item.map { $0.title ?? "Pick up where you left off" } ?? "Nothing watched yet")
+                Text(service.name)
                     .font(.system(size: 112, weight: .black).width(.compressed))
                     .textCase(.uppercase)
                     .lineLimit(2)
                     .minimumScaleFactor(0.5)
                     .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
                 if expanded {
-                    Text(item.map { "Watched \($0.date.formatted(.relative(presentation: .named)))" }
-                         ?? "What you watch on \(service.name) shows up here.")
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                    HStack(spacing: 18) {
-                        if item != nil {
-                            ShelfButton(title: "Resume", systemImage: "play.fill", focused: focusIndex == 0) {
-                                tv.setFocus(.shelf(0)); tv.activateShelf(0)
-                            }
-                            ShelfButton(title: "Open \(service.name)", focused: focusIndex == 1) {
-                                tv.setFocus(.shelf(1)); tv.activateShelf(1)
-                            }
-                        } else {
-                            ShelfButton(title: "Open \(service.name)", systemImage: "play.fill", focused: focusIndex == 0) {
-                                tv.setFocus(.shelf(0)); tv.activateShelf(0)
-                            }
-                        }
+                    ShelfButton(title: "Open \(service.name)", systemImage: "play.fill", focused: tv.focus == .shelf(0)) {
+                        tv.setFocus(.shelf(0)); tv.activateShelf(0)
                     }
                     .padding(.top, 20)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -547,8 +510,7 @@ struct ShelfButton: View {
                 if focused {
                     Capsule().fill(.white)
                 } else {
-                    Capsule().fill(.ultraThinMaterial)
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.22)))
+                    Color.clear.tvGlass(in: Capsule())
                 }
             }
             .scaleEffect(focused ? 1.08 : 1)
@@ -556,95 +518,6 @@ struct ShelfButton: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: focused)
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// A labelled row of 16:9 cards above the dock.
-struct RowShelf: View {
-    @ObservedObject var tv: TVController
-    @Environment(\.canvasSize) private var canvas
-    let service: Service
-    let label: String
-    let items: [WatchItem]
-
-    var body: some View {
-        let focusIndex = TopShelf.focusIndex(tv)
-        ZStack(alignment: .topLeading) {
-            // The app's colours tint the whole screen.
-            Artwork(accent: service.accent, deep: service.deep)
-                .frame(width: canvas.width, height: canvas.height)
-                .blur(radius: 60)
-                .opacity(0.55)
-                .clipped()
-            LinearGradient(colors: [.clear, Color(hex: "#0A0B0E").opacity(0.8)], startPoint: .top, endPoint: .bottom)
-
-            VStack(alignment: .leading, spacing: 24) {
-                Text(label).font(.system(size: 28, weight: .bold))
-                HStack(spacing: 40) {
-                    if items.isEmpty {
-                        ShelfCard(service: service, item: nil, focused: focusIndex == 0) {
-                            tv.setFocus(.shelf(0)); tv.activateShelf(0)
-                        }
-                    } else {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            ShelfCard(service: service, item: item, focused: focusIndex == index) {
-                                tv.setFocus(.shelf(index)); tv.activateShelf(index)
-                            }
-                        }
-                    }
-                }
-                .offset(x: -CGFloat(max(0, (focusIndex ?? 0) - 2)) * 640)
-                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: focusIndex)
-            }
-            .padding(.leading, 96)
-            .padding(.top, 150)
-        }
-    }
-}
-
-struct ShelfCard: View {
-    let service: Service
-    let item: WatchItem?
-    let focused: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack(alignment: .bottomLeading) {
-                Artwork(accent: service.accent, deep: service.deep)
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 12) {
-                    if let item {
-                        Text(item.title ?? "Pick up where you left off")
-                            .font(.system(size: 30, weight: .heavy))
-                            .lineLimit(1)
-                        if let progress = item.progress {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(.white.opacity(0.28))
-                                    Capsule().fill(.white).frame(width: geo.size.width * min(max(progress, 0.03), 1))
-                                }
-                            }
-                            .frame(height: 5)
-                        }
-                    } else {
-                        Text("Open \(service.name)").font(.system(size: 30, weight: .heavy))
-                        Text("What you play shows up here.")
-                            .font(.system(size: 20, weight: .medium)).foregroundStyle(.white.opacity(0.75))
-                    }
-                }
-                .padding(26)
-            }
-            .frame(width: 600, height: 338)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.white.opacity(focused ? 0.4 : 0), lineWidth: 1.2))
-            .scaleEffect(focused ? 1.06 : 1)
-            .shadow(color: .black.opacity(focused ? 0.6 : 0.35), radius: focused ? 28 : 12, y: focused ? 24 : 8)
-            .animation(.spring(response: 0.32, dampingFraction: 0.8), value: focused)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
     }
 }
 
@@ -713,9 +586,7 @@ struct PairSheet: View {
             .frame(maxWidth: 760, alignment: .leading)
         }
         .padding(56)
-        .background(Color(hex: "#282A32").opacity(0.85), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).strokeBorder(.white.opacity(0.16)))
-        .shadow(color: .black.opacity(0.5), radius: 50, y: 30)
+        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
     }
@@ -726,6 +597,20 @@ struct WebViewHost: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView { webView }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+
+extension View {
+    /// Apple TV's glass for every surface in Mac TV: sheets, the dock, pills, buttons at rest.
+    /// Liquid Glass on macOS 26 and later, frosted material before that.
+    @ViewBuilder
+    func tvGlass<S: InsettableShape>(in shape: S) -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.18)))
+        }
+    }
 }
 
 extension Color {
@@ -753,8 +638,8 @@ struct AddAppSheet: View {
                 tab("Mac app", .macApp, a)
             }
             .padding(6)
-            .background(.white.opacity(0.08), in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(a.row == 0 ? 0.9 : 0), lineWidth: 3))
+            .background(.white.opacity(a.row == 0 ? 0.22 : 0.08), in: Capsule())
+            .scaleEffect(a.row == 0 ? 1.03 : 1)
 
             if a.tab == .website {
                 AdderField(label: "Website", text: a.address, placeholder: "e.g. crunchyroll.com", focused: a.row == 1) { set(row: 1) }
@@ -774,9 +659,7 @@ struct AddAppSheet: View {
         }
         .padding(56)
         .frame(width: 1100, alignment: .leading)
-        .background(Color(hex: "#282A32").opacity(0.9), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).strokeBorder(.white.opacity(0.16)))
-        .shadow(color: .black.opacity(0.5), radius: 50, y: 30)
+        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(.easeOut(duration: 0.18), value: a)
@@ -866,8 +749,8 @@ struct AdderField: View {
                 .font(.system(size: 30, weight: .medium))
                 .padding(.horizontal, 24)
                 .frame(height: 72)
-                .background(.white.opacity(focused ? 0.16 : 0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(focused ? 0.9 : 0.12), lineWidth: focused ? 3 : 1))
+                .foregroundStyle(focused ? .black : .white)
+                .background(focused ? .white : .white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
         .contentShape(Rectangle())
