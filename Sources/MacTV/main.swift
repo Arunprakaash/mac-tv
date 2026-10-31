@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let tv = TVController()
     var window: NSWindow!
     var server: RemoteServer?
+    var tvMode: TVMode?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--selftest-drm") {
@@ -185,6 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("MacTVWindow")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        tvMode = TVMode(window: window, tv: tv)
+        tvMode?.start()
 
         startRemoteServer()
         installLauncherKeys()
@@ -221,6 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func screensChanged() {
+        tvMode?.screensChanged()
         tv.refreshRemoteURL()
         tv.refreshPower()
     }
@@ -253,7 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, event.window === window else { return event }
             if tv.noteActivity() { return nil }
-            guard tv.mode == .launcher, !tv.pairing, tv.settings == nil, tv.adder == nil else { return event }
+            guard tv.mode == .launcher, !tv.pairing, tv.settings == nil, tv.adder == nil, tv.organizer == nil, tv.playbackCheck == nil, tv.topShelfPreferences == nil else { return event }
             // One move per swipe: ignore momentum, and pause briefly after each move.
             guard event.momentumPhase.isEmpty else { return nil }
             if event.phase == .began { scrollTotal = 0 }

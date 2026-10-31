@@ -108,9 +108,14 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var shelfAppIndex = 0
     /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
     @Published var tilt: CGSize = .zero
-    @Published var pairing = false
+    @Published var pairing = false { didSet { if pairing { refreshRemoteURL() } } }
     /// The Settings sheet on the TV, while it's open.
     @Published var settings: SettingsPanel?
+    /// Arrange apps with the keyboard, game controller or phone's D-pad.
+    @Published var organizer: AppOrganizer?
+    @Published var playbackCheck: PlaybackDiagnostics?
+    @Published var playerFailure: PlayerFailure?
+    @Published var topShelfPreferences: TopShelfPreferencesPanel?
     /// The add-app sheet on the TV, while it's open.
     @Published var adder: AppAdder?
     /// The Movies app's screen, while it's open.
@@ -133,7 +138,7 @@ final class TVController: NSObject, ObservableObject {
 
     /// The home screen's apps, in order; changes when the user adds or removes apps.
     @Published private(set) var services: [Service] = []
-    let library = AppLibrary()
+    let library: AppLibrary
     let columns = 6
     let deviceName = Host.current().localizedName ?? "Mac"
     weak var window: NSWindow?
@@ -209,7 +214,12 @@ final class TVController: NSObject, ObservableObject {
     private var lastActivity = Date()
     private static let screensaverDelay: TimeInterval = 5 * 60
 
-    override init() {
+    override convenience init() {
+        self.init(library: AppLibrary())
+    }
+
+    init(library: AppLibrary) {
+        self.library = library
         super.init()
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
@@ -230,7 +240,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, !pairing, settings == nil, !screensaver, Date().timeIntervalSince(lastActivity) > Self.screensaverDelay {
+        if mode == .launcher, !pairing, settings == nil, organizer == nil, playbackCheck == nil, topShelfPreferences == nil, !screensaver, Date().timeIntervalSince(lastActivity) > Self.screensaverDelay {
             screensaver = true
         }
     }
@@ -339,10 +349,54 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Adding and removing apps
 
     private func reloadServices() {
+        let oldFocus = focus
+        let shelfID = services.indices.contains(shelfAppIndex) ? services[shelfAppIndex].id : nil
+        let focusedID: String?
+        if case .app(let index) = focus, services.indices.contains(index) { focusedID = services[index].id }
+        else { focusedID = shelfID }
         services = library.services()
-        if case .app(let index) = focus, index >= services.count { setFocus(.app(max(services.count - 1, 0))) }
-        if shelfAppIndex >= min(columns, services.count) { shelfAppIndex = 0 }
-        if case .shelf = focus, shelfCount == 0 { setFocus(.app(shelfAppIndex)) }
+        if let index = services.firstIndex(where: { $0.id == shelfID }), index < columns { shelfAppIndex = index }
+        else { shelfAppIndex = 0 }
+        let newIndex = services.firstIndex { $0.id == focusedID }
+        switch oldFocus {
+        case .app(let index):
+            let next = newIndex ?? min(index, max(services.count - 1, 0))
+            setFocus(.app(next))
+            // setFocus skips equal numeric indices, but the item at an index may have changed.
+            if next < columns { shelfAppIndex = next }
+        case .shelf(let index):
+            if let newIndex, newIndex < columns, shelfCount > 0 {
+                setFocus(.shelf(min(index, shelfCount - 1)))
+            } else {
+                setFocus(.app(newIndex ?? shelfAppIndex))
+            }
+        }
+        reconcileOrganizerSelection()
+    }
+
+    var arrangedServices: [Service] { services.filter { $0.kind != .addApp && $0.kind != .settings } }
+
+    func isPinned(_ id: String) -> Bool { library.isPinned(id) }
+
+    @discardableResult
+    func setPinned(_ id: String, _ pinned: Bool) -> Bool {
+        guard library.setPinned(id, pinned) else { showToast("Couldn't save favourites. Check available storage and folder permissions."); return false }
+        reloadServices()
+        return true
+    }
+
+    func canMoveApp(_ id: String, by offset: Int) -> Bool {
+        guard offset == -1 || offset == 1 else { return false }
+        let group = arrangedServices.filter { isPinned($0.id) == isPinned(id) }
+        guard let index = group.firstIndex(where: { $0.id == id }) else { return false }
+        return group.indices.contains(index + offset)
+    }
+
+    @discardableResult
+    func moveApp(_ id: String, by offset: Int) -> Bool {
+        guard library.move(id, by: offset) else { showToast("Couldn't save that app's position."); return false }
+        reloadServices()
+        return true
     }
 
     /// Adds a website. Its tile appears at once; the official icon follows when found.
@@ -447,6 +501,21 @@ final class TVController: NSObject, ObservableObject {
         case ("POST", "/apps/restore"):
             restoreBuiltInApps()
             return .json(["ok": true])
+        case ("POST", "/apps/pin"):
+            guard let id = body["id"] as? String, let value = body["pinned"] as? NSNumber,
+                  CFGetTypeID(value) == CFBooleanGetTypeID(), arrangedServices.contains(where: { $0.id == id }) else {
+                return .json(["error": "Choose an app and whether to pin it."], status: "400 Bad Request")
+            }
+            guard setPinned(id, value.boolValue) else { return .json(["error": "Couldn't save favourites. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
+            return .json(["ok": true])
+        case ("POST", "/apps/move"):
+            guard let id = body["id"] as? String, let value = body["offset"] as? NSNumber,
+                  CFGetTypeID(value) != CFBooleanGetTypeID(), value == -1 || value == 1,
+                  canMoveApp(id, by: value.intValue) else {
+                return .json(["error": "That app can't move further in this group."], status: "400 Bad Request")
+            }
+            guard moveApp(id, by: value.intValue) else { return .json(["error": "Couldn't save that app's position. Check storage on the Mac."], status: "500 Internal Server Error") }
+            return .json(["ok": true])
         default:
             return nil
         }
@@ -465,7 +534,7 @@ final class TVController: NSObject, ObservableObject {
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
         switch shelfService.kind {
-        case .web, .app, .steam, .movies: return 1
+        case .web, .app, .steam, .movies: return TopShelfFeed.shared.searchURL(for: shelfService) == nil ? 1 : 2
         case .addApp, .settings: return 0
         }
     }
@@ -521,10 +590,17 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func activateShelf(_ index: Int) {
-        open(shelfService)
+        if index == 0, let url = TopShelfFeed.shared.searchURL(for: shelfService) { play(shelfService, url: url) }
+        else { open(shelfService) }
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
+        if playbackCheck != nil { switch command { case .back, .select: playbackCheck = nil; default: break }; return }
+        if topShelfPreferences != nil { handleTopShelfPreferences(command); return }
+        if organizer != nil {
+            handleOrganizer(command)
+            return
+        }
         if adder != nil {
             handleAdder(command)
             return
@@ -563,9 +639,12 @@ final class TVController: NSObject, ObservableObject {
 
     func refreshRemoteURL() {
         guard remotePort != 0 else { return }
+        let code = RemoteServer.pairingCode()
+        let codeChanged = code != remoteToken
+        remoteToken = code
         let found: [(label: String, ip: String?)] = [("Same Wi-Fi", LAN.ipv4()), ("Tailscale", LAN.tailscaleIPv4())]
         let addresses = found.compactMap { entry in entry.ip.map { (entry.label, "http://\($0):\(remotePort)") } }
-        guard addresses.map(\.1) != remoteLinks.map(\.address) else { return }
+        guard codeChanged || addresses.map(\.1) != remoteLinks.map(\.address) else { return }
         remoteLinks = addresses.map { label, address in
             RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteToken)"))
         }
@@ -577,12 +656,14 @@ final class TVController: NSObject, ObservableObject {
         var state: [String: Any] = [
             "device": deviceName,
             "mode": "launcher",
-            "apps": services.filter { $0.kind != .settings && $0.kind != .addApp }.map {
-                ["id": $0.id, "name": $0.name, "icon": Icons.image(for: $0) != nil]
+            "apps": arrangedServices.map { service -> [String: Any] in
+                ["id": service.id, "name": service.name, "icon": Icons.image(for: service) != nil,
+                 "pinned": isPinned(service.id), "canMoveEarlier": canMoveApp(service.id, by: -1),
+                 "canMoveLater": canMoveApp(service.id, by: 1)]
             },
             "canRestore": library.hasHiddenBuiltIns,
             // Which sheet is open on the TV, if any: the remote can show it.
-            "sheet": adder != nil ? "add-app" : pairing ? "pairing" : settings != nil ? "settings" : "",
+            "sheet": organizer != nil ? "arrange-apps" : adder != nil ? "add-app" : pairing ? "pairing" : settings != nil ? "settings" : "",
             "autoSkip": autoSkip,
             "autoNext": autoNext,
             "keepMacAwake": keepMacAwake,
@@ -662,6 +743,12 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Opening things
 
     func open(_ service: Service) {
+        settings = nil
+        pairing = false
+        adder = nil
+        organizer = nil
+        playbackCheck = nil
+        topShelfPreferences = nil
         switch service.kind {
         case .web(let url):
             play(service, url: url)
@@ -684,6 +771,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func play(_ service: Service, url: URL) {
+        playerFailure = nil
         let web = makeWebView(for: service)
         web.load(URLRequest(url: url))
         webView = web
@@ -712,6 +800,10 @@ final class TVController: NSObject, ObservableObject {
         mode = .launcher
         pairing = false
         settings = nil
+        organizer = nil
+        playbackCheck = nil
+        topShelfPreferences = nil
+        playerFailure = nil
         pointer = nil
         launchedAppID = nil
         keepAwake.release()
@@ -825,6 +917,7 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Player
 
     private func handleInPlayer(_ command: RemoteCommand, service: Service) {
+        if playerFailure != nil { handlePlayerFailure(command); return }
         guard let web = webView else { return }
         switch command {
         case .move(let direction): sendKey(.direction(direction), to: web)
@@ -1049,6 +1142,16 @@ extension TVController: WKUIDelegate {
 
 // Google sign-in (YouTube, YouTube Music) refuses embedded browsers; switch identity on its pages.
 extension TVController: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        recordPlayerFailure(webView, error: error)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        recordPlayerFailure(webView, error: error)
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { recordPlayerFailure(webView) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === self.webView { playerFailure = nil }
+    }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard navigationAction.targetFrame?.isMainFrame ?? true, let host = navigationAction.request.url?.host() else { return .allow }
         let signingIn = host == "accounts.google.com" || host.hasSuffix(".accounts.google.com")

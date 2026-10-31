@@ -4,12 +4,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-./build.sh
+if [[ "${MACTV_SKIP_BUILD:-0}" != "1" ]]; then ./build.sh; fi
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
-STAGE=$(mktemp -d)
+mkdir -p build
+STAGE=$(mktemp -d "build/dmg-stage.XXXXXX")
+trap 'rm -rf "$STAGE"' EXIT
 cp -R "build/Mac TV.app" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 rm -f "build/MacTV-$VERSION.dmg"
 hdiutil create -volname "Mac TV" -srcfolder "$STAGE" -ov -format UDZO "build/MacTV-$VERSION.dmg" >/dev/null
-rm -rf "$STAGE"
 echo "Built $(pwd)/build/MacTV-$VERSION.dmg"
