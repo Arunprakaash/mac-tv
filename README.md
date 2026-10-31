@@ -96,6 +96,10 @@ These checks run on their own and don't need the app open, unless noted:
 
 Sign-ins and added apps are kept in `~/Library/Application Support/Mac TV`.
 
+## Who makes it
+
+Mac TV is made by Arunprakaash ([LinkedIn](https://www.linkedin.com/in/Arunprakaash)). Questions and bug reports go to [GitHub issues](https://github.com/Arunprakaash/mac-tv/issues); security problems, see [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE). App icons and service names belong to their owners and aren't covered by it.
