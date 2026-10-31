@@ -323,7 +323,9 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func refreshPower() {
-        power = PowerStatus.current()
+        // Published only when something changed: every change redraws whatever shows power.
+        let now = PowerStatus.current()
+        if now != power { power = now }
         guard lidSleepOff else { return }
         if let reason = lidOverrideStopReason() {
             lidOverride = false

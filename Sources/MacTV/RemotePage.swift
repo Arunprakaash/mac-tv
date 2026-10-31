@@ -666,7 +666,7 @@ enum RemotePage {
     };
     $('#subtitle-search-web').onclick = () => {
       if (!selectedMovie) return;
-      window.open('https://www.opensubtitles.org/en/search/sublanguageid-all/moviename-' + encodeURIComponent(selectedMovie.title.replace(/\.[^.]+$/, '')), '_blank', 'noopener,noreferrer');
+      window.open('https://www.opensubtitles.org/en/search/sublanguageid-all/moviename-' + encodeURIComponent(selectedMovie.title.replace(/\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|ts|m2ts|mts|mpg|mpeg|3gp)$/i, '')), '_blank', 'noopener,noreferrer');
       fileMessage('Download a subtitle on your phone, then upload the .srt here.');
     };
 

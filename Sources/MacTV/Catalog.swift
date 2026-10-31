@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 struct Service: Identifiable, Hashable {
     enum Kind: Hashable {
@@ -96,13 +97,23 @@ enum Icons {
         if let cached = images[service.id] { return cached }
         var image: NSImage?
         if let file = service.iconFile {
-            image = NSImage(contentsOf: file)
+            image = decoded(file)
         } else if let file = service.icon,
            let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Icons") {
-            image = NSImage(contentsOf: url)
+            image = decoded(url)
         }
         images[service.id] = image
         return image
+    }
+
+    /// Icons are often 1024 px; tiles draw them about 250 points wide, so 512 px is plenty sharp.
+    private static func decoded(_ url: URL) -> NSImage? {
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                        kCGImageSourceCreateThumbnailWithTransform: true,
+                                        kCGImageSourceThumbnailMaxPixelSize: 512]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return NSImage(contentsOf: url) }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     private static var tiles: [String: NSImage] = [:]

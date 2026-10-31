@@ -88,6 +88,18 @@ enum ScreenSaverSettings {
         }
     }
 
+    private static var covers: [Wallpaper: (folder: URL, picture: URL?)] = [:]
+
+    /// One picture to show a slideshow wallpaper by in Settings: the same each time, and the folder is
+    /// read only when it changes, not on every redraw.
+    static func cover(for wallpaper: Wallpaper) -> URL? {
+        let folder = wallpaper == .photos ? photosFolder : AppFolder.url.appendingPathComponent("Top Shelf", isDirectory: true)
+        if let cached = covers[wallpaper], cached.folder == folder { return cached.picture }
+        let picture = pictures(for: wallpaper).min { $0.lastPathComponent < $1.lastPathComponent }
+        covers[wallpaper] = (folder, picture)
+        return picture
+    }
+
     /// The pictures a slideshow wallpaper plays, in a fixed shuffled order.
     static func pictures(for wallpaper: Wallpaper) -> [URL] {
         let folder: URL
@@ -121,69 +133,6 @@ struct ScreenSaverBackdrop: View {
     }
 }
 
-/// Pictures that slowly zoom and cross-fade, one every few seconds, like Apple TV's photo screen saver.
-struct Slideshow: View {
-    let files: [URL]
-    private static let hold: TimeInterval = 9
-    private static let fade: TimeInterval = 1.8
-    /// One clock for every slideshow, so redraws never restart it.
-    private static let epoch = Date()
-
-    var body: some View {
-        // Color.clear sets the size, so a photo wider than the screen fills it instead of widening it.
-        Color.clear.overlay {
-            frames
-        }
-        .clipped()
-    }
-
-    private var frames: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-            let elapsed = context.date.timeIntervalSince(Self.epoch)
-            let index = Int(elapsed / Self.hold)
-            let into = elapsed - Double(index) * Self.hold
-            ZStack {
-                slide(files[(index + files.count - 1) % files.count], progress: 1 + into / Self.hold)
-                slide(files[index % files.count], progress: into / Self.hold)
-                    .opacity(min(1, into / Self.fade))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func slide(_ file: URL, progress: Double) -> some View {
-        if let image = SlideImages.image(file) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .scaleEffect(1.02 + 0.08 * progress)
-        } else {
-            Color.black
-        }
-    }
-}
-
-/// Decoded slideshow pictures, scaled down for the TV and kept for the last few files.
-@MainActor
-enum SlideImages {
-    private static var cache: [URL: NSImage] = [:]
-    private static var order: [URL] = []
-
-    static func image(_ url: URL) -> NSImage? {
-        if let cached = cache[url] { return cached }
-        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                        kCGImageSourceCreateThumbnailWithTransform: true,
-                                        kCGImageSourceThumbnailMaxPixelSize: 2560]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        cache[url] = image
-        order.append(url)
-        if order.count > 6 { cache[order.removeFirst()] = nil }
-        return image
-    }
-}
-
 /// A still for each wallpaper choice in Settings.
 struct WallpaperThumb: View {
     let wallpaper: ScreenSaverSettings.Wallpaper
@@ -199,14 +148,14 @@ struct WallpaperThumb: View {
     @ViewBuilder private var picture: some View {
         switch wallpaper {
         case .aerials:
-            if let thumb = Aerials.thumbnail(forCategory: ScreenSaverSettings.aerialCategory), let image = SlideImages.image(thumb) {
+            if let thumb = Aerials.thumbnail(forCategory: ScreenSaverSettings.aerialCategory), let image = ScreenImages.image(thumb, maxPixels: 400) {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
                 LinearGradient(colors: [Color(hex: "#5B7A3A"), Color(hex: "#1E3A2A")], startPoint: .top, endPoint: .bottom)
                 Image(systemName: "mountain.2.fill").font(.system(size: 44)).foregroundStyle(.white.opacity(0.6))
             }
         case .topShelf, .photos:
-            if let first = ScreenSaverSettings.pictures(for: wallpaper).first, let image = SlideImages.image(first) {
+            if let first = ScreenSaverSettings.cover(for: wallpaper), let image = ScreenImages.image(first, maxPixels: 400) {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
                 Color.white.opacity(0.07)

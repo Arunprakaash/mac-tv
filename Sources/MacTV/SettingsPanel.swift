@@ -496,7 +496,7 @@ struct SettingsSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Color.clear
                         .overlay {
-                            if let thumb = Aerials.thumbnail(forCategory: choice.id), let image = SlideImages.image(thumb) {
+                            if let thumb = Aerials.thumbnail(forCategory: choice.id), let image = ScreenImages.image(thumb, maxPixels: 400) {
                                 Image(nsImage: image).resizable().scaledToFill()
                             }
                         }
