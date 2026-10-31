@@ -4,6 +4,11 @@ import AppKit
 /// Data from the app's earlier name ("Matinee") moves over on first run.
 enum AppFolder {
     static let url: URL = {
+        if let path = ProcessInfo.processInfo.environment["MACTV_DATA_DIR"], path.hasPrefix("/") {
+            let folder = URL(fileURLWithPath: path, isDirectory: true)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            return folder
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let folder = support.appendingPathComponent("Mac TV", isDirectory: true)
         let earlier = support.appendingPathComponent("Matinee", isDirectory: true)
@@ -36,6 +41,20 @@ final class AppLibrary {
     private struct Saved: Codable {
         var added: [AddedApp] = []
         var hidden: Set<String> = []
+        var order: [String] = []
+        var pinned: Set<String> = []
+
+        init() {}
+
+        private enum CodingKeys: String, CodingKey { case added, hidden, order, pinned }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            added = try values.decodeIfPresent([AddedApp].self, forKey: .added) ?? []
+            hidden = try values.decodeIfPresent(Set<String>.self, forKey: .hidden) ?? []
+            order = try values.decodeIfPresent([String].self, forKey: .order) ?? []
+            pinned = try values.decodeIfPresent(Set<String>.self, forKey: .pinned) ?? []
+        }
     }
 
     private var saved = Saved()
@@ -44,8 +63,10 @@ final class AppLibrary {
     private let idPrefix: String
     let iconsFolder: URL
 
-    init(profileID: String = Profile.mainID) {
-        let folder = AppFolder.url
+    let storageFolder: URL
+
+    init(profileID: String = Profile.mainID, folder: URL = AppFolder.url) {
+        storageFolder = folder
         iconsFolder = folder.appendingPathComponent("Icons", isDirectory: true)
         try? FileManager.default.createDirectory(at: iconsFolder, withIntermediateDirectories: true)
         let main = profileID == Profile.mainID
@@ -69,11 +90,53 @@ final class AppLibrary {
     }
 
     func services() -> [Service] {
-        let fixed: Set<Service.Kind> = [.addApp, .settings]
-        let builtIn = Catalog.services.filter { !fixed.contains($0.kind) && !saved.hidden.contains($0.id) }
-        let added = saved.added.compactMap(service(for:))
-        let tail = Catalog.services.filter { fixed.contains($0.kind) }
-        return (builtIn + added).filter(\.isInstalled) + tail
+        let visible = orderedApps.filter { !saved.hidden.contains($0.id) && $0.isInstalled }
+        let tail = Catalog.services.filter { !Self.canArrange($0) }
+        return visible.filter { isPinned($0.id) } + visible.filter { !isPinned($0.id) } + tail
+    }
+
+    private static func canArrange(_ service: Service) -> Bool {
+        service.kind != .addApp && service.kind != .settings
+    }
+
+    /// Includes hidden and temporarily unavailable apps, so their positions survive restoration.
+    private var orderedApps: [Service] {
+        let apps = Catalog.services.filter(Self.canArrange) + saved.added.compactMap(service(for:))
+        var remaining = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ordered = saved.order.compactMap { remaining.removeValue(forKey: $0) }
+        return ordered + apps.filter { remaining.removeValue(forKey: $0.id) != nil }
+    }
+
+    func isPinned(_ id: String) -> Bool { saved.pinned.contains(id) }
+
+    @discardableResult
+    func setPinned(_ id: String, _ pinned: Bool) -> Bool {
+        guard services().contains(where: { $0.id == id && Self.canArrange($0) }) else { return false }
+        let previous = saved.pinned
+        if pinned { saved.pinned.insert(id) } else { saved.pinned.remove(id) }
+        guard save() else { saved.pinned = previous; return false }
+        return true
+    }
+
+    private func neighbour(of id: String, by offset: Int) -> String? {
+        guard offset == -1 || offset == 1 else { return nil }
+        let group = services().filter { Self.canArrange($0) && isPinned($0.id) == isPinned(id) }
+        guard let index = group.firstIndex(where: { $0.id == id }), group.indices.contains(index + offset) else { return nil }
+        return group[index + offset].id
+    }
+
+    func canMove(_ id: String, by offset: Int) -> Bool { neighbour(of: id, by: offset) != nil }
+
+    @discardableResult
+    func move(_ id: String, by offset: Int) -> Bool {
+        guard let neighbour = neighbour(of: id, by: offset) else { return false }
+        var order = orderedApps.map(\.id)
+        guard let from = order.firstIndex(of: id), let to = order.firstIndex(of: neighbour) else { return false }
+        order.swapAt(from, to)
+        let previous = saved.order
+        saved.order = order
+        guard save() else { saved.order = previous; return false }
+        return true
     }
 
     func iconFile(for id: String) -> URL { iconsFolder.appendingPathComponent("\(id).png") }
@@ -98,12 +161,18 @@ final class AppLibrary {
         let taken = Set(Catalog.services.map(\.id) + saved.added.map(\.id))
         if taken.contains(id) { id += "-\(Int.random(in: 1000...9999))" }
         let app = AddedApp(id: id, name: name, url: url, bundleID: bundleID, steamID: steamID)
+        // A new app must not inherit an obsolete entry from an older library file.
+        saved.order.removeAll { $0 == id }
+        saved.pinned.remove(id)
         saved.added.append(app)
         save()
         return app
     }
 
+    func containsAddedApp(_ id: String) -> Bool { saved.added.contains { $0.id == id } }
+
     func setIcon(_ png: Data, accent: String?, for id: String) {
+        guard containsAddedApp(id) else { return }
         try? png.write(to: iconFile(for: id), options: .atomic)
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added[index].accent = accent
@@ -115,6 +184,8 @@ final class AppLibrary {
     func remove(_ id: String) {
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added.remove(at: index)
+            saved.order.removeAll { $0 == id }
+            saved.pinned.remove(id)
             try? FileManager.default.removeItem(at: iconFile(for: id))
         } else if Catalog.services.contains(where: { $0.id == id && $0.kind != .settings && $0.kind != .addApp }) {
             saved.hidden.insert(id)
@@ -128,8 +199,12 @@ final class AppLibrary {
         save()
     }
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(saved) { try? data.write(to: file, options: .atomic) }
+    @discardableResult
+    private func save() -> Bool {
+        do {
+            try JSONEncoder().encode(saved).write(to: file, options: .atomic)
+            return true
+        } catch { return false }
     }
 
     private static func darkened(_ hex: String) -> String {

@@ -5,8 +5,9 @@ cd "$(dirname "$0")"
 
 # One universal binary: Apple silicon and Intel Macs.
 ARCHS=(--arch arm64 --arch x86_64)
-swift build -c release "${ARCHS[@]}"
-BIN="$(swift build -c release "${ARCHS[@]}" --show-bin-path)"
+BUILD_LOCATION=(--scratch-path "${MACTV_BUILD_DIR:-.build}")
+swift build -c release "${ARCHS[@]}" "${BUILD_LOCATION[@]}"
+BIN="$(swift build -c release "${ARCHS[@]}" "${BUILD_LOCATION[@]}" --show-bin-path)"
 
 APP="build/Mac TV.app"
 rm -rf "$APP"

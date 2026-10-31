@@ -121,9 +121,14 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var shelfAppIndex = 0
     /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
     @Published var tilt: CGSize = .zero
-    @Published var pairing = false
+    @Published var pairing = false { didSet { if pairing { refreshRemoteURL() } } }
     /// The Settings sheet on the TV, while it's open.
     @Published var settings: SettingsPanel?
+    /// Arrange apps with the keyboard, game controller or phone's D-pad.
+    @Published var organizer: AppOrganizer?
+    @Published var playbackCheck: PlaybackDiagnostics?
+    @Published var playerFailure: PlayerFailure?
+    @Published var topShelfPreferences: TopShelfPreferencesPanel?
     /// The add-app sheet on the TV, while it's open.
     @Published var adder: AppAdder?
     /// The Movies app's screen, while it's open.
@@ -138,6 +143,9 @@ final class TVController: NSObject, ObservableObject {
     @Published var profile: Profile
     /// The movie playing, in `.movie` mode.
     @Published private(set) var moviePlayer: MoviePlayer?
+    @Published private(set) var currentLocalMovie: Movie?
+    private var localMoviePlayer = "native"
+    private var playbackRequest = UUID()
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
     @Published private(set) var screensaver = false
     @Published private(set) var sleepAt: Date?
@@ -230,11 +238,16 @@ final class TVController: NSObject, ObservableObject {
     private static let lowBattery = 20
     private var lastActivity = Date()
 
-    override init() {
+    override convenience init() {
         let store = ProfileStore()
-        profiles = store
-        profile = store.current
-        library = AppLibrary(profileID: store.current.id)
+        self.init(library: AppLibrary(profileID: store.current.id), profiles: store)
+    }
+
+    init(library: AppLibrary, profiles: ProfileStore? = nil) {
+        let store = profiles ?? ProfileStore(folder: library.storageFolder)
+        self.profiles = store
+        self.profile = store.current
+        self.library = library
         super.init()
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
@@ -255,7 +268,9 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, !pairing, settings == nil, setup == nil, profilePicker == nil, controlCenter == nil, !screensaver,
+        if mode == .launcher, !pairing, settings == nil, organizer == nil, playbackCheck == nil,
+           topShelfPreferences == nil, adder == nil, movies == nil, setup == nil, profilePicker == nil,
+           controlCenter == nil, !screensaver,
            Date().timeIntervalSince(lastActivity) > TimeInterval(ScreenSaverSettings.delayMinutes * 60) {
             showScreensaver()
         }
@@ -374,10 +389,56 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Adding and removing apps
 
     func reloadServices() {
+        let oldFocus = focus
+        let shelfID = services.indices.contains(shelfAppIndex) ? services[shelfAppIndex].id : nil
+        let focusedID: String?
+        if case .app(let index) = focus, services.indices.contains(index) { focusedID = services[index].id }
+        else { focusedID = shelfID }
         services = library.services()
-        if case .app(let index) = focus, index >= services.count { setFocus(.app(max(services.count - 1, 0))) }
-        if shelfAppIndex >= min(columns, services.count) { shelfAppIndex = 0 }
-        if case .shelf = focus, shelfCount == 0 { setFocus(.app(shelfAppIndex)) }
+        if let index = services.firstIndex(where: { $0.id == shelfID }), index < columns { shelfAppIndex = index }
+        else { shelfAppIndex = 0 }
+        let newIndex = services.firstIndex { $0.id == focusedID }
+        switch oldFocus {
+        case .app(let index):
+            let next = newIndex ?? min(index, max(services.count - 1, 0))
+            setFocus(.app(next))
+            // setFocus skips equal numeric indices, but the item at an index may have changed.
+            if next < columns { shelfAppIndex = next }
+        case .shelf(let index):
+            if let newIndex, newIndex < columns, shelfCount > 0 {
+                setFocus(.shelf(min(index, shelfCount - 1)))
+            } else {
+                setFocus(.app(newIndex ?? shelfAppIndex))
+            }
+        case .status(let item):
+            if !statusItems.contains(item) { setFocus(.status(.controlCenter)) }
+        }
+        reconcileOrganizerSelection()
+    }
+
+    var arrangedServices: [Service] { services.filter { $0.kind != .addApp && $0.kind != .settings } }
+
+    func isPinned(_ id: String) -> Bool { library.isPinned(id) }
+
+    @discardableResult
+    func setPinned(_ id: String, _ pinned: Bool) -> Bool {
+        guard library.setPinned(id, pinned) else { showToast("Couldn't save favourites. Check available storage and folder permissions."); return false }
+        reloadServices()
+        return true
+    }
+
+    func canMoveApp(_ id: String, by offset: Int) -> Bool {
+        guard offset == -1 || offset == 1 else { return false }
+        let group = arrangedServices.filter { isPinned($0.id) == isPinned(id) }
+        guard let index = group.firstIndex(where: { $0.id == id }) else { return false }
+        return group.indices.contains(index + offset)
+    }
+
+    @discardableResult
+    func moveApp(_ id: String, by offset: Int) -> Bool {
+        guard library.move(id, by: offset) else { showToast("Couldn't save that app's position."); return false }
+        reloadServices()
+        return true
     }
 
     /// Adds a website. Its tile appears at once; the official icon follows when found.
@@ -392,9 +453,10 @@ final class TVController: NSObject, ObservableObject {
         let app = library.add(name: trimmed.isEmpty ? fallbackName : trimmed, url: url, bundleID: nil)
         reloadServices()
         showToast("Added \(app.name)")
+        let origin = library
         Task { [weak self] in
             let png = await IconFinder.icon(forSite: url, name: app.name)
-            await MainActor.run { self?.useIcon(png, for: app.id) }
+            await MainActor.run { self?.useIcon(png, for: app.id, in: origin) }
         }
         return app
     }
@@ -423,20 +485,23 @@ final class TVController: NSObject, ObservableObject {
         if game == SteamLibrary.bigPicture {
             useIcon(SteamLibrary.appURL.flatMap { IconFinder.icon(forAppAt: $0.path) }, for: app.id)
         } else {
+            let origin = library
             Task { [weak self] in
                 let png = await SteamLibrary.tile(for: game.appID)
-                await MainActor.run { self?.useIcon(png, for: app.id) }
+                await MainActor.run { self?.useIcon(png, for: app.id, in: origin) }
             }
         }
         return app
     }
 
-    private func useIcon(_ png: Data?, for id: String) {
+    func useIcon(_ png: Data?, for id: String, in origin: AppLibrary? = nil) {
+        let target = origin ?? library
+        guard target.containsAddedApp(id) else { return }
         if let png, let image = NSImage(data: png)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            library.setIcon(png, accent: TileArt.brandColor(from: image), for: id)
+            target.setIcon(png, accent: TileArt.brandColor(from: image), for: id)
         }
         Icons.forget(id)
-        reloadServices()
+        if target === library { reloadServices() }
     }
 
     func removeApp(_ id: String) {
@@ -454,6 +519,7 @@ final class TVController: NSObject, ObservableObject {
 
     /// The phone remote's app-management requests.
     func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? {
+        if let response = handleSubtitleRequest(request) ?? handleFilesRequest(request) { return response }
         let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
         switch (request.method, request.path) {
         case ("GET", "/macapps"):
@@ -482,6 +548,21 @@ final class TVController: NSObject, ObservableObject {
         case ("POST", "/apps/restore"):
             restoreBuiltInApps()
             return .json(["ok": true])
+        case ("POST", "/apps/pin"):
+            guard let id = body["id"] as? String, let value = body["pinned"] as? NSNumber,
+                  CFGetTypeID(value) == CFBooleanGetTypeID(), arrangedServices.contains(where: { $0.id == id }) else {
+                return .json(["error": "Choose an app and whether to pin it."], status: "400 Bad Request")
+            }
+            guard setPinned(id, value.boolValue) else { return .json(["error": "Couldn't save favourites. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
+            return .json(["ok": true])
+        case ("POST", "/apps/move"):
+            guard let id = body["id"] as? String, let value = body["offset"] as? NSNumber,
+                  CFGetTypeID(value) != CFBooleanGetTypeID(), value == -1 || value == 1,
+                  canMoveApp(id, by: value.intValue) else {
+                return .json(["error": "That app can't move further in this group."], status: "400 Bad Request")
+            }
+            guard moveApp(id, by: value.intValue) else { return .json(["error": "Couldn't save that app's position. Check storage on the Mac."], status: "500 Internal Server Error") }
+            return .json(["ok": true])
         default:
             return nil
         }
@@ -500,7 +581,7 @@ final class TVController: NSObject, ObservableObject {
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
         switch shelfService.kind {
-        case .web, .app, .steam, .movies: return 1
+        case .web, .app, .steam, .movies: return TopShelfFeed.shared.searchURL(for: shelfService) == nil ? 1 : 2
         case .addApp, .settings: return 0
         }
     }
@@ -582,26 +663,16 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func activateShelf(_ index: Int) {
-        open(shelfService)
+        if index == 0, let url = TopShelfFeed.shared.searchURL(for: shelfService) { play(shelfService, url: url) }
+        else { open(shelfService) }
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
-        if setup != nil {
-            handleSetup(command)
-            return
-        }
-        if profilePicker != nil {
-            handleProfiles(command)
-            return
-        }
-        if controlCenter != nil {
-            handleControlCenter(command)
-            return
-        }
-        if adder != nil {
-            handleAdder(command)
-            return
-        }
+        if setup != nil { handleSetup(command); return }
+        if profilePicker != nil { handleProfiles(command); return }
+        if playbackCheck != nil { switch command { case .back, .select: playbackCheck = nil; default: break }; return }
+        if topShelfPreferences != nil { handleTopShelfPreferences(command); return }
+        if adder != nil { handleAdder(command); return }
         if pairing {
             switch command {
             case .select, .back: pairing = false
@@ -609,10 +680,9 @@ final class TVController: NSObject, ObservableObject {
             }
             return
         }
-        if settings != nil {
-            handleSettings(command)
-            return
-        }
+        if organizer != nil { handleOrganizer(command); return }
+        if settings != nil { handleSettings(command); return }
+        if controlCenter != nil { handleControlCenter(command); return }
         if movies != nil {
             handleMovies(command)
             return
@@ -641,9 +711,12 @@ final class TVController: NSObject, ObservableObject {
 
     func refreshRemoteURL() {
         guard remotePort != 0 else { return }
+        let code = RemoteServer.pairingCode()
+        let codeChanged = code != remoteToken
+        remoteToken = code
         let found: [(label: String, ip: String?)] = [("Same Wi-Fi", LAN.ipv4()), ("Tailscale", LAN.tailscaleIPv4())]
         let addresses = found.compactMap { entry in entry.ip.map { (entry.label, "http://\($0):\(remotePort)") } }
-        guard addresses.map(\.1) != remoteLinks.map(\.address) else { return }
+        guard codeChanged || addresses.map(\.1) != remoteLinks.map(\.address) else { return }
         remoteLinks = addresses.map { label, address in
             RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteToken)"))
         }
@@ -656,15 +729,16 @@ final class TVController: NSObject, ObservableObject {
         var state: [String: Any] = [
             "device": deviceName,
             "mode": "launcher",
-            "apps": services.filter { $0.kind != .settings && $0.kind != .addApp }.map {
-                ["id": $0.id, "name": $0.name, "icon": Icons.image(for: $0) != nil]
+            "apps": arrangedServices.map { service -> [String: Any] in
+                ["id": service.id, "name": service.name, "icon": Icons.image(for: service) != nil,
+                 "pinned": isPinned(service.id), "canMoveEarlier": canMoveApp(service.id, by: -1),
+                 "canMoveLater": canMoveApp(service.id, by: 1)]
             },
             "canRestore": library.hasHiddenBuiltIns,
             // Which sheet is open on the TV, if any: the remote can show it.
             "profile": profile.name,
-            // Where focus is on the home screen, for the remote and for testing.
             "focus": String(describing: focus),
-            "sheet": setup != nil ? "setup" : profilePicker != nil ? "profiles" : adder != nil ? "add-app" : pairing ? "pairing" : settings != nil ? "settings" : "",
+            "sheet": setup != nil ? "setup" : profilePicker != nil ? "profiles" : playbackCheck != nil ? "playback-check" : topShelfPreferences != nil ? "top-shelf" : adder != nil ? "add-app" : pairing ? "pairing" : organizer != nil ? "arrange-apps" : settings != nil ? "settings" : controlCenter != nil ? "control-center" : "",
             "autoSkip": autoSkip,
             "autoNext": autoNext,
             "keepMacAwake": keepMacAwake,
@@ -675,6 +749,10 @@ final class TVController: NSObject, ObservableObject {
             // Minutes left on the sleep timer; 0 when it's off.
             "sleepMinutes": sleepMinutesLeft,
         ]
+        state["iinaInstalled"] = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.colliderli.iina") != nil
+        if let movie = currentLocalMovie {
+            state["currentLocalMovie"] = ["id": PhoneFiles.id(for: movie.url), "title": movie.displayTitle, "player": localMoviePlayer]
+        }
         if case .player(let service) = mode {
             state["mode"] = "player"
             state["current"] = ["id": service.id, "name": service.name]
@@ -689,7 +767,7 @@ final class TVController: NSObject, ObservableObject {
 
     /// Everything a press can change on Mac TV's own screens; a change means focus moved somewhere.
     private var feedbackState: String {
-        String(describing: (focus, setup, profilePicker, controlCenter, settings, adder, movies, pairing, mode == .launcher))
+        String(describing: (focus, setup, profilePicker, controlCenter, settings, organizer, playbackCheck, topShelfPreferences, adder, movies, pairing, mode == .launcher))
     }
 
     func iconPNG(for id: String) -> Data? {
@@ -729,10 +807,18 @@ final class TVController: NSObject, ObservableObject {
             SystemControl.sleepNow()
             return
         case .controlCenter:
+            // First-run setup and profile selection retain ownership of input.
+            guard setup == nil, profilePicker == nil else { return }
             if controlCenter != nil {
                 controlCenter = nil
             } else {
                 if mode != .launcher || movies != nil { goHome() }
+                settings = nil
+                organizer = nil
+                playbackCheck = nil
+                topShelfPreferences = nil
+                pairing = false
+                adder = nil
                 openControlCenter()
             }
             return
@@ -774,6 +860,13 @@ final class TVController: NSObject, ObservableObject {
 
     func open(_ service: Service) {
         Analytics.send(.appOpened, ["app": analyticsAppName(service)])
+        playbackRequest = UUID()
+        settings = nil
+        pairing = false
+        adder = nil
+        organizer = nil
+        playbackCheck = nil
+        topShelfPreferences = nil
         switch service.kind {
         case .web(let url):
             play(service, url: url)
@@ -796,6 +889,9 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func play(_ service: Service, url: URL) {
+        playbackRequest = UUID()
+        currentLocalMovie = nil
+        playerFailure = nil
         let web = makeWebView(for: service)
         web.load(URLRequest(url: url))
         webView = web
@@ -808,6 +904,8 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func goHome() {
+        playbackRequest = UUID()
+        currentLocalMovie = nil
         if let moviePlayer {
             moviePlayer.stop()
             self.moviePlayer = nil
@@ -824,6 +922,10 @@ final class TVController: NSObject, ObservableObject {
         mode = .launcher
         pairing = false
         settings = nil
+        organizer = nil
+        playbackCheck = nil
+        topShelfPreferences = nil
+        playerFailure = nil
         controlCenter = nil
         pointer = nil
         launchedAppID = nil
@@ -831,10 +933,84 @@ final class TVController: NSObject, ObservableObject {
         bringToFront()
     }
 
+    @discardableResult
+    func playInIINA(_ movie: Movie, subtitle: URL? = nil) -> Bool {
+        playbackRequest = UUID()
+        let identifier = "com.colliderli.iina"
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) else {
+            showToast("Install IINA to use this player or load subtitles."); return false
+        }
+        if subtitle == nil, currentLocalMovie?.path == movie.path, localMoviePlayer == "iina",
+           let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first {
+            running.activate(options: []); return true
+        }
+        let executable = app.appendingPathComponent("Contents/MacOS/iina-cli")
+        guard FileManager.default.isExecutableFile(atPath: executable.path) else { return false }
+        let position = moviePlayer?.movie.path == movie.path ? moviePlayer?.time : nil
+        let process = Process()
+        process.executableURL = executable
+        var arguments = ["--no-stdin", "--mpv-fullscreen=yes"]
+        if let position, position > 0 { arguments.append("--mpv-start=\(position)") }
+        if let subtitle { arguments.append("--mpv-sub-file=\(subtitle.path)") }
+        arguments.append(movie.path)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { showToast("IINA couldn't open that file."); return false }
+        goHome()
+        currentLocalMovie = movie
+        localMoviePlayer = "iina"
+        launchedAppID = identifier
+        return true
+    }
+
+    /// Invoke IINA's own subtitle search after it has opened the selected movie.
+    func searchIINASubtitles() -> Bool {
+        guard AXIsProcessTrusted() else {
+            showToast("Allow Mac TV in Accessibility settings to control IINA."); return false
+        }
+        guard let expected = currentLocalMovie?.path else { return false }
+        Task { @MainActor [weak self] in
+            for _ in 0..<8 {
+                try? await Task.sleep(for: .milliseconds(350))
+                guard let self, self.currentLocalMovie?.path == expected else { return }
+                guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.colliderli.iina").first else { continue }
+                running.activate(options: [])
+                let element = AXUIElementCreateApplication(running.processIdentifier)
+                var bar: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, kAXMenuBarAttribute as CFString, &bar) == .success,
+                      let bar else { continue }
+                if self.pressIINASubtitleSearch(unsafeBitCast(bar, to: AXUIElement.self), depth: 0) { return }
+            }
+            self?.showToast("IINA search wasn't available. Use the phone's subtitle upload or web search.")
+        }
+        return true
+    }
+
+    private func pressIINASubtitleSearch(_ element: AXUIElement, depth: Int) -> Bool {
+        guard depth < 6 else { return false }
+        var title: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &title)
+        let name = (title as? String ?? "").lowercased()
+        if name.contains("online") && name.contains("subtitle") && (name.contains("find") || name.contains("search")) {
+            return AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
+        }
+        var children: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children)
+        for child in children as? [AXUIElement] ?? [] {
+            if pressIINASubtitleSearch(child, depth: depth + 1) { return true }
+        }
+        return false
+    }
+
     // MARK: Movies
 
     /// Plays a movie in Mac TV's own player; files it can't play open in IINA or VLC.
     func playMovie(_ movie: Movie, from seconds: Double) {
+        let request = UUID()
+        playbackRequest = request
+        currentLocalMovie = movie
+        localMoviePlayer = "native"
         Task { @MainActor in
             let opened: Result<PlaybackEngine, PlaybackProblem>
             if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
@@ -842,6 +1018,10 @@ final class TVController: NSObject, ObservableObject {
                     .map { $0 as PlaybackEngine }
             } else {
                 opened = await AVPlayback.open(movie.url).map { $0 as PlaybackEngine }
+            }
+            guard playbackRequest == request else {
+                if case .success(let engine) = opened { engine.stop() }
+                return
             }
             // The kind of file and how it played, never its name.
             let format = movie.url.pathExtension.lowercased()
@@ -880,6 +1060,8 @@ final class TVController: NSObject, ObservableObject {
 
     /// Back to the Movies screen, on what was playing: first in Continue Watching, unless it's finished.
     func closeMovie() {
+        playbackRequest = UUID()
+        currentLocalMovie = nil
         moviePlayer?.stop()
         if let path = moviePlayer?.movie.path {
             for (row, line) in movieRows.enumerated() {
@@ -902,13 +1084,8 @@ final class TVController: NSObject, ObservableObject {
     /// IINA or VLC play almost anything; IINA opens full screen. Remote presses go to it as keys.
     private func openElsewhere(_ movie: Movie) {
         let iina = "com.colliderli.iina", vlc = "org.videolan.vlc"
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iina) != nil {
-            var link = URLComponents(string: "iina://open")!
-            link.queryItems = [URLQueryItem(name: "url", value: movie.url.absoluteString), URLQueryItem(name: "full_screen", value: "1")]
-            if let url = link.url { NSWorkspace.shared.open(url) }
-            launchedAppID = iina
-            showToast("Playing \(movie.title) in IINA. Home comes back here.")
-        } else if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: vlc) {
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iina) != nil, playInIINA(movie) { return }
+        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: vlc) {
             NSWorkspace.shared.open([movie.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
             launchedAppID = vlc
             showToast("Playing \(movie.title) in VLC. Home comes back here.")
@@ -945,6 +1122,7 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Player
 
     private func handleInPlayer(_ command: RemoteCommand, service: Service) {
+        if playerFailure != nil { handlePlayerFailure(command); return }
         guard let web = webView else { return }
         switch command {
         case .move(let direction): sendKey(.direction(direction), to: web)
@@ -959,14 +1137,10 @@ final class TVController: NSObject, ObservableObject {
                 goHome()
             }
         case .playPause:
-            web.evaluateJavaScript(Self.togglePlaybackJS) { [weak self] result, _ in
-                MainActor.assumeIsolated {
-                    if (result as? String) == "none" { self?.sendKey(.space, to: web) }
-                }
-            }
+            runWebPlayback("toggle", in: web, fallback: .space)
         case .seek(let forward):
-            // Players map arrows to seek; Netflix rejects direct currentTime changes.
-            sendKey(forward ? .right : .left, to: web)
+            if service.id == "netflix" { sendKey(forward ? .right : .left, to: web) }
+            else { runWebPlayback(forward ? "forward" : "backward", in: web, fallback: forward ? .right : .left) }
         case .text(let text):
             for character in text {
                 sendKey(character == "\n" ? .enter : Key(code: 0, chars: String(character)), to: web)
@@ -984,15 +1158,20 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    private static let togglePlaybackJS = """
-        (() => {
-          const videos = [...document.querySelectorAll('video')];
-          const v = videos.find(v => !v.paused) || videos.find(v => v.readyState > 0);
-          if (!v) return 'none';
-          if (v.paused) { v.play(); return 'playing'; }
-          v.pause(); return 'paused';
-        })()
-        """
+    private func runWebPlayback(_ action: String, in web: WKWebView, fallback: Key) {
+        Task { @MainActor [weak self, weak web] in
+            guard let web else { return }
+            do {
+                let value = try await web.callAsyncJavaScript("return await window.__macTVPlayback(action)",
+                    arguments: ["action": action], contentWorld: .page)
+                guard self?.webView === web else { return }
+                if value as? String == "none" { self?.sendKey(fallback, to: web) }
+                else if value as? String == "unsupported" { self?.showToast("The website didn't accept this control. Try its on-screen player controls.") }
+            } catch {
+                if self?.webView === web { self?.sendKey(fallback, to: web) }
+            }
+        }
+    }
 
     private func sendKey(_ key: Key, to web: WKWebView) {
         guard let window else { return }
@@ -1068,6 +1247,18 @@ final class TVController: NSObject, ObservableObject {
         case .select: code = 36
         case .back: code = 53
         case .playPause: code = 49
+        case .deleteBackward: code = 51
+        case .text(let text):
+            guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+            for character in text {
+                var units = Array(String(character).utf16)
+                for down in [true, false] {
+                    guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down) else { continue }
+                    event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
+                    event.postToPid(pid)
+                }
+            }
+            return
         default: return
         }
         SystemControl.postKeyToFrontApp(code)
@@ -1082,6 +1273,8 @@ final class TVController: NSObject, ObservableObject {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsAirPlayForMediaPlayback = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.userContentController.addUserScript(
+            WKUserScript(source: WebPlayback.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(
             WKUserScript(source: AutoPlay.script(skip: autoSkip, next: autoNext), injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         if service.dpadNavigation {
@@ -1170,6 +1363,16 @@ extension TVController: WKUIDelegate {
 
 // Google sign-in (YouTube, YouTube Music) refuses embedded browsers; switch identity on its pages.
 extension TVController: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        recordPlayerFailure(webView, error: error)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        recordPlayerFailure(webView, error: error)
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { recordPlayerFailure(webView) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === self.webView { playerFailure = nil }
+    }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard navigationAction.targetFrame?.isMainFrame ?? true, let host = navigationAction.request.url?.host() else { return .allow }
         let signingIn = host == "accounts.google.com" || host.hasSuffix(".accounts.google.com")

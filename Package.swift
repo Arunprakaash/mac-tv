@@ -14,6 +14,7 @@ let package = Package(
             name: "MacTV",
             dependencies: [.product(name: "TelemetryDeck", package: "TelemetryDeck")],
             path: "Sources/MacTV"
-        )
+        ),
+        .testTarget(name: "MacTVTests", dependencies: ["MacTV"], path: "Tests/MacTVTests")
     ]
 )

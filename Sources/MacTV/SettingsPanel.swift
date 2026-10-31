@@ -4,13 +4,15 @@ import SwiftUI
 /// section's symbol large on the left like tvOS. Driven by the D-pad, the keyboard or the mouse.
 struct SettingsPanel: Equatable {
     enum Section: Int, CaseIterable {
-        case profiles, remotes, watching, screenSaver, sounds, apps, movies, power, about
+        case profiles, remotes, watching, screenSaver, sounds, apps, movies, dedicatedTV, power, about
     }
 
     /// One row on a section's page.
     enum Row: Equatable {
         case phoneRemote, pairingCode, controller
-        case sleepTimer, autoSkip, autoNext
+        case sleepTimer, autoSkip, autoNext, playbackCheck
+        case addApp, arrangeApps, topShelfPreferences
+        case dedicatedTV, preferredDisplay, launchAtLogin
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
         case feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
@@ -35,6 +37,7 @@ extension SettingsPanel.Section {
         case .sounds: "Sounds and Haptics"
         case .apps: "Apps"
         case .movies: "Movies"
+        case .dedicatedTV: "Dedicated TV"
         case .power: "Power"
         case .about: "About"
         }
@@ -49,6 +52,7 @@ extension SettingsPanel.Section {
         case .sounds: "speaker.wave.2.fill"
         case .apps: "square.grid.2x2.fill"
         case .movies: "film.stack.fill"
+        case .dedicatedTV: "tv.fill"
         case .power: "bolt.fill"
         case .about: "info.circle"
         }
@@ -63,6 +67,7 @@ extension SettingsPanel.Section {
         case .sounds: "Quiet clicks as you move around, and a tap on the trackpad or controller."
         case .apps: "Add any website, Mac app or Steam game to the home screen."
         case .movies: "Play the video files in your folders, MKV included."
+        case .dedicatedTV: "Choose a display and start Mac TV automatically."
         case .power: "Keep the Mac awake for the remote, and choose what closing the lid does."
         case .about: "Mac TV is free and open source."
         }
@@ -72,14 +77,16 @@ extension SettingsPanel.Section {
     @MainActor var rows: [SettingsPanel.Row] {
         switch self {
         case .remotes: [.phoneRemote, .pairingCode, .controller]
-        case .watching: [.sleepTimer, .autoSkip, .autoNext]
+        case .watching: [.sleepTimer, .autoSkip, .autoNext, .playbackCheck]
         case .screenSaver: ScreenSaverSettings.wallpaper == .aerials && !Aerials.categories.isEmpty
             ? [.wallpaper, .aerialCategory, .saverDelay, .saverClock, .saverPreview]
             : [.wallpaper, .saverDelay, .saverClock, .saverPreview]
         case .sounds: [.feedback]
+        case .apps: [.addApp, .arrangeApps, .topShelfPreferences]
+        case .dedicatedTV: [.dedicatedTV, .preferredDisplay, .launchAtLogin]
         case .power: [.keepMacAwake, .lidOverride, .screenOff, .sleepMac]
         case .about: Analytics.available ? [.version, .source, .analytics] : [.version, .source]
-        case .profiles, .apps, .movies: []
+        case .profiles, .movies: []
         }
     }
 }
@@ -126,7 +133,8 @@ extension TVController {
         let rows = panel.section.rows
         // Left steps or switches off a row that has a value; on any other row it goes back.
         let adjustable: Set<String> = ["sleepTimer", "wallpaper", "aerialCategory", "saverDelay", "saverClock", "feedback",
-                                       "autoSkip", "autoNext", "keepMacAwake", "lidOverride", "analytics"]
+                                       "autoSkip", "autoNext", "dedicatedTV", "preferredDisplay", "launchAtLogin",
+                                       "keepMacAwake", "lidOverride", "analytics"]
         switch command {
         case .back:
             panel.open = false
@@ -158,9 +166,6 @@ extension TVController {
         switch section {
         case .profiles:
             openProfiles()
-        case .apps:
-            settings = nil
-            adder = AppAdder()
         case .movies:
             settings = nil
             openMovies()
@@ -174,6 +179,9 @@ extension TVController {
     /// Left and right: step a value, or switch a setting off and on.
     private func adjustSetting(_ row: SettingsPanel.Row, forward: Bool) {
         switch row {
+        case .dedicatedTV: setDedicatedTVMode(forward)
+        case .preferredDisplay: stepTVDisplay(forward ? 1 : -1)
+        case .launchAtLogin: setLaunchAtLogin(forward)
         case .sleepTimer: stepSleepTimer(by: forward ? 1 : -1, wrap: false)
         case .wallpaper: ScreenSaverSettings.step(forward ? 1 : -1)
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(forward ? 1 : -1)
@@ -197,6 +205,15 @@ extension TVController {
         case .pairingCode: break
         case .controller:
             showToast(controller == nil ? "Pair a controller in System Settings › Bluetooth" : "Press its Menu button any time to come home")
+        case .addApp:
+            settings = nil
+            adder = AppAdder()
+        case .arrangeApps: openOrganizer()
+        case .topShelfPreferences: openTopShelfPreferences()
+        case .playbackCheck: openPlaybackCheck()
+        case .dedicatedTV: setDedicatedTVMode(!dedicatedTVMode)
+        case .preferredDisplay: stepTVDisplay(1, wrap: true)
+        case .launchAtLogin: setLaunchAtLogin(!launchAtLogin)
         case .sleepTimer: stepSleepTimer(by: 1, wrap: true)
         case .autoSkip: autoSkip.toggle()
         case .autoNext: autoNext.toggle()
@@ -249,6 +266,7 @@ extension TVController {
         case .movies:
             let count = MovieLibrary.shared.folders.count
             return "\(count) folder\(count == 1 ? "" : "s")"
+        case .dedicatedTV: return dedicatedTVMode ? "On · \(preferredTVDisplayName)" : "Off"
         case .power: return keepMacAwake ? "Keeps Mac awake" : "Sleeps as usual"
         case .about: return "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")"
         }
@@ -366,6 +384,28 @@ struct SettingsSheet: View {
             } else {
                 title("Game controller", "Pair one in System Settings › Bluetooth")
             }
+        case .addApp:
+            title("Add App", "Add a website, Mac app or Steam game")
+            chevron
+        case .arrangeApps:
+            title("Arrange Apps", "Order and favourites")
+            chevron
+        case .topShelfPreferences:
+            title("Top Shelf", "Choose sources")
+            chevron
+        case .playbackCheck:
+            title("Playback check")
+            chevron
+        case .dedicatedTV:
+            title(tv.dedicatedTVMode ? "Exit TV mode" : "Enter TV mode")
+            SettingSwitch(on: tv.dedicatedTVMode)
+        case .preferredDisplay:
+            title("Preferred display")
+            stepper(tv.preferredTVDisplayName, active: panel.section.rows[panel.row] == .preferredDisplay)
+        case .launchAtLogin:
+            title("Launch at login")
+            if tv.loginNeedsApproval { value("Approval needed") }
+            else { SettingSwitch(on: tv.launchAtLogin) }
         case .sleepTimer:
             title("Sleep timer")
             let minutes = tv.sleepMinutesLeft

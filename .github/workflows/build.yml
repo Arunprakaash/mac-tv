@@ -1,0 +1,25 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          swift test --disable-xctest
+          node Tests/WebPlayback/bridge.test.cjs
+      - name: Build universal app
+        run: ./build.sh
+      - name: Check signature and architectures
+        run: |
+          codesign --verify --deep --strict 'build/Mac TV.app'
+          lipo -archs 'build/Mac TV.app/Contents/MacOS/MacTV'
+      - name: Archive app preserving permissions
+        run: ditto -c -k --sequesterRsrc --keepParent 'build/Mac TV.app' build/Mac-TV.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mac-TV
+          path: build/Mac-TV.zip

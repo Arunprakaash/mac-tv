@@ -25,7 +25,7 @@ enum DRMSelfTest {
         }
     }
 
-    private static let script = #"""
+    static let script = #"""
     const out = {
       secureContext: window.isSecureContext,
       mediaSource: typeof MediaSource !== 'undefined',
@@ -55,7 +55,11 @@ enum RemoteSnapshot {
     static func start(to file: URL, sheet: String?) {
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 412, height: 860))
         web.customUserAgent = "Mozilla/5.0 (Linux; Android 16; Pixel) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36"
-        let code = RemoteServer.pairingCode()
+        guard let code = ProcessInfo.processInfo.environment["MACTV_REMOTE_CODE"],
+              code.count == 6, code.allSatisfy(\.isNumber) else {
+            print("Set MACTV_REMOTE_CODE to the current six-digit code shown by the running Mac TV.")
+            exit(1)
+        }
         web.loadHTMLString(RemotePage.html, baseURL: URL(string: "http://127.0.0.1:8765/?k=\(code)")!)
         webView = web
 

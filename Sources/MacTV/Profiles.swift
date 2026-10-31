@@ -31,9 +31,12 @@ final class ProfileStore {
     static let colors = ["#0A84FF", "#FF9F0A", "#30D158", "#BF5AF2", "#FF375F", "#64D2FF"]
 
     private var saved: Saved
-    private let file = AppFolder.url.appendingPathComponent("profiles.json")
+    private let file: URL
+    private let folder: URL
 
-    init() {
+    init(folder: URL = AppFolder.url) {
+        self.folder = folder
+        file = folder.appendingPathComponent("profiles.json")
         if let data = try? Data(contentsOf: file), let decoded = try? JSONDecoder().decode(Saved.self, from: data),
            !decoded.profiles.isEmpty {
             saved = decoded
@@ -70,7 +73,7 @@ final class ProfileStore {
         let profile = saved.profiles.remove(at: index)
         if saved.current == id { saved.current = Profile.mainID }
         save()
-        try? FileManager.default.removeItem(at: AppFolder.url.appendingPathComponent("apps-\(id).json"))
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("apps-\(id).json"))
         if let store = profile.store {
             WKWebsiteDataStore.remove(forIdentifier: store) { _ in }
         }
@@ -104,7 +107,7 @@ extension TVController {
         goHome()
         profiles.select(id)
         profile = profiles.current
-        library = AppLibrary(profileID: profile.id)
+        library = AppLibrary(profileID: profile.id, folder: library.storageFolder)
         reloadServices()
         setFocus(.app(0))
         showToast("Hi, \(profile.name)")
@@ -174,7 +177,7 @@ extension TVController {
             if picker.confirmingRemove {
                 let removed = all[index]
                 profiles.remove(removed.id)
-                if removed.id == profile.id { profile = profiles.current; library = AppLibrary(profileID: profile.id); reloadServices() }
+                if removed.id == profile.id { profile = profiles.current; library = AppLibrary(profileID: profile.id, folder: library.storageFolder); reloadServices() }
                 showToast("Removed \(removed.name)")
                 picker = ProfilePicker(index: max(0, index - 1))
             } else {

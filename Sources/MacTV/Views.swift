@@ -42,6 +42,11 @@ struct RootView: View {
         ZStack {
             if case .player = tv.mode, let web = tv.webView {
                 WebViewHost(webView: web).id(ObjectIdentifier(web))
+                    .allowsHitTesting(tv.playerFailure == nil)
+                    .accessibilityHidden(tv.playerFailure != nil)
+                if tv.playerFailure != nil {
+                    TVCanvas { PlaybackFailureView(tv: tv) }.ignoresSafeArea()
+                }
             } else if tv.mode == .movie, let player = tv.moviePlayer {
                 MoviePlayerView(player: player).id(ObjectIdentifier(player))
             } else {
@@ -49,45 +54,83 @@ struct RootView: View {
                     // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
                     TVCanvas { MoviesScreen(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.controlCenter == nil && tv.settings == nil && tv.organizer == nil && !tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.controlCenter != nil || tv.settings != nil || tv.organizer != nil || tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
                 } else if !tv.screensaver {
-                    // Not drawn under the screen saver, which covers it completely: nothing behind it keeps working.
                     Wallpaper().ignoresSafeArea()
                     TVCanvas { HomeView(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.organizer == nil && tv.settings == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && !tv.pairing && tv.adder == nil && tv.controlCenter == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.organizer != nil || tv.settings != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.pairing || tv.adder != nil || tv.controlCenter != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
                 }
                 if tv.controlCenter != nil {
-                    // Drops in from the top like Apple TV's; glass slides rather than fades, so it keeps refracting.
                     TVCanvas { ControlCenterView(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.settings == nil && tv.organizer == nil && !tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.settings != nil || tv.organizer != nil || tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
                         .transition(.move(edge: .top))
                 }
                 if tv.settings != nil {
                     TVCanvas { SettingsSheet(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.organizer == nil && !tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.organizer != nil || tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
+                        .background { SheetBackdrop() }
+                        .transition(Motion.sheet(reduceMotion: reduceMotion))
+                }
+                if tv.organizer != nil {
+                    TVCanvas { AppOrganizerSheet(tv: tv) }
+                        .ignoresSafeArea()
+                        .allowsHitTesting(!tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
                         .background { SheetBackdrop() }
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.pairing {
                     TVCanvas { PairSheet(links: tv.remoteLinks, code: tv.remoteToken) { tv.pairing = false } }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
                         .background { SheetBackdrop() }
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.adder != nil {
                     TVCanvas { AddAppSheet(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
+                        .background { SheetBackdrop() }
+                        .transition(Motion.sheet(reduceMotion: reduceMotion))
+                }
+                if tv.topShelfPreferences != nil {
+                    TVCanvas { TopShelfPreferencesSheet(tv: tv) }
+                        .ignoresSafeArea()
+                        .allowsHitTesting(tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
+                        .background { SheetBackdrop() }
+                        .transition(Motion.sheet(reduceMotion: reduceMotion))
+                }
+                if tv.playbackCheck != nil {
+                    TVCanvas { PlaybackCheckSheet(tv: tv) }
+                        .ignoresSafeArea()
+                        .allowsHitTesting(tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
                         .background { SheetBackdrop() }
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.profilePicker != nil {
                     TVCanvas { ProfilesScreen(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(tv.setup == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.setup != nil || tv.screensaver)
                         .background { SheetBackdrop() }
                         .transition(.opacity)
                 }
                 if tv.setup != nil {
                     TVCanvas { SetupScreen(tv: tv) }
                         .ignoresSafeArea()
+                        .allowsHitTesting(!tv.screensaver)
+                        .accessibilityHidden(tv.screensaver)
                         .background { SheetBackdrop() }
                         .transition(.opacity)
                 }
@@ -145,6 +188,9 @@ struct RootView: View {
         .animation(Motion.appear, value: tv.toast)
         .animation(Motion.appear, value: tv.pairing)
         .animation(Motion.appear, value: tv.settings != nil)
+        .animation(Motion.appear, value: tv.organizer != nil)
+        .animation(Motion.appear, value: tv.topShelfPreferences != nil)
+        .animation(Motion.appear, value: tv.playbackCheck != nil)
         .animation(Motion.appear, value: tv.setup != nil)
         .animation(Motion.appear, value: tv.profilePicker != nil)
         .animation(Motion.appear, value: tv.controlCenter != nil)
@@ -417,6 +463,18 @@ struct AppCell: View {
         let index = item.index, service = item.service
         let focused = tv.focus == .app(index)
         AppTile(service: service, focused: focused, tilt: focused ? tv.tilt : .zero)
+            .overlay(alignment: .topTrailing) {
+                if tv.isPinned(service.id) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(.yellow)
+                        .padding(9)
+                        .background(.black.opacity(0.7), in: Circle())
+                        .padding(10)
+                        .accessibilityLabel("Favourite")
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay(alignment: .bottom) {
                 Text(service.name)
                     .font(.tv(.caption1))
@@ -549,19 +607,17 @@ struct AppBanner: View {
     let expanded: Bool
 
     /// What the Top Shelf shows now: the Movies app's own movies, or the app's popular shows.
-    private var backdrop: (id: String, image: NSImage, cover: Bool)? {
+    private var backdrop: (id: String, name: String, image: NSImage, cover: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
             if !shelf.isEmpty {
                 let pick = shelf[feed.turn % shelf.count]
                 // Posters sit on the right like album covers; frames from the film fill the screen.
-                return (pick.path, pick.image, pick.image.size.height > pick.image.size.width)
+                return (pick.path, movieLibrary.movies.first(where: { $0.path == pick.path })?.displayTitle ?? "Movies", pick.image, pick.image.size.height > pick.image.size.width)
             }
         }
-        let shows = feed.shows(for: service.id)
-        guard !shows.isEmpty else { return nil }
-        let show = shows[feed.turn % shows.count]
-        return feed.image(for: show.id).map { (String(show.id), $0, show.square) }
+        guard let show = feed.currentShow(for: service.id) else { return nil }
+        return feed.image(for: show.id).map { (String(show.id), show.name, $0, show.square) }
     }
 
     var body: some View {
@@ -594,11 +650,8 @@ struct AppBanner: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                if show != nil {
-                    // The show's artwork alone carries it; nothing is drawn over it.
-                    EmptyView()
-                } else {
-                    // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
+                if show == nil {
+                    // The show's artwork alone carries it; nothing is drawn over it. Without art, the app's name.
                     Text(service.name)
                         .font(.tv(.title1, emphasized: true))
                         .lineLimit(2)
@@ -606,8 +659,16 @@ struct AppBanner: View {
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
                 }
                 if expanded {
-                    ShelfButton(title: "Open \(service.name)", systemImage: "play.fill", focused: tv.focus == .shelf(0)) {
-                        tv.setFocus(.shelf(0)); tv.activateShelf(0)
+                    HStack(spacing: 18) {
+                        if feed.searchURL(for: service) != nil {
+                            ShelfButton(title: "Search in \(service.name)", systemImage: "magnifyingglass", focused: tv.focus == .shelf(0)) {
+                                tv.setFocus(.shelf(0)); tv.activateShelf(0)
+                            }
+                        }
+                        let openIndex = feed.searchURL(for: service) == nil ? 0 : 1
+                        ShelfButton(title: "Open \(service.name)", systemImage: "arrow.up.right", focused: tv.focus == .shelf(openIndex)) {
+                            tv.setFocus(.shelf(openIndex)); tv.activateShelf(openIndex)
+                        }
                     }
                     .padding(.top, 20)
                     .tvGlassTransition()
