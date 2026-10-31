@@ -104,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         startRemoteServer()
         installLauncherKeys()
+        tv.startPowerManagement()
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -118,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        tv.stopPowerManagement()
+    }
+
     /// First launch: a 16:9 window filling most of the TV display.
     private func placeOnTV() {
         let area = NSScreen.tvScreen.visibleFrame
@@ -131,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func screensChanged() {
         tv.refreshRemoteURL()
+        tv.refreshPower()
     }
 
     private func startRemoteServer() {
@@ -258,6 +264,12 @@ private extension NSMenu {
         item.submenu = submenu
         addItem(item)
     }
+}
+
+// `--lid-guard <pid>`: the helper that restores lid sleep once Mac TV exits (see LidSleep).
+if let flag = CommandLine.arguments.firstIndex(of: "--lid-guard"), flag + 1 < CommandLine.arguments.count,
+   let parent = pid_t(CommandLine.arguments[flag + 1]) {
+    LidSleep.runGuard(parent: parent)
 }
 
 MainActor.assumeIsolated {

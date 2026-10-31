@@ -215,6 +215,10 @@ enum RemotePage {
         <label class="toggle"><span>Play next episode automatically</span><input type="checkbox" id="auto-next"></label>
         <p class="note">Applies the next time you open an app.</p>
         <div class="group-label">Power</div>
+        <p class="note" id="lid-status"></p>
+        <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
+        <label class="toggle"><span>Stay awake with lid closed</span><input type="checkbox" id="lid-override"></label>
+        <p class="note">Works on battery and without the TV connected. Turns off by itself when the battery is low or the Mac gets hot.</p>
         <button class="row-btn" id="screen-off">Turn screen off</button>
         <button class="row-btn" id="sleep">Sleep Mac</button>
         <p class="note">After sleep, wake the Mac with its keyboard or by opening the lid.</p>
@@ -323,6 +327,9 @@ enum RemotePage {
         showSleep(s.sleepMinutes || 0);
         $('#auto-skip').checked = s.autoSkip;
         $('#auto-next').checked = s.autoNext;
+        $('#keep-awake').checked = s.keepMacAwake;
+        $('#lid-override').checked = s.lidOverride;
+        $('#lid-status').textContent = s.lidStatus || '';
         const sig = JSON.stringify([s.apps, s.canRestore]);
         if (sig !== appsShown) { appsShown = sig; renderApps(); }
       } catch (e) { if (e.message !== 'unpaired') online(false); }
@@ -477,6 +484,8 @@ enum RemotePage {
     });
     $('#auto-skip').onchange = e => send('setting', { k: 'autoSkip', v: e.target.checked });
     $('#auto-next').onchange = e => send('setting', { k: 'autoNext', v: e.target.checked });
+    $('#keep-awake').onchange = e => send('setting', { k: 'keepMacAwake', v: e.target.checked });
+    $('#lid-override').onchange = e => send('setting', { k: 'lidOverride', v: e.target.checked });
     function showSleep(minutes) {
       document.querySelectorAll('#sleep-chips button').forEach(b => b.classList.toggle('on', Number(b.dataset.m) === (minutes ? -1 : 0)));
       $('#sleep-left').textContent = minutes

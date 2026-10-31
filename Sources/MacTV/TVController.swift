@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IOKit.pwr_mgt
 import WebKit
 
 enum RemoteCommand {
@@ -147,6 +148,24 @@ final class TVController: NSObject, ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "autoNext") }
     }
 
+    /// Stop the Mac sleeping by itself while Mac TV is open, so the phone remote always reaches it.
+    /// The screen can still turn off.
+    var keepMacAwake: Bool {
+        get { UserDefaults.standard.bool(forKey: "keepMacAwake") }
+        set { UserDefaults.standard.set(newValue, forKey: "keepMacAwake"); applyPower() }
+    }
+
+    /// Keep running with the lid closed even on battery or without the TV connected.
+    var lidOverride: Bool {
+        get { UserDefaults.standard.bool(forKey: "lidOverride") }
+        set { UserDefaults.standard.set(newValue, forKey: "lidOverride"); applyPower() }
+    }
+
+    /// Lid, power and displays, refreshed every few seconds while Mac TV runs.
+    @Published private(set) var power = PowerStatus()
+    /// Whether the lid override is in effect right now.
+    @Published private(set) var lidSleepOff = false
+
     var phonePaired: Bool {
         get { UserDefaults.standard.bool(forKey: "phonePaired") }
         set { UserDefaults.standard.set(newValue, forKey: "phonePaired") }
@@ -162,12 +181,17 @@ final class TVController: NSObject, ObservableObject {
     private var historyObserver: AnyCancellable?
     private var sleepTimer: Timer?
     private var idleTimer: Timer?
+    private let macAwake = KeepAwake(kIOPMAssertionTypePreventUserIdleSystemSleep)
+    private var powerTimer: Timer?
+    private var lidGuard: Process?
+    private var wakeObserver: NSObjectProtocol?
+    private static let lowBattery = 20
     private var lastActivity = Date()
     private static let screensaverDelay: TimeInterval = 5 * 60
 
     override init() {
         super.init()
-        UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true])
+        UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkIdle() }
@@ -210,6 +234,87 @@ final class TVController: NSObject, ObservableObject {
             }
         }
         showToast("Sleep timer: \(minutes) minutes")
+    }
+
+    // MARK: Power and the lid
+
+    func startPowerManagement() {
+        applyPower()
+        // Often enough to win back the lid switch soon after powerd rewrites it.
+        powerTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshPower() }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshPower() }
+        }
+    }
+
+    func stopPowerManagement() {
+        powerTimer?.invalidate()
+        macAwake.release()
+        if lidSleepOff { releaseLid() }
+    }
+
+    func refreshPower() {
+        power = PowerStatus.current()
+        guard lidSleepOff else { return }
+        if let reason = lidOverrideStopReason() {
+            lidOverride = false
+            showToast(reason)
+        } else {
+            LidSleep.setPrevented(true)
+        }
+    }
+
+    private func applyPower() {
+        power = PowerStatus.current()
+        keepMacAwake ? macAwake.hold(reason: "Mac TV is open, so the phone remote can reach it") : macAwake.release()
+
+        if lidOverride, lidSleepOff == false {
+            if let reason = lidOverrideStopReason() {
+                UserDefaults.standard.set(false, forKey: "lidOverride")
+                showToast(reason)
+            } else if LidSleep.setPrevented(true) {
+                lidSleepOff = true
+                lidGuard = LidSleep.startGuard()
+            } else {
+                UserDefaults.standard.set(false, forKey: "lidOverride")
+                showToast("This Mac doesn't allow staying awake with the lid closed")
+            }
+        } else if !lidOverride, lidSleepOff {
+            releaseLid()
+        }
+    }
+
+    private func releaseLid() {
+        LidSleep.restore()
+        lidGuard?.terminate()
+        lidGuard = nil
+        lidSleepOff = false
+    }
+
+    /// Why the lid override has to stop now, if it does: a closed Mac that never sleeps can run
+    /// its battery flat or overheat in a bag.
+    private func lidOverrideStopReason() -> String? {
+        if !power.onAC, let battery = power.battery, battery < Self.lowBattery {
+            return "Battery low: closing the lid sleeps the Mac again"
+        }
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical: return "Mac is hot: closing the lid sleeps the Mac again"
+        default: return nil
+        }
+    }
+
+    /// One line for the remote about what closing the lid will do.
+    var lidStatus: String {
+        if lidSleepOff {
+            return power.onAC ? "Lid sleep is off while Mac TV is open. Keep the Mac somewhere ventilated."
+                : "Lid sleep is off while Mac TV is open, on battery. It turns back on below \(Self.lowBattery)%."
+        }
+        if power.closedLidModeReady { return "You can close the lid: the TV and power are connected." }
+        if !power.onAC { return "Closing the lid will sleep the Mac. Connect power, or turn on the option below." }
+        return "Closing the lid will sleep the Mac. Connect the TV, or turn on the option below."
     }
 
     // MARK: Adding and removing apps
@@ -441,6 +546,9 @@ final class TVController: NSObject, ObservableObject {
             "sheet": adder != nil ? "add-app" : (pairing ? "pairing" : ""),
             "autoSkip": autoSkip,
             "autoNext": autoNext,
+            "keepMacAwake": keepMacAwake,
+            "lidOverride": lidOverride,
+            "lidStatus": lidStatus,
             // Minutes left on the sleep timer; 0 when it's off.
             "sleepMinutes": sleepAt.map { max(1, Int(($0.timeIntervalSinceNow / 60).rounded(.up))) } ?? 0,
         ]
@@ -478,6 +586,8 @@ final class TVController: NSObject, ObservableObject {
         case .setting(let key, let value):
             if key == "autoSkip" { autoSkip = value }
             if key == "autoNext" { autoNext = value }
+            if key == "keepMacAwake" { keepMacAwake = value }
+            if key == "lidOverride" { lidOverride = value }
             return
         case .sleepMac:
             goHome()

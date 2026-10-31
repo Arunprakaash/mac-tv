@@ -52,6 +52,12 @@ Open **Settings** on the TV and scan the QR code with your phone's camera. No ap
 - **Screensaver:** after 5 idle minutes, a lock-screen-style clock appears over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour.
 - **Privacy:** the home screen never shows pictures of what you watched.
 
+## Power and the lid
+
+- **Keep Mac awake:** while Mac TV is open, the Mac doesn't go to sleep on its own, so the phone remote always reaches it. The screen can still turn off. On by default; switch it in **TV controls** on the remote.
+- **Closing the lid:** on power with the TV connected, macOS keeps the Mac running with the lid closed (Apple's closed-display mode). **TV controls** says whether closing the lid right now would sleep the Mac.
+- **Stay awake with lid closed:** an option in **TV controls** for battery, or without the TV connected, like playing music with the lid shut. No admin password needed. "Lid sleep off" shows on the home screen while it's on. It turns off by itself when the battery drops below 20% or the Mac gets hot, and when Mac TV quits, even if it crashes. A closed Mac that stays awake runs warm, so don't put it in a bag.
+
 ## Your apps
 
 The built-in apps are Netflix, YouTube, Prime Video, JioHotstar, Apple TV, Spotify, YouTube Music and IINA (if it's installed).

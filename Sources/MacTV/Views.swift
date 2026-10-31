@@ -236,7 +236,18 @@ struct HomeView: View {
                     .transition(.opacity)
             }
 
-            ClockPill()
+            HStack(spacing: 14) {
+                // While the Mac can't sleep with its lid closed, say so where it's always seen.
+                if tv.lidSleepOff {
+                    Label("Lid sleep off", systemImage: "moon.zzz")
+                        .font(.system(size: 22, weight: .semibold))
+                        .padding(.horizontal, 20)
+                        .frame(height: 50)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.18)))
+                }
+                ClockPill()
+            }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 96)
                 .padding(.top, 56)

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreImage.CIFilterBuiltins
+import IOKit.ps
 import IOKit.pwr_mgt
 
 enum SystemControl {
@@ -41,22 +42,120 @@ enum SystemControl {
     }
 }
 
-/// Keeps the display awake while something is playing.
+/// Holds one power assertion: the display awake while something plays, or the Mac awake while
+/// Mac TV is open.
 final class KeepAwake {
+    private let type: String
     private var assertion: IOPMAssertionID = 0
     private var held = false
+
+    init(_ type: String = kIOPMAssertionTypePreventUserIdleDisplaySleep) {
+        self.type = type
+    }
 
     func hold(reason: String) {
         guard !held else { return }
         held = IOPMAssertionCreateWithName(
-            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
-            IOPMAssertionLevel(kIOPMAssertionLevelOn), reason as CFString, &assertion) == kIOReturnSuccess
+            type as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), reason as CFString, &assertion) == kIOReturnSuccess
     }
 
     func release() {
         guard held else { return }
         IOPMAssertionRelease(assertion)
         held = false
+    }
+}
+
+/// The lid, power and display facts that decide whether closing the lid sleeps the Mac.
+struct PowerStatus: Equatable {
+    var lidClosed = false
+    var onAC = true
+    /// Battery charge in percent; nil on a Mac without a battery.
+    var battery: Int?
+    var externalDisplay = false
+
+    /// Apple's closed-lid mode: on power with an external display, closing the lid doesn't sleep the Mac.
+    var closedLidModeReady: Bool { onAC && externalDisplay }
+
+    static func current() -> PowerStatus {
+        var status = PowerStatus()
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        if root != 0 {
+            status.lidClosed = (IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, nil, 0)?
+                .takeRetainedValue() as? Bool) ?? false
+            IOObjectRelease(root)
+        }
+        if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() {
+            status.onAC = (IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?) == kIOPMACPowerKey
+            let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] ?? []
+            for source in sources {
+                guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                      description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                      let current = description[kIOPSCurrentCapacityKey] as? Int,
+                      let max = description[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+                status.battery = current * 100 / max
+            }
+        }
+        var count: UInt32 = 0
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        if CGGetOnlineDisplayList(16, &displays, &count) == .success {
+            status.externalDisplay = displays.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) == 0 }
+        }
+        return status
+    }
+}
+
+/// Keeps the Mac running with the lid closed, even on battery or without an external display.
+///
+/// Normal power assertions don't stop lid-close sleep. This sets the kernel switch that powerd
+/// itself sets for closed-lid mode (IOPMrootDomain's kPMSetClamshellSleepState, selector 12).
+/// It needs no admin rights, but it's undocumented and shared with powerd, which rewrites it
+/// when power or displays change, so Mac TV re-applies it while the option is on. A guard
+/// process (`--lid-guard`) hands it back if Mac TV quits or crashes.
+enum LidSleep {
+    @discardableResult
+    static func setPrevented(_ prevented: Bool) -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        var connect: io_connect_t = 0
+        guard IOServiceOpen(root, mach_task_self_, 0, &connect) == kIOReturnSuccess else { return false }
+        defer { IOServiceClose(connect) }
+        var input: [UInt64] = [prevented ? 1 : 0]
+        let setClamshellSleepState: UInt32 = 12
+        return IOConnectCallScalarMethod(connect, setClamshellSleepState, &input, 1, nil, nil) == kIOReturnSuccess
+    }
+
+    /// Hands the switch back to macOS: on only where powerd would have it on (closed-lid mode).
+    static func restore() {
+        setPrevented(PowerStatus.current().closedLidModeReady)
+    }
+
+    /// Starts a guard that restores lid sleep once this process exits, however it exits.
+    static func startGuard() -> Process? {
+        let process = Process()
+        process.executableURL = Bundle.main.executableURL
+        process.arguments = ["--lid-guard", String(getpid())]
+        do { try process.run() } catch { return nil }
+        return process
+    }
+
+    /// The guard's whole life: wait for Mac TV to exit, restore lid sleep, exit.
+    static func runGuard(parent: pid_t) -> Never {
+        let exited = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit, queue: .main)
+        exited.setEventHandler {
+            restore()
+            exit(0)
+        }
+        exited.resume()
+        // SIGTERM means Mac TV turned the option off and restored lid sleep itself.
+        signal(SIGTERM, SIG_IGN)
+        let stop = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        stop.setEventHandler { exit(0) }
+        stop.resume()
+        // The parent may have gone before the source was watching.
+        if kill(parent, 0) != 0 { restore(); exit(0) }
+        dispatchMain()
     }
 }
 
