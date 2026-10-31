@@ -43,9 +43,10 @@ enum RemotePage {
       .status { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none; }
       .actions { display:flex; gap:10px; flex:none; }
-      .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:44px; flex:none; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); }
-      .tabs button { border:0; border-radius:10px; background:transparent; font-size:14px; font-weight:600; }
-      .tabs button.on { background:#fff; color:#000; }
+      /* A segmented pill: the selected pill sits inside the track with the same inset on every side. */
+      .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:46px; flex:none; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); }
+      .tabs button { height:100%; padding:0; border:0; border-radius:999px; background:transparent; color:rgba(255,255,255,.75); font-size:14px; font-weight:600; transition:background-color .2s, color .2s; }
+      .tabs button.on { background:#fff; color:#000; box-shadow:0 1px 3px rgba(0,0,0,.3); }
       /* The touch surface takes whatever height is left, so the remote fills any phone. */
       .surface { position:relative; flex:1 1 auto; min-height:210px; max-height:440px; border-radius:34px; background:rgba(255,255,255,.06); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); overflow:hidden; touch-action:none; }
       /* The ring is centred and sized to fit the surface; arrows and OK sit on it. */

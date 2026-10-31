@@ -188,6 +188,8 @@ final class TVController: NSObject, ObservableObject {
     /// A Steam game just launched from Mac TV: watched so Mac TV comes back when it quits.
     var steamWatchUntil: Date?
     var steamGamePID: pid_t?
+    /// Mac TV opened Steam or a Steam game, so remote presses may go to it.
+    var openedSteam = false
     var steamObservers: [NSObjectProtocol] = []
     private var pointer: CGPoint?
     private var popups: [NSWindow] = []
@@ -624,9 +626,11 @@ final class TVController: NSObject, ObservableObject {
         default: break
         }
 
-        // A Mac app Mac TV opened is in front: forward the basics to it.
-        if let launchedAppID, !NSApp.isActive,
-           NSWorkspace.shared.frontmostApplication?.bundleIdentifier == launchedAppID {
+        // A Mac app, Steam or a Steam game that Mac TV opened is in front: forward the basics to it,
+        // as arrow keys, Return, Esc and Space. That drives Steam Big Picture and keyboard-friendly games.
+        if !NSApp.isActive, let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier == launchedAppID
+            || (openedSteam && (front.bundleIdentifier == SteamLibrary.bundleID || front.processIdentifier == steamGamePID)) {
             forwardToFrontApp(command)
             return
         }
@@ -649,6 +653,7 @@ final class TVController: NSObject, ObservableObject {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         case .steam(let appID):
             NSWorkspace.shared.open(SteamLibrary.launchURL(for: appID))
+            openedSteam = true
             if appID != SteamLibrary.bigPicture.appID { watchForSteamGame() }
             showToast("Opening \(service.name) in Steam")
         case .addApp:
