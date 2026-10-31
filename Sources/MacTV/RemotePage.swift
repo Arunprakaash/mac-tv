@@ -17,30 +17,37 @@ enum RemotePage {
     <link rel="manifest" href="/manifest.webmanifest">
     <style>
       :root {
-        --bg:#0a0b0e; --glass:rgba(255,255,255,.08); --glass-hi:rgba(255,255,255,.18); --line:rgba(255,255,255,.1);
+        --bg:#07080b; --glass:rgba(255,255,255,.09); --line:rgba(255,255,255,.14);
+        /* Apple TV's Liquid Glass: blur and saturate what's behind, with a bright top edge. */
+        --blur:blur(28px) saturate(170%); --sheen:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 1px rgba(255,255,255,.05);
+        /* Soft colour behind everything, so the glass has something to show. */
+        --ambient:radial-gradient(70vmax 60vmax at 10% 0%, rgba(70,110,255,.30), transparent 70%),
+                  radial-gradient(60vmax 60vmax at 100% 55%, rgba(170,80,255,.20), transparent 70%),
+                  radial-gradient(60vmax 50vmax at 20% 100%, rgba(0,190,170,.14), transparent 70%), #07080b;
         --fg:#fff; --dim:rgba(255,255,255,.62); --ok:#3ddc84; --warn:#ff6b6b;
         /* Controls size with the phone: round keys from 52 to 68px, spacing from the screen height. */
         --key:clamp(52px, 16vw, 68px); --gap:clamp(10px, 1.7dvh, 16px);
       }
       * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; }
       html, body { margin:0; height:100%; color:var(--fg); font:16px/1.3 -apple-system, system-ui, Roboto, sans-serif; background:var(--bg); overscroll-behavior:none; }
-      body { background:radial-gradient(520px 420px at 50% -10%, #22252f 0%, var(--bg) 70%) no-repeat, var(--bg); }
+      body { background:var(--ambient); background-attachment:fixed; }
       main { width:100%; max-width:460px; min-height:100dvh; margin:0 auto; padding:calc(env(safe-area-inset-top) + 14px) clamp(14px, 5vw, 22px) calc(env(safe-area-inset-bottom) + 18px); display:flex; flex-direction:column; gap:var(--gap); touch-action:manipulation; }
       button { font:inherit; color:inherit; cursor:pointer; transition:transform .08s, background-color .08s; }
       .pressed { transform:scale(.93); }
-      .round { width:44px; height:44px; border-radius:50%; border:1px solid var(--line); background:var(--glass); display:grid; place-items:center; }
-      .round.pressed, .key.pressed, .pill.pressed, .row-btn.pressed { background:var(--glass-hi); }
+      .round { width:44px; height:44px; border-radius:50%; border:1px solid var(--line); background:var(--glass); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); display:grid; place-items:center; }
+      /* tvOS focus: a press lights the control up as a white platter. */
+      .round.pressed, .key.pressed, .pill.pressed, .row-btn.pressed { background:#fff; color:#000; }
       header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
       header h1 { margin:0; font-size:20px; font-weight:800; letter-spacing:-.02em; }
       .status[hidden] { display:none; }
       .status { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none; }
       .actions { display:flex; gap:10px; flex:none; }
-      .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:44px; flex:none; border-radius:14px; background:var(--glass); }
+      .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:44px; flex:none; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); }
       .tabs button { border:0; border-radius:10px; background:transparent; font-size:14px; font-weight:600; }
-      .tabs button.on { background:rgba(255,255,255,.18); }
+      .tabs button.on { background:#fff; color:#000; }
       /* The touch surface takes whatever height is left, so the remote fills any phone. */
-      .surface { position:relative; flex:1 1 auto; min-height:210px; max-height:440px; border-radius:34px; background:linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.04)); border:1px solid var(--line); box-shadow:inset 0 1px 0 rgba(255,255,255,.12); overflow:hidden; touch-action:none; }
+      .surface { position:relative; flex:1 1 auto; min-height:210px; max-height:440px; border-radius:34px; background:rgba(255,255,255,.06); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); overflow:hidden; touch-action:none; }
       /* The ring is centred and sized to fit the surface; arrows and OK sit on it. */
       #clickpad .ring { position:absolute; left:50%; top:50%; width:min(260px, 70vw); max-height:86%; aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1.5px solid rgba(255,255,255,.14); pointer-events:none; }
       #clickpad .chev { position:absolute; width:40px; height:40px; display:grid; place-items:center; color:rgba(255,255,255,.55); transition:color .12s, scale .12s; }
@@ -48,23 +55,23 @@ enum RemotePage {
       #clickpad .up { left:50%; top:4%; translate:-50% 0; } #clickpad .down { left:50%; bottom:4%; translate:-50% 0; }
       #clickpad .left { top:50%; left:4%; translate:0 -50%; } #clickpad .right { top:50%; right:4%; translate:0 -50%; }
       #clickpad .ok { position:absolute; left:50%; top:50%; width:38%; aspect-ratio:1; translate:-50% -50%; border-radius:50%; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.1); box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 10px 24px rgba(0,0,0,.35); display:grid; place-items:center; font-weight:700; font-size:15px; transition:background .12s, scale .12s; }
-      #clickpad .ok.hit { background:rgba(255,255,255,.26); scale:.94; }
+      #clickpad .ok.hit { background:#fff; color:#000; scale:.94; }
       #touchpad { display:none; }
       #touchpad .hint { position:absolute; left:0; right:0; bottom:18px; text-align:center; font-size:13px; font-weight:500; color:rgba(255,255,255,.55); pointer-events:none; padding:0 16px; }
       .keys { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--gap) 8px; justify-items:center; flex:none; }
-      .key { width:var(--key); height:var(--key); border-radius:50%; border:1px solid var(--line); background:var(--glass); display:grid; place-items:center; box-shadow:inset 0 1px 0 rgba(255,255,255,.1); }
+      .key { width:var(--key); height:var(--key); border-radius:50%; border:1px solid var(--line); background:var(--glass); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); display:grid; place-items:center; box-shadow:var(--sheen); }
       .key.primary { background:#fff; color:#000; }
       .key.primary.pressed { background:#d9d9d9; }
       .key svg, .round svg { width:22px; height:22px; }
-      .type { display:flex; align-items:center; gap:8px; height:52px; flex:none; padding:0 6px 0 16px; border-radius:16px; background:var(--glass); border:1px solid var(--line); color:var(--dim); }
+      .type { display:flex; align-items:center; gap:8px; height:52px; flex:none; padding:0 6px 0 16px; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); color:var(--dim); }
       .type input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:#fff; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; }
       .type button { width:40px; height:40px; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:#fff; }
       /* Short phones: a smaller touch surface so the controls fit without scrolling. */
       @media (max-height: 640px) { .surface { min-height:180px; } }
 
-      .scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; flex-direction:column; justify-content:flex-end; z-index:5; }
+      .scrim { position:fixed; inset:0; background:rgba(0,0,0,.5); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); display:none; flex-direction:column; justify-content:flex-end; z-index:5; }
       .scrim.show { display:flex; }
-      .sheet { max-width:460px; width:100%; max-height:88dvh; overflow-y:auto; margin:0 auto; padding:20px 18px calc(env(safe-area-inset-bottom) + 24px); border-radius:28px 28px 0 0; background:rgba(34,36,44,.98); border-top:1px solid rgba(255,255,255,.12); display:flex; flex-direction:column; gap:14px; }
+      .sheet { max-width:460px; width:100%; max-height:88dvh; overflow-y:auto; margin:0 auto; padding:20px 18px calc(env(safe-area-inset-bottom) + 24px); border-radius:28px 28px 0 0; background:rgba(28,30,40,.86); -webkit-backdrop-filter:blur(40px) saturate(180%); backdrop-filter:blur(40px) saturate(180%); border-top:1px solid rgba(255,255,255,.18); box-shadow:var(--sheen); display:flex; flex-direction:column; gap:14px; }
       .sheet > * { flex-shrink:0; }
       .sheet-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
       .sheet-head > span { font-size:18px; font-weight:800; }
@@ -102,7 +109,7 @@ enum RemotePage {
       .list button { display:flex; align-items:center; justify-content:space-between; gap:10px; height:50px; border:0; border-radius:14px; background:rgba(255,255,255,.07); padding:0 16px; font-size:15px; font-weight:600; text-align:left; }
       .list button span:last-child { font-size:12px; color:var(--dim); font-weight:600; }
       .list button[disabled] { opacity:.5; }
-      #pair { position:fixed; inset:0; background:var(--bg); display:none; flex-direction:column; justify-content:center; gap:14px; padding:24px; text-align:center; z-index:9; }
+      #pair { position:fixed; inset:0; background:var(--ambient); display:none; flex-direction:column; justify-content:center; gap:14px; padding:24px; text-align:center; z-index:9; }
       #pair.show { display:flex; }
       #pair h1 { margin:0; font-size:26px; }
       #pair p { margin:0; color:var(--dim); }
