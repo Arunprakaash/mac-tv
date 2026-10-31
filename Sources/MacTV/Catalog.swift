@@ -4,6 +4,8 @@ struct Service: Identifiable, Hashable {
     enum Kind: Hashable {
         case web(URL)
         case app(bundleID: String)
+        /// A Steam game, or Steam Big Picture, launched through Steam.
+        case steam(appID: String)
         case addApp
         case settings
     }
@@ -22,8 +24,17 @@ struct Service: Identifiable, Hashable {
     var dpadNavigation = true
 
     var isInstalled: Bool {
-        guard case .app(let bundleID) = kind else { return true }
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+        switch kind {
+        case .app(let bundleID): return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+        case .steam: return SteamLibrary.isInstalled
+        default: return true
+        }
+    }
+
+    /// Steam games bring a ready-made wide tile (background and logo) instead of a square icon.
+    var hasWideArt: Bool {
+        if case .steam(let appID) = kind { return appID != SteamLibrary.bigPicture.appID }
+        return false
     }
 
     var isWeb: Bool {
@@ -98,7 +109,8 @@ enum Icons {
 
     static func tile(for service: Service) -> NSImage? {
         if let cached = tiles[service.id] { return cached }
-        let tile = image(for: service)?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap { TileArt.make(from: $0) }
+        let tile = service.hasWideArt ? image(for: service)
+            : image(for: service)?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap { TileArt.make(from: $0) }
         tiles[service.id] = tile
         return tile
     }

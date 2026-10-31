@@ -179,6 +179,10 @@ final class TVController: NSObject, ObservableObject {
     private var toastTask: Task<Void, Never>?
     private var volumeTask: Task<Void, Never>?
     private var launchedAppID: String?
+    /// A Steam game just launched from Mac TV: watched so Mac TV comes back when it quits.
+    var steamWatchUntil: Date?
+    var steamGamePID: pid_t?
+    var steamObservers: [NSObjectProtocol] = []
     private var pointer: CGPoint?
     private var popups: [NSWindow] = []
     private var sleepTimer: Timer?
@@ -358,6 +362,26 @@ final class TVController: NSObject, ObservableObject {
         return app
     }
 
+    /// Adds a Steam game (or Steam Big Picture). Its tile appears at once; Steam's artwork follows.
+    func addSteamGame(_ game: SteamLibrary.Game) -> AddedApp? {
+        if let existing = services.first(where: { $0.kind == .steam(appID: game.appID) }) {
+            showToast("\(existing.name) is already on the home screen")
+            return nil
+        }
+        let app = library.add(name: game.name, url: nil, bundleID: nil, steamID: game.appID)
+        reloadServices()
+        showToast("Added \(app.name)")
+        if game == SteamLibrary.bigPicture {
+            useIcon(SteamLibrary.appURL.flatMap { IconFinder.icon(forAppAt: $0.path) }, for: app.id)
+        } else {
+            Task { [weak self] in
+                let png = await SteamLibrary.tile(for: game.appID)
+                await MainActor.run { self?.useIcon(png, for: app.id) }
+            }
+        }
+        return app
+    }
+
     private func useIcon(_ png: Data?, for id: String) {
         if let png, let image = NSImage(data: png)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             library.setIcon(png, accent: TileArt.brandColor(from: image), for: id)
@@ -427,7 +451,7 @@ final class TVController: NSObject, ObservableObject {
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
         switch shelfService.kind {
-        case .web, .app: return 1
+        case .web, .app, .steam: return 1
         case .addApp, .settings: return 0
         }
     }
@@ -617,6 +641,10 @@ final class TVController: NSObject, ObservableObject {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
             launchedAppID = bundleID
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        case .steam(let appID):
+            NSWorkspace.shared.open(SteamLibrary.launchURL(for: appID))
+            if appID != SteamLibrary.bigPicture.appID { watchForSteamGame() }
+            showToast("Opening \(service.name) in Steam")
         case .addApp:
             adder = AppAdder()
         case .settings:
@@ -808,7 +836,7 @@ final class TVController: NSObject, ObservableObject {
         return web
     }
 
-    private func bringToFront() {
+    func bringToFront() {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

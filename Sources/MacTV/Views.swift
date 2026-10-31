@@ -763,6 +763,7 @@ struct AddAppSheet: View {
             HStack(spacing: 6) {
                 tab("Website", .website, a)
                 tab("Mac app", .macApp, a)
+                if tv.adderTabs.contains(.steam) { tab("Steam", .steam, a) }
             }
             .padding(6)
             .background(.white.opacity(a.row == 0 ? 0.22 : 0.08), in: Capsule())
@@ -775,12 +776,15 @@ struct AddAppSheet: View {
                     set(row: 3)
                     tv.submitAdder()
                 }
-            } else {
+            } else if a.tab == .macApp {
                 AdderField(label: "Search apps on this Mac", text: a.query, placeholder: "Type to filter", focused: a.row == 1) { set(row: 1) }
                 macList(a)
+            } else {
+                steamList(a)
             }
 
-            Text(a.message ?? "Type with the keyboard or the remote's typing box. Esc or Back closes.")
+            Text(a.message ?? (a.tab == .steam ? "Games open through Steam, and Mac TV comes back when you quit. Esc or Back closes."
+                                                : "Type with the keyboard or the remote's typing box. Esc or Back closes."))
                 .font(.system(size: 22, weight: a.message == nil ? .regular : .semibold))
                 .foregroundStyle(a.failed ? Color(hex: "#FF8A80") : .white.opacity(a.message == nil ? 0.55 : 0.9))
         }
@@ -812,6 +816,54 @@ struct AddAppSheet: View {
                 tv.adder?.row = 1
                 tv.adder?.selected = 0
             }
+    }
+
+    /// Steam Big Picture and the installed games, eight rows at a time. Games launch through Steam.
+    @ViewBuilder private func steamList(_ a: AppAdder) -> some View {
+        let games = tv.adderSteamGames
+        let window = 8
+        let start = min(max(0, a.selected - window / 2), max(0, games.count - window))
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(games.enumerated().dropFirst(start).prefix(window)), id: \.element.appID) { index, game in
+                let focused = a.row == 1 && a.selected == index
+                let added = tv.isOnHomeScreen(game)
+                HStack(spacing: 18) {
+                    Group {
+                        if game == SteamLibrary.bigPicture, let url = SteamLibrary.appURL {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable()
+                        } else {
+                            Image(systemName: "gamecontroller.fill").font(.system(size: 24)).frame(width: 44, height: 44)
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    Text(game.name).font(.system(size: 26, weight: .semibold)).lineLimit(1)
+                    Spacer()
+                    if added { Text("On TV").font(.system(size: 18, weight: .bold)).opacity(0.6) }
+                }
+                .padding(.horizontal, 18)
+                .frame(height: 60)
+                .foregroundStyle(focused ? .black : .white)
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    if focused {
+                        shape.fill(.white).matchedGeometryEffect(id: "focus", in: focusSpace)
+                    } else {
+                        shape.fill(.white.opacity(0.06))
+                    }
+                }
+                .opacity(added && !focused ? 0.55 : 1)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    tv.adder?.row = 1
+                    tv.adder?.selected = index
+                    tv.addSelectedSteamGame()
+                }
+            }
+            if games.count == 1 {
+                Text("No Steam games installed yet. Install some in Steam and they'll show up here.")
+                    .font(.system(size: 22)).opacity(0.6).padding(.top, 6)
+            }
+        }
     }
 
     /// Eight rows at a time, scrolled to keep the highlighted app in view.

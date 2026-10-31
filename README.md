@@ -65,6 +65,7 @@ The built-in apps are Netflix, YouTube, Prime Video, JioHotstar, Apple TV, Spoti
 Choose **Add App** at the end of the home screen, or open **Apps** on the phone remote:
 - **Website:** type an address. Mac TV finds the app's official icon itself and turns it into a tile that matches the rest.
 - **Mac app:** pick any app installed on the Mac.
+- **Steam:** pick Steam Big Picture or any installed Steam game. Games open through Steam, so DRM and cloud saves work, and Mac TV comes back to the front when you quit the game. Each game's tile is made from its Steam artwork.
 - **Edit** (phone remote): removes apps. Removed built-in apps can be restored.
 
 On the TV, type with the keyboard or the remote's keyboard, and move between fields with the arrows.

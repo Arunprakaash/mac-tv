@@ -28,6 +28,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             RemoteSnapshot.start(to: URL(fileURLWithPath: CommandLine.arguments[flag + 1]), sheet: sheet)
             return
         }
+        // `--steam-games` prints the Steam games Mac TV finds (MACTV_STEAM_ROOT points at other Steam files).
+        if CommandLine.arguments.contains("--steam-games") {
+            let games = SteamLibrary.installedGames().map { ["appID": $0.appID, "name": $0.name] }
+            if let data = try? JSONSerialization.data(withJSONObject: games, options: [.prettyPrinted, .sortedKeys]) {
+                print(String(decoding: data, as: UTF8.self))
+            }
+            exit(0)
+        }
+        // `--steam-tile <appID> <file.png>` renders a game's tile from Steam's artwork.
+        if let flag = CommandLine.arguments.firstIndex(of: "--steam-tile"), flag + 2 < CommandLine.arguments.count {
+            let appID = CommandLine.arguments[flag + 1], file = URL(fileURLWithPath: CommandLine.arguments[flag + 2])
+            Task {
+                let png = await SteamLibrary.tile(for: appID)
+                try? png?.write(to: file)
+                print(png == nil ? "No artwork for \(appID)" : "Wrote \(file.path)")
+                exit(png == nil ? 1 : 0)
+            }
+            return
+        }
         // `--export-tiles <folder>` writes every dock tile as a PNG, for checking the icon layout.
         if let flag = CommandLine.arguments.firstIndex(of: "--export-tiles"), flag + 1 < CommandLine.arguments.count {
             let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])

@@ -23,6 +23,7 @@ struct AddedApp: Codable, Hashable {
     var name: String
     var url: URL?
     var bundleID: String?
+    var steamID: String?
     /// The icon's brand colour, found once the icon arrives; tints its Top Shelf.
     var accent: String?
 }
@@ -64,7 +65,10 @@ final class AppLibrary {
 
     private func service(for app: AddedApp) -> Service? {
         let kind: Service.Kind
-        if let url = app.url { kind = .web(url) } else if let bundleID = app.bundleID { kind = .app(bundleID: bundleID) } else { return nil }
+        if let url = app.url { kind = .web(url) }
+        else if let bundleID = app.bundleID { kind = .app(bundleID: bundleID) }
+        else if let steamID = app.steamID { kind = .steam(appID: steamID) }
+        else { return nil }
         let icon = iconFile(for: app.id)
         let accent = app.accent ?? "#8E8E93"
         return Service(id: app.id, name: app.name, kind: kind,
@@ -73,12 +77,12 @@ final class AppLibrary {
     }
 
     @discardableResult
-    func add(name: String, url: URL?, bundleID: String?) -> AddedApp {
+    func add(name: String, url: URL?, bundleID: String?, steamID: String? = nil) -> AddedApp {
         let base = name.lowercased().filter { $0.isLetter || $0.isNumber }
         var id = "user-" + (base.isEmpty ? "app" : base)
         let taken = Set(Catalog.services.map(\.id) + saved.added.map(\.id))
         if taken.contains(id) { id += "-\(Int.random(in: 1000...9999))" }
-        let app = AddedApp(id: id, name: name, url: url, bundleID: bundleID)
+        let app = AddedApp(id: id, name: name, url: url, bundleID: bundleID, steamID: steamID)
         saved.added.append(app)
         save()
         return app
