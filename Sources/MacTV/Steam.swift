@@ -131,6 +131,7 @@ extension TVController {
                       app.bundleIdentifier != SteamLibrary.bundleID, app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
                 self.steamGamePID = app.processIdentifier
                 self.steamWatchUntil = nil
+                GameWindow.fillTV(pid: app.processIdentifier, screen: self.window?.screen)
             }
         })
         steamObservers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -142,5 +143,87 @@ extension TVController {
                 self.showToast("Welcome back")
             }
         })
+    }
+}
+
+/// Puts a game's window on the TV and in full screen, a few seconds after it opens, the way the
+/// green button would. Many games don't allow macOS full screen; their window fills the TV screen
+/// below the menu bar instead. Games that already fill the screen are left alone. Needs Accessibility.
+enum GameWindow {
+    @MainActor
+    static func fillTV(pid: pid_t, screen: NSScreen?, attempt: Int = 0) {
+        // Games take a moment to open their window; try a few times.
+        let delays: [Double] = [2.5, 4, 6, 10]
+        guard attempt < delays.count else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delays[attempt]) {
+            MainActor.assumeIsolated {
+                if !makeFullScreen(pid: pid, on: screen) { fillTV(pid: pid, screen: screen, attempt: attempt + 1) }
+            }
+        }
+    }
+
+    /// True once the game's window is full screen, or already fills its display.
+    @MainActor
+    static func makeFullScreen(pid: pid_t, on screen: NSScreen?) -> Bool {
+        let prompt = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        guard AXIsProcessTrustedWithOptions(prompt) else { return true }
+        let app = AXUIElementCreateApplication(pid)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement], let window = windows.first else { return false }
+        if bool(window, "AXFullScreen") == true { return true }
+        guard let frame = frame(of: window) else { return false }
+        let target = screen ?? NSScreen.screens.first { $0.frame.intersects(flipped(frame)) } ?? NSScreen.main
+        guard let target else { return false }
+        // A borderless window that already covers the display is the game's own full screen.
+        if frame.width >= target.frame.width - 2, frame.height >= target.frame.height - 2 { return true }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? target.frame.height
+        if settable(window, "AXFullScreen") {
+            // Move it onto the TV first, so full screen happens there.
+            if !target.frame.intersects(flipped(frame)) {
+                var origin = CGPoint(x: target.frame.minX + 40, y: primaryHeight - target.frame.maxY + 40)
+                if let position = AXValueCreate(.cgPoint, &origin) {
+                    AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position)
+                }
+            }
+            return AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanTrue) == .success
+        }
+        // No full screen for this game: fill the TV screen below the menu bar.
+        let area = target.visibleFrame
+        var origin = CGPoint(x: area.minX, y: primaryHeight - area.maxY)
+        var size = area.size
+        if let position = AXValueCreate(.cgPoint, &origin) {
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position)
+        }
+        guard let extent = AXValueCreate(.cgSize, &size) else { return false }
+        return AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, extent) == .success
+    }
+
+    private static func settable(_ element: AXUIElement, _ attribute: String) -> Bool {
+        var result = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(element, attribute as CFString, &result) == .success && result.boolValue
+    }
+
+    private static func bool(_ element: AXUIElement, _ attribute: String) -> Bool? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? Bool
+    }
+
+    /// The window's frame in Accessibility coordinates (top-left origin).
+    private static func frame(of window: AXUIElement) -> CGRect? {
+        var position: CFTypeRef?, size: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
+              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size) == .success else { return nil }
+        var point = CGPoint.zero, extent = CGSize.zero
+        AXValueGetValue(position as! AXValue, .cgPoint, &point)
+        AXValueGetValue(size as! AXValue, .cgSize, &extent)
+        return CGRect(origin: point, size: extent)
+    }
+
+    /// Accessibility's top-left frame in AppKit's bottom-left screen coordinates.
+    private static func flipped(_ frame: CGRect) -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        return CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height)
     }
 }

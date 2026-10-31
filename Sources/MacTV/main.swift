@@ -28,6 +28,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             RemoteSnapshot.start(to: URL(fileURLWithPath: CommandLine.arguments[flag + 1]), sheet: sheet)
             return
         }
+        // `--fullscreen-test <bundleID>` opens an app and puts its window in full screen the way a
+        // launched game is, for checking without Steam games.
+        if let flag = CommandLine.arguments.firstIndex(of: "--fullscreen-test"), flag + 1 < CommandLine.arguments.count,
+           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: CommandLine.arguments[flag + 1]) {
+            print("Accessibility allowed:", AXIsProcessTrusted())
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { app, _ in
+                guard let pid = app?.processIdentifier else { exit(1) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    MainActor.assumeIsolated { print("Full screen:", GameWindow.makeFullScreen(pid: pid, on: NSScreen.main)) }
+                    exit(0)
+                }
+            }
+            return
+        }
         // `--steam-games` prints the Steam games Mac TV finds (MACTV_STEAM_ROOT points at other Steam files).
         if CommandLine.arguments.contains("--steam-games") {
             let games = SteamLibrary.installedGames().map { ["appID": $0.appID, "name": $0.name] }
