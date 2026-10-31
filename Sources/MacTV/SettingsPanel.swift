@@ -4,7 +4,7 @@ import SwiftUI
 /// TV controls, driven by the D-pad, the keyboard or the mouse.
 struct SettingsPanel: Equatable {
     enum Row: Int, CaseIterable {
-        case phoneRemote, sleepTimer, autoSkip, autoNext, keepMacAwake, lidOverride, screenOff, sleepMac
+        case phoneRemote, controller, sleepTimer, autoSkip, autoNext, keepMacAwake, lidOverride, screenOff, sleepMac
     }
 
     var row: Row = .phoneRemote
@@ -70,6 +70,8 @@ extension TVController {
         settings?.row = row
         switch row {
         case .phoneRemote: pairing = true
+        case .controller:
+            showToast(controller == nil ? "Pair a controller in System Settings › Bluetooth" : "Press its Menu button any time to come home")
         case .sleepTimer: stepSleepTimer(by: 1, wrap: true)
         case .autoSkip: autoSkip.toggle()
         case .autoNext: autoNext.toggle()
@@ -112,6 +114,17 @@ struct SettingsSheet: View {
             group("Remote")
             row(.phoneRemote, "Phone remote", panel) {
                 trailing(tv.phonePaired ? "Show QR code" : "Set up", chevron: true)
+            }
+            row(.controller, "Game controller", panel) {
+                if let controller = tv.controller {
+                    HStack(spacing: 10) {
+                        Text(controller.name)
+                        if controller.battery != nil || controller.charging { Image(systemName: controller.batterySymbol) }
+                    }
+                    .font(.system(size: 24, weight: .semibold)).opacity(0.7)
+                } else {
+                    trailing("None connected", chevron: false)
+                }
             }
 
             group("Watching")

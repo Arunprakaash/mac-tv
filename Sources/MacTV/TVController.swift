@@ -118,6 +118,10 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var toast: String?
     /// The volume indicator, shown for a moment after the remote changes the volume.
     @Published private(set) var volume: VolumeLevel?
+    /// The connected game controller, if any.
+    @Published var controller: ControllerInfo?
+    /// A controller connecting or disconnecting, shown for a moment.
+    @Published private(set) var controllerNotice: ControllerNotice?
     /// Addresses a phone can open the remote at, one per network this Mac is on.
     @Published private(set) var remoteLinks: [RemoteLink] = []
 
@@ -178,6 +182,8 @@ final class TVController: NSObject, ObservableObject {
     private let keepAwake = KeepAwake()
     private var toastTask: Task<Void, Never>?
     private var volumeTask: Task<Void, Never>?
+    private var noticeTask: Task<Void, Never>?
+    private var controllerInput: ControllerInput?
     private var launchedAppID: String?
     /// A Steam game just launched from Mac TV: watched so Mac TV comes back when it quits.
     var steamWatchUntil: Date?
@@ -847,6 +853,25 @@ final class TVController: NSObject, ObservableObject {
         volumeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.volume = nil } }
+        }
+    }
+
+    func startControllers() {
+        controllerInput = ControllerInput(tv: self)
+        controllerInput?.start()
+        // MACTV_PREVIEW_CONTROLLER=1 shows a pretend PlayStation controller, for checking the design without one.
+        if ProcessInfo.processInfo.environment["MACTV_PREVIEW_CONTROLLER"] == "1" {
+            controllerChanged(ControllerInfo(name: "DualSense Wireless Controller", battery: 0.7, selectSymbol: "xmark.circle",
+                                             backSymbol: "circle.circle", menuSymbol: "line.3.horizontal.circle"), connected: true)
+        }
+    }
+
+    func showControllerNotice(_ notice: ControllerNotice) {
+        withAnimation(.smooth(duration: 0.35)) { controllerNotice = notice }
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.controllerNotice = nil } }
         }
     }
 

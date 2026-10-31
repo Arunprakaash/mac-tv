@@ -45,6 +45,10 @@ Open **Settings** on the TV, choose **Phone remote** and scan the QR code with y
 - **Haptics:** light haptic feedback on every press.
 - **Tailscale:** the Tailscale QR code works away from home, or when your Wi-Fi keeps devices apart.
 
+## Game controllers
+
+Pair a PlayStation, Xbox, Switch Pro or other MFi controller with the Mac in System Settings › Bluetooth, and it drives Mac TV like an Apple TV controller: the D-pad or left stick moves, A (✕) opens, B (○) goes back, Menu goes home, X plays or pauses, and the shoulder buttons skip. A banner shows when it connects, the home screen shows its own button symbols, and Settings shows its battery. Any number of controllers can be connected. While a Steam game is in front, the controller belongs to the game.
+
 ## Watching
 
 - **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **Settings** on the TV or **TV controls** on the remote.

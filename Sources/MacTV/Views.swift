@@ -71,6 +71,17 @@ struct RootView: View {
                 }
             }
 
+            if let notice = tv.controllerNotice {
+                TVCanvas {
+                    GlassGroup { ControllerBanner(notice: notice).tvGlassTransition() }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.trailing, 96)
+                        .padding(.top, 43)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+
             if let volume = tv.volume {
                 TVCanvas {
                     GlassGroup {
@@ -270,11 +281,15 @@ struct HomeView: View {
                         .tvGlass(in: Capsule())
                         .tvGlassID("lid", in: pills)
                 }
+                if let controller = tv.controller {
+                    ControllerHints(info: controller).tvGlassID("controller", in: pills)
+                }
                 ClockPill().tvGlassID("clock", in: pills)
             } }
                 .animation(Motion.appear, value: tv.lidSleepOff)
-                // The volume indicator takes this corner while it shows.
-                .opacity(tv.volume == nil ? 1 : 0)
+                .animation(Motion.appear, value: tv.controller)
+                // The volume indicator and the controller banner take this corner while they show.
+                .opacity(tv.volume == nil && tv.controllerNotice == nil ? 1 : 0)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 96)
                 .padding(.top, 56)
