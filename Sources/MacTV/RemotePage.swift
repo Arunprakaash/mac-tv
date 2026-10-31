@@ -53,7 +53,7 @@ enum RemotePage {
       .surface { position:relative; flex:1 1 auto; min-height:210px; max-height:440px; border-radius:34px; background:rgba(255,255,255,.06); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); overflow:hidden; touch-action:none; }
       /* The ring is centred and sized to fit the surface; arrows and OK sit on it. */
       #clickpad .ring { position:absolute; left:50%; top:50%; width:min(260px, 70vw); max-height:86%; aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1.5px solid rgba(255,255,255,.14); pointer-events:none; }
-      #clickpad .chev { position:absolute; width:40px; height:40px; display:grid; place-items:center; color:rgba(255,255,255,.55); transition:color .12s, scale .12s; }
+      #clickpad .chev { background:none; border:0; padding:0; min-width:44px; min-height:44px; position:absolute; width:40px; height:40px; display:grid; place-items:center; color:rgba(255,255,255,.55); transition:color .12s, scale .12s; }
       #clickpad .chev.hit { color:#fff; scale:1.25; }
       #clickpad .up { left:50%; top:4%; translate:-50% 0; } #clickpad .down { left:50%; bottom:4%; translate:-50% 0; }
       #clickpad .left { top:50%; left:4%; translate:0 -50%; } #clickpad .right { top:50%; right:4%; translate:0 -50%; }
@@ -85,10 +85,19 @@ enum RemotePage {
       .app { position:relative; border:0; background:none; padding:0; display:flex; flex-direction:column; gap:6px; align-items:center; font-size:12px; font-weight:600; color:var(--dim); text-align:center; }
       .app .art { width:100%; aspect-ratio:1; border-radius:23%; background:#2a2d36; display:grid; place-items:center; font-size:26px; font-weight:800; color:#fff; overflow:hidden; box-shadow:0 0 0 1px rgba(255,255,255,.08); }
       .app .art img { width:100%; height:100%; display:block; }
-      .app .badge { position:absolute; top:-6px; left:-6px; width:24px; height:24px; border-radius:50%; background:#ff453a; color:#fff; display:none; place-items:center; font-size:18px; font-weight:800; line-height:1; box-shadow:0 2px 6px rgba(0,0,0,.4); }
-      .editing .app .badge { display:grid; }
-      .editing .app .art { animation:jiggle .25s ease-in-out infinite alternate; }
-      @keyframes jiggle { from { transform:rotate(-1.5deg); } to { transform:rotate(1.5deg); } }
+      .app .favourite { position:absolute; top:-6px; right:-6px; width:24px; height:24px; border-radius:50%; background:#ffd60a; color:#241d00; display:grid; place-items:center; font-size:15px; line-height:1; box-shadow:0 2px 6px rgba(0,0,0,.4); }
+      .apps.editing { grid-template-columns:1fr; gap:12px; }
+      .app-editor { padding:12px; border:1px solid var(--line); border-radius:20px; background:rgba(255,255,255,.05); }
+      .app-editor-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; min-width:0; }
+      .app-editor-head .app { width:48px; flex:none; }
+      .app-editor-name { font-size:16px; font-weight:650; overflow-wrap:anywhere; }
+      .app-actions { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+      .app-actions button { min-height:44px; min-width:44px; padding:10px 8px; border:0; border-radius:12px; background:rgba(255,255,255,.1); font-size:14px; font-weight:600; }
+      .app-actions .pin[aria-pressed="true"] { color:#ffe991; background:rgba(255,214,10,.13); }
+      .app-actions .remove { color:#ffd0d0; background:rgba(255,107,107,.13); }
+      .app-actions button:disabled, #edit-apps:disabled, #restore:disabled { opacity:.4; cursor:default; }
+      #apps-sheet button:focus-visible { outline:3px solid #8ec7ff; outline-offset:3px; }
+      #apps-sheet .pill { min-height:44px; }
       .app.add .art { background:transparent; border:2px dashed rgba(255,255,255,.25); box-shadow:none; color:var(--dim); font-weight:400; font-size:34px; }
       .editing .app.add { display:none; }
       .row-btn { height:52px; border:0; border-radius:16px; background:rgba(255,255,255,.1); font-size:16px; font-weight:600; text-align:left; padding:0 18px; }
@@ -116,7 +125,9 @@ enum RemotePage {
       #pair.show { display:flex; }
       #pair h1 { margin:0; font-size:26px; }
       #pair p { margin:0; color:var(--dim); }
-      #pair input { font:600 30px -apple-system, system-ui, Roboto, sans-serif; font-variant-numeric:tabular-nums; letter-spacing:.3em; text-align:center; background:var(--glass); color:#fff; border:1px solid rgba(255,255,255,.2); border-radius:14px; height:64px; -webkit-user-select:text; user-select:text; }
+      #pair input:not([type="checkbox"]) { font:600 30px -apple-system, system-ui, Roboto, sans-serif; font-variant-numeric:tabular-nums; letter-spacing:.3em; text-align:center; background:var(--glass); color:#fff; border:1px solid rgba(255,255,255,.2); border-radius:14px; height:64px; -webkit-user-select:text; user-select:text; }
+      #pair #device-name { font-size:16px; letter-spacing:normal; height:48px; }
+      #pair label { color:var(--dim); font-size:14px; }
       #pair button { height:52px; border:0; border-radius:999px; background:#fff; color:#000; font-weight:700; }
     </style>
     </head>
@@ -140,11 +151,11 @@ enum RemotePage {
 
       <div class="surface" id="clickpad" aria-label="Swipe or tap an arrow to move, tap the middle to select">
         <div class="ring">
-        <div class="chev up" data-dir="up"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></div>
-        <div class="chev down" data-dir="down"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
-        <div class="chev left" data-dir="left"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></div>
-        <div class="chev right" data-dir="right"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
-        <div class="ok" id="ok">OK</div>
+        <button type="button" class="chev up" data-dir="up" aria-label="Move up"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button type="button" class="chev down" data-dir="down" aria-label="Move down"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button type="button" class="chev left" data-dir="left" aria-label="Move left"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+        <button type="button" class="chev right" data-dir="right" aria-label="Move right"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button type="button" class="ok" id="ok" aria-label="Select">OK</button>
         </div>
       </div>
       <div class="surface" id="touchpad"><div class="hint">Drag to move · tap to click · two fingers to scroll</div></div>
@@ -171,7 +182,8 @@ enum RemotePage {
       <div class="sheet" role="dialog" aria-label="Apps">
         <div class="sheet-head"><span id="apps-title">Open on TV</span><div><button class="pill" id="edit-apps">Edit</button><button class="pill" data-close>Done</button></div></div>
         <div class="apps" id="apps"></div>
-        <p class="note" id="edit-note" hidden>Tap the red badge to remove an app. Built-in apps can be brought back.</p>
+        <p class="note" id="edit-note" hidden>Pinned favourites appear first. Move apps within favourites or other apps. Removed built-in apps can be restored.</p>
+        <p class="note" id="apps-msg" role="status" aria-live="polite" hidden></p>
         <button class="row-btn" id="restore" hidden>Restore built-in apps</button>
       </div>
     </div>
@@ -214,6 +226,10 @@ enum RemotePage {
         <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
         <label class="toggle"><span>Stay awake with lid closed</span><input type="checkbox" id="lid-override"></label>
         <p class="note">Works on battery and without the TV connected. Turns off by itself when the battery is low or the Mac gets hot.</p>
+        <div class="group-label">Paired devices</div>
+        <div id="devices"></div>
+        <button class="row-btn danger" id="revoke-all">Remove all paired devices</button>
+        <p class="note" id="devices-msg"></p>
         <button class="row-btn" id="screen-off">Turn screen off</button>
         <button class="row-btn" id="sleep">Sleep Mac</button>
         <p class="note">After sleep, wake the Mac with its keyboard or by opening the lid.</p>
@@ -224,6 +240,8 @@ enum RemotePage {
       <h1>Pair with your TV</h1>
       <p>Enter the 6-digit code from Settings on the TV.</p>
       <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" aria-label="Pairing code">
+      <input id="device-name" maxlength="60" placeholder="Device name (optional)" aria-label="Device name">
+      <label><input type="checkbox" id="guest"> Guest access (expires in 24 hours)</label>
       <button id="pair-btn">Pair</button>
       <p id="pair-err"></p>
     </div>
@@ -268,10 +286,14 @@ enum RemotePage {
 
     const store = {
       get() { try { return localStorage.getItem('mactvKey') || localStorage.getItem('matineeKey') || localStorage.getItem('couchKey') || ''; } catch { return ''; } },
-      set(v) { try { localStorage.setItem('mactvKey', v); } catch {} },
+      set(v) {
+        for (const old of ['matineeKey', 'couchKey']) { try { localStorage.removeItem(old); } catch {} }
+        try { localStorage.setItem('mactvKey', v); } catch {}
+      },
     };
-    let key = new URLSearchParams(location.search).get('k') || store.get();
-    if (key) store.set(key);
+    const qrCode = new URLSearchParams(location.search).get('k') || '';
+    if (qrCode) history.replaceState(null, '', location.pathname);
+    let key = store.get();
 
     // The status line only shows when something's wrong.
     function online(ok) {
@@ -300,11 +322,17 @@ enum RemotePage {
 
     // State: connection, the app list, settings.
     let appsShown = '', apps = [], canRestore = false;
-    async function refresh() {
+    let stateGeneration = 0, appMutationPending = false;
+    async function refresh(duringMutation = false) {
+      if (appMutationPending && !duringMutation) return false;
       if (!key) return showPair();
+      const generation = ++stateGeneration;
       try {
         const s = await api('/state');
+        // A newer refresh or an edit invalidates an older in-flight response.
+        if (generation !== stateGeneration) return false;
         online(true);
+        const focused = appFocus();
         apps = s.apps;
         canRestore = s.canRestore;
         showSleep(s.sleepMinutes || 0);
@@ -314,44 +342,138 @@ enum RemotePage {
         $('#lid-override').checked = s.lidOverride;
         $('#lid-status').textContent = s.lidStatus || '';
         const sig = JSON.stringify([s.apps, s.canRestore]);
-        if (sig !== appsShown) { appsShown = sig; renderApps(); }
-      } catch (e) { if (e.message !== 'unpaired') online(false); }
+        if (sig !== appsShown) {
+          appsShown = sig;
+          if (!appMutationPending) renderApps(focused);
+        }
+        return true;
+      } catch (e) {
+        if (generation === stateGeneration && e.message !== 'unpaired') online(false);
+        return false;
+      }
     }
 
-    // Apps sheet: open, edit (remove), add.
+    // Apps sheet: launch tiles, or accessible controls for arranging the same apps.
     let editing = false;
-    function renderApps() {
+    function appFocus() {
+      const active = document.activeElement;
+      if (!$('#apps').contains(active) || !active.dataset.appId) return null;
+      return { id: active.dataset.appId, action: active.dataset.action, element: active,
+               index: apps.findIndex(app => app.id === active.dataset.appId) };
+    }
+    function appArt(app) {
+      const art = document.createElement('span');
+      art.className = 'art';
+      if (app.icon) {
+        const img = document.createElement('img');
+        img.src = `/icon/${encodeURIComponent(app.id)}?v=${encodeURIComponent(appsShown.length)}`;
+        img.alt = '';
+        art.appendChild(img);
+      } else {
+        art.textContent = app.name.slice(0, 1).toUpperCase();
+      }
+      return art;
+    }
+    function favouriteBadge() {
+      const badge = document.createElement('span');
+      badge.className = 'favourite';
+      badge.textContent = '★';
+      badge.setAttribute('aria-hidden', 'true');
+      return badge;
+    }
+    function appMessage(message, error = false) {
+      const note = $('#apps-msg');
+      note.textContent = message;
+      note.className = error ? 'note err' : 'note ok';
+      note.hidden = !message;
+    }
+    async function changeApp(path, body, message) {
+      if (appMutationPending) return;
+      const focused = appFocus();
+      appMutationPending = true;
+      ++stateGeneration;
+      $('#apps').setAttribute('aria-busy', 'true');
+      $('#apps').querySelectorAll('button').forEach(button => { button.disabled = true; });
+      $('#edit-apps').disabled = true;
+      $('#restore').disabled = true;
+      appMessage('Saving…');
+      haptic('tap');
+      try {
+        await api(path, body);
+        const updated = await refresh(true);
+        appMessage(updated ? message : 'Saved on the TV. Reconnect to refresh the app list.', !updated);
+      } catch (e) {
+        haptic('error');
+        appMessage(e.message === 'unpaired' ? 'Pair with the TV first.' : e.message, true);
+        // Another remote may have changed the app or its position.
+        await refresh(true);
+      } finally {
+        appMutationPending = false;
+        // Do not take focus back if the user moved to Done or another sheet while waiting.
+        const canRestoreFocus = focused && (document.activeElement === focused.element || document.activeElement === document.body);
+        renderApps(canRestoreFocus ? focused : null);
+      }
+    }
+    function renderApps(focused = appFocus()) {
       const box = $('#apps');
+      const sheet = $('#apps-sheet .sheet');
+      const scrollTop = sheet.scrollTop;
       box.textContent = '';
       box.classList.toggle('editing', editing);
+      box.setAttribute('aria-busy', String(appMutationPending));
       for (const app of apps) {
+        if (editing) {
+          const card = document.createElement('div');
+          card.className = 'app-editor';
+          const head = document.createElement('div');
+          head.className = 'app-editor-head';
+          const icon = document.createElement('span');
+          icon.className = 'app';
+          icon.appendChild(appArt(app));
+          if (app.pinned) icon.appendChild(favouriteBadge());
+          const name = document.createElement('span');
+          name.className = 'app-editor-name';
+          name.textContent = app.name;
+          head.append(icon, name);
+          const actions = document.createElement('div');
+          actions.className = 'app-actions';
+          const action = (kind, label, description, available, path, body, message) => {
+            const button = document.createElement('button');
+            button.className = kind;
+            button.textContent = label;
+            button.dataset.appId = app.id;
+            button.dataset.action = kind;
+            button.setAttribute('aria-label', description);
+            button.disabled = appMutationPending || !available;
+            button.onclick = () => changeApp(path, body, message);
+            actions.appendChild(button);
+            return button;
+          };
+          const pin = action('pin', app.pinned ? '★ Unpin' : '☆ Pin favourite',
+            `${app.pinned ? 'Unpin' : 'Pin'} ${app.name}`, true, '/apps/pin', { id: app.id, pinned: !app.pinned },
+            `${app.name} ${app.pinned ? 'unpinned' : 'pinned as a favourite'}.`);
+          pin.setAttribute('aria-pressed', String(!!app.pinned));
+          action('remove', 'Remove', `Remove ${app.name}`, true, '/apps/remove', { id: app.id }, `Removed ${app.name}.`);
+          action('earlier', '↑ Earlier', `Move ${app.name} earlier`, !!app.canMoveEarlier,
+            '/apps/move', { id: app.id, offset: -1 }, `Moved ${app.name} earlier.`);
+          action('later', '↓ Later', `Move ${app.name} later`, !!app.canMoveLater,
+            '/apps/move', { id: app.id, offset: 1 }, `Moved ${app.name} later.`);
+          card.append(head, actions);
+          box.appendChild(card);
+          continue;
+        }
         const b = document.createElement('button');
         b.className = 'app';
-        const art = document.createElement('span');
-        art.className = 'art';
-        if (app.icon) {
-          const img = document.createElement('img');
-          img.src = `/icon/${app.id}?v=${encodeURIComponent(appsShown.length)}`;
-          img.alt = '';
-          art.appendChild(img);
-        } else {
-          art.textContent = app.name.slice(0, 1).toUpperCase();
-        }
-        const badge = document.createElement('span');
-        badge.className = 'badge';
-        badge.textContent = '−';
+        b.dataset.appId = app.id;
+        b.dataset.action = 'launch';
         const name = document.createElement('span');
         name.textContent = app.name;
-        b.append(art, badge, name);
-        b.setAttribute('aria-label', editing ? `Remove ${app.name}` : `Open ${app.name}`);
+        b.append(appArt(app), name);
+        if (app.pinned) b.appendChild(favouriteBadge());
+        b.setAttribute('aria-label', `Open ${app.name}${app.pinned ? ', favourite' : ''}`);
         b.onclick = () => {
-          if (editing) {
-            haptic('tap');
-            api('/apps/remove', { id: app.id }).then(refresh).catch(() => haptic('error'));
-          } else {
-            closeSheets();
-            send('launch', { id: app.id }, 'tap');
-          }
+          closeSheets();
+          send('launch', { id: app.id }, 'tap');
         };
         box.appendChild(b);
       }
@@ -362,12 +484,23 @@ enum RemotePage {
       box.appendChild(add);
       $('#edit-apps').textContent = editing ? 'Finish' : 'Edit';
       $('#edit-apps').classList.toggle('on', editing);
+      $('#edit-apps').disabled = appMutationPending;
       $('#edit-note').hidden = !editing;
       $('#restore').hidden = !(editing && canRestore);
+      $('#restore').disabled = appMutationPending;
       $('#apps-title').textContent = editing ? 'Edit apps' : 'Open on TV';
+      if (focused && $('#apps-sheet').classList.contains('show') && !$('#pair').classList.contains('show')) {
+        const buttons = [...box.querySelectorAll('button[data-app-id]')];
+        const sameApp = buttons.filter(button => button.dataset.appId === focused.id && !button.disabled);
+        const target = sameApp.find(button => button.dataset.action === focused.action) || sameApp[0]
+          || buttons.find(button => button.dataset.appId === apps[Math.min(Math.max(focused.index, 0), apps.length - 1)]?.id && !button.disabled)
+          || $('#edit-apps');
+        target.focus({ preventScroll: true });
+      }
+      sheet.scrollTop = scrollTop;
     }
-    $('#edit-apps').onclick = () => { haptic('tick'); editing = !editing; renderApps(); };
-    $('#restore').onclick = () => { haptic('tap'); api('/apps/restore', {}).then(refresh); };
+    $('#edit-apps').onclick = () => { haptic('tick'); editing = !editing; appMessage(''); renderApps(); };
+    $('#restore').onclick = () => changeApp('/apps/restore', {}, 'Restored built-in apps.');
 
     function openAdd() {
       $('#apps-sheet').classList.remove('show');
@@ -434,12 +567,58 @@ enum RemotePage {
       } catch (e) { failed(e); }
     }
 
-    // Pairing
+    // A six-digit code is exchanged once for a separate device credential.
     function showPair() { $('#pair').classList.add('show'); setTimeout(() => $('#code').focus(), 50); }
+    async function pair(code, name, guest) {
+      const res = await fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, name, guest }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      key = data.token;
+      store.set(key);
+      $('#pair').classList.remove('show');
+      $('#pair-err').textContent = '';
+      $('#code').value = '';
+      return refresh();
+    }
     $('#pair-btn').onclick = async () => {
-      key = $('#code').value.trim();
-      try { await api('/state'); store.set(key); $('#pair').classList.remove('show'); $('#pair-err').textContent = ''; haptic('tap'); refresh(); }
-      catch (e) { haptic('error'); $('#pair-err').textContent = e.message === 'unpaired' ? 'That code didn’t match. Check Settings on the TV.' : e.message; }
+      try { await pair($('#code').value.trim(), $('#device-name').value.trim(), $('#guest').checked); haptic('tap'); }
+      catch (e) { haptic('error'); $('#pair-err').textContent = e.message; }
+    };
+    async function loadDevices() {
+      const box = $('#devices'); box.textContent = '';
+      try {
+        const devices = await api('/devices');
+        for (const device of devices) {
+          const row = document.createElement('div');
+          row.className = 'sheet-head';
+          const label = document.createElement('span');
+          label.textContent = device.name + (device.current ? ' (this device)' : '') +
+            (device.guest ? ` · guest until ${new Date(device.expiresAt).toLocaleString()}` : '');
+          const remove = document.createElement('button');
+          remove.className = 'pill'; remove.textContent = 'Remove';
+          remove.setAttribute('aria-label', `Remove ${device.name}`);
+          remove.onclick = async () => {
+            if (!confirm(`Remove ${device.name}?`)) return;
+            try {
+              await api('/devices/revoke', { id: device.id });
+              if (device.current) { key = ''; store.set(''); closeSheets(); showPair(); }
+              else await loadDevices();
+            } catch (e) { $('#devices-msg').textContent = e.message; }
+          };
+          row.append(label, remove); box.appendChild(row);
+        }
+        $('#revoke-all').hidden = false;
+        $('#devices-msg').textContent = '';
+      } catch (e) {
+        $('#revoke-all').hidden = true;
+        $('#devices-msg').textContent = e.message === 'Guests cannot manage devices' ? 'Guest devices cannot manage pairing.' : e.message;
+      }
+    }
+    $('#revoke-all').onclick = async () => {
+      if (!confirm('Remove all paired devices, including this one?')) return;
+      try { await api('/devices/revoke-all', {}); key = ''; store.set(''); closeSheets(); showPair(); }
+      catch (e) { $('#devices-msg').textContent = e.message; }
     };
 
     // Buttons
@@ -459,7 +638,7 @@ enum RemotePage {
     document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', e => { if (e.target === s) closeSheets(); }));
     document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
     $('#open-apps').onclick = () => { haptic('tick'); refresh(); $('#apps-sheet').classList.add('show'); };
-    $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); $('#power-sheet').classList.add('show'); };
+    $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); $('#power-sheet').classList.add('show'); };
     document.querySelectorAll('#sleep-chips button').forEach(b => b.onclick = () => {
       const m = Number(b.dataset.m);
       send('sleeptimer', { m }, 'tap').then(refresh);
@@ -501,6 +680,10 @@ enum RemotePage {
     // for OK. Taps outside the ring do nothing.
     (() => {
       const pad = $('#clickpad');
+      pad.querySelectorAll('button').forEach(button => button.addEventListener('click', e => {
+        // Pointer gestures are handled below; keyboard/assistive activation produces detail=0.
+        if (e.detail === 0) send(button.dataset.dir || 'ok', {}, 'tap');
+      }));
       let start = null, timer = null, repeated = false;
       const zoneAt = (x, y) => {
         const r = pad.getBoundingClientRect();
@@ -581,7 +764,12 @@ enum RemotePage {
       tp.addEventListener('pointercancel', lift);
     })();
 
-    refresh();
+    // Old installations stored the shared six-digit code; exchange it automatically during migration.
+    const initialCode = /^\d{6}$/.test(qrCode) ? qrCode : (/^\d{6}$/.test(key) ? key : '');
+    if (initialCode) {
+      if (/^\d{6}$/.test(key)) { key = ''; store.set(''); }
+      pair(initialCode, 'Phone', false).catch(() => { $('#code').value = ''; showPair(); });
+    } else { refresh(); }
     setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 3000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
     </script>

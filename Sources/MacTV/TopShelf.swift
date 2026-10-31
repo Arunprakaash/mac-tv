@@ -1,5 +1,4 @@
 import SwiftUI
-import Vision
 
 /// Each streaming app's latest shows for the Top Shelf, like Apple TV's: series with new episodes
 /// on that app in the past two weeks, most popular first, from TVmaze's public streaming schedule
@@ -19,6 +18,7 @@ final class TopShelfFeed: ObservableObject {
     private struct Saved: Codable {
         let fetched: Date
         let services: [String: [Show]]
+        var preferences: ShelfPreferences? = nil
     }
 
     static let shared = TopShelfFeed()
@@ -32,9 +32,6 @@ final class TopShelfFeed: ObservableObject {
     private static let musicApps = ["spotify", "ytmusic"]
     /// Series only: sports, talk shows, news and reality TV make poor Top Shelf art.
     private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary"]
-    /// Some shows' art carries their title in their own script; keep to languages people here watch.
-    private static let languages: Set<String> = ["English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada",
-                                                 "Bengali", "Marathi", "Japanese", "Korean", "Spanish"]
     private static let perApp = 8
 
     /// Shows whose image is ready, by app id.
@@ -46,25 +43,45 @@ final class TopShelfFeed: ObservableObject {
     private var clock: Timer?
     private(set) var images: [Int: NSImage] = [:]
     private var lists: [String: [Show]] = [:]
-    private let folder = AppFolder.url.appendingPathComponent("Top Shelf", isDirectory: true)
+    private var folder: URL { AppFolder.url.appendingPathComponent("Top Shelf", isDirectory: true) }
     private var listFile: URL { folder.appendingPathComponent("shows.json") }
     private var started = false
 
+    @Published private(set) var preferences = ShelfPreferences.load()
+    private var refreshTask: Task<Void, Never>?
+
     private init() {}
 
-    /// An app's own shows; apps with none (websites, Mac apps, games) get the top of every app's.
-    func shows(for serviceID: String) -> [Show] {
-        if let own = ready[serviceID], !own.isEmpty { return own }
-        return mix
+    func updatePreferences(_ value: ShelfPreferences) {
+        guard value != preferences else { return }
+        let old = preferences
+        preferences = value
+        value.save()
+        refreshTask?.cancel()
+        let retained = Self.reusableLists(lists, from: old, to: value)
+        use(retained)
+        refreshTask = Task { await refresh() }
     }
 
-    /// Every app's most popular shows taken in turn: the first of each, then the second of each…
-    private var mix: [Show] {
-        let lists = ready.keys.sorted().compactMap { ready[$0]?.filter { !$0.square } }.filter { !$0.isEmpty }
-        let longest = lists.map(\.count).max() ?? 0
-        var seen = Set<Int>()
-        return (0..<longest).flatMap { rank in lists.compactMap { rank < $0.count ? $0[rank] : nil } }
-            .filter { seen.insert($0.id).inserted }
+    /// Music charts depend on region, while TV schedules depend on both region and language.
+    static func reusableLists(_ lists: [String: [Show]], from old: ShelfPreferences, to new: ShelfPreferences) -> [String: [Show]] {
+        if old == new { return lists }
+        guard old.region == new.region else { return [:] }
+        return lists.filter { musicApps.contains($0.key) }
+    }
+
+    /// Only show programmes associated with this service; unrelated apps have no featured title.
+    func shows(for serviceID: String) -> [Show] { ready[serviceID] ?? [] }
+
+    func currentShow(for serviceID: String) -> Show? {
+        let shows = shows(for: serviceID)
+        return shows.isEmpty ? nil : shows[turn % shows.count]
+    }
+
+    /// Search routes are used only for services with known search pages, not direct playback.
+    func searchURL(for service: Service) -> URL? {
+        guard case .web = service.kind, let show = currentShow(for: service.id) else { return nil }
+        return ShelfSearch.url(serviceID: service.id, query: show.name)
     }
 
     /// Shows the last list straight away, then fetches a fresh one if it's a day old.
@@ -80,9 +97,9 @@ final class TopShelfFeed: ObservableObject {
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let saved = (try? Data(contentsOf: listFile)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
-        if let saved { use(saved.services) }
-        if saved.map({ Date().timeIntervalSince($0.fetched) > 20 * 3600 }) ?? true {
-            Task { await refresh() }
+        if let saved, let old = saved.preferences { use(Self.reusableLists(saved.services, from: old, to: preferences)) }
+        if saved.map({ $0.services.values.allSatisfy { $0.isEmpty } || $0.preferences != preferences || Date().timeIntervalSince($0.fetched) > 20 * 3600 }) ?? true {
+            refreshTask = Task { await refresh() }
         }
         Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
@@ -92,52 +109,58 @@ final class TopShelfFeed: ObservableObject {
     /// Asks TVmaze for the past two weeks of streaming episodes, keeps each app's most popular series,
     /// and finds a wide background picture for each.
     func refresh() async {
+        let preferences = self.preferences
         var found: [String: [Int: (name: String, weight: Int)]] = [:]
         let today = Date()
         for day in 0..<14 {
             let date = ISO8601DateFormatter.string(from: today.addingTimeInterval(Double(-day) * 86400), timeZone: .current,
                                                    formatOptions: [.withFullDate])
-            for region in ["", "&country=IN", "&country=US"] {
+            for region in [preferences.region.isEmpty ? "" : "&country=\(preferences.region)"] {
+                guard !Task.isCancelled else { return }
                 guard let episodes = await Self.json("https://api.tvmaze.com/schedule/web?date=\(date)\(region)") as? [[String: Any]] else { continue }
                 for episode in episodes {
                     guard let show = (episode["_embedded"] as? [String: Any])?["show"] as? [String: Any],
                           let channel = (show["webChannel"] as? [String: Any])?["name"] as? String,
                           let app = Self.channels[channel], let kind = show["type"] as? String, Self.kinds.contains(kind),
-                          let language = show["language"] as? String, Self.languages.contains(language),
+                          preferences.includes(language: show["language"] as? String),
                           let id = show["id"] as? Int, let name = show["name"] as? String else { continue }
                     found[app, default: [:]][id] = (name, show["weight"] as? Int ?? 0)
                 }
             }
         }
-        guard !found.isEmpty else { return }  // Offline: keep what we have.
         // An app whose fetch comes back empty keeps yesterday's list.
         var services = lists
+        var fetchedUsable = false
         for (app, shows) in found {
             var picked: [Show] = []
             for (id, show) in shows.sorted(by: { $0.value.weight > $1.value.weight }) {
+                guard !Task.isCancelled else { return }
                 guard let image = await Self.background(for: id),
                       await Self.download(image, to: folder.appendingPathComponent("\(id).jpg")) else { continue }
                 picked.append(Show(id: id, name: show.name, image: image))
                 if picked.count == Self.perApp { break }
             }
-            if !picked.isEmpty { services[app] = picked }
+            if !picked.isEmpty { services[app] = picked; fetchedUsable = true }
         }
-        let albums = await Self.topAlbums()
+        let albums = await Self.topAlbums(region: preferences.region)
+        guard !Task.isCancelled, preferences == self.preferences else { return }
         if !albums.isEmpty {
+            fetchedUsable = true
             // Both music apps show the chart, starting at different places.
             services["spotify"] = albums
             services["ytmusic"] = Array(albums.dropFirst(albums.count / 2) + albums.prefix(albums.count / 2))
         }
-        if let data = try? JSONEncoder().encode(Saved(fetched: Date(), services: services)) {
+        guard fetchedUsable else { return } // Keep the last successful timestamp when offline.
+        if let data = try? JSONEncoder().encode(Saved(fetched: Date(), services: services, preferences: preferences)) {
             try? data.write(to: listFile, options: .atomic)
         }
         use(services)
     }
 
     /// This week's most-played albums in this Mac's country, from Apple's public charts.
-    private static func topAlbums() async -> [Show] {
-        let region = Locale.current.region?.identifier.lowercased() ?? "us"
-        for country in [region, "us"] {
+    private static func topAlbums(region: String) async -> [Show] {
+        let region = region.isEmpty ? (Locale.current.region?.identifier.lowercased() ?? "us") : region.lowercased()
+        for country in [region] {
             guard let feed = (await json("https://rss.marketingtools.apple.com/api/v2/\(country)/music/most-played/12/albums.json")
                                 as? [String: Any])?["feed"] as? [String: Any],
                   let results = feed["results"] as? [[String: Any]], !results.isEmpty else { continue }
@@ -164,27 +187,12 @@ final class TopShelfFeed: ObservableObject {
         return wide.max { $0.width < $1.width }.flatMap { URL(string: $0.url) }
     }
 
-    /// Saves a show's picture to the cache, unless it carries writing in a script other than Latin:
-    /// a title in a language most people here can't read looks like a mistake.
+    /// Cache artwork regardless of the script used in its title.
     private nonisolated static func download(_ url: URL, to file: URL) async -> Bool {
         guard let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
-        guard await !Task.detached(operation: { hasForeignText(data) }).value else { return false }
-        try? data.write(to: file, options: .atomic)
-        return true
-    }
-
-    private nonisolated static func hasForeignText(_ data: Data) -> Bool {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
-        let request = VNRecognizeTextRequest()
-        request.automaticallyDetectsLanguage = true
-        try? VNImageRequestHandler(cgImage: image).perform([request])
-        return (request.results ?? []).contains { observation in
-            guard let text = observation.topCandidates(1).first, text.confidence >= 0.5 else { return false }
-            let latin = { (letter: Unicode.Scalar) in letter.value < 0x250 || (0x1E00...0x1EFF).contains(letter.value) }
-            return text.string.unicodeScalars.filter { $0.properties.isAlphabetic && !latin($0) }.count >= 3
-        }
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              NSImage(data: data) != nil else { return false }
+        do { try data.write(to: file, options: .atomic); return true } catch { return false }
     }
 
     /// TVmaze allows about 20 requests every 10 seconds, so requests are paced.

@@ -4,7 +4,7 @@ import SwiftUI
 /// TV controls, driven by the D-pad, the keyboard or the mouse.
 struct SettingsPanel: Equatable {
     enum Row: Int, CaseIterable {
-        case phoneRemote, controller, sleepTimer, autoSkip, autoNext, keepMacAwake, lidOverride, screenOff, sleepMac
+        case phoneRemote, controller, arrangeApps, topShelfPreferences, playbackCheck, dedicatedTV, preferredDisplay, launchAtLogin, sleepTimer, autoSkip, autoNext, keepMacAwake, lidOverride, screenOff, sleepMac
     }
 
     var row: Row = .phoneRemote
@@ -56,6 +56,9 @@ extension TVController {
     /// Left and right: step the sleep timer, or switch a setting off and on.
     private func adjustSetting(_ row: SettingsPanel.Row, on: Bool) {
         switch row {
+        case .dedicatedTV: setDedicatedTVMode(on)
+        case .preferredDisplay: stepTVDisplay(on ? 1 : -1)
+        case .launchAtLogin: setLaunchAtLogin(on)
         case .sleepTimer: stepSleepTimer(by: on ? 1 : -1, wrap: false)
         case .autoSkip: autoSkip = on
         case .autoNext: autoNext = on
@@ -72,6 +75,12 @@ extension TVController {
         case .phoneRemote: pairing = true
         case .controller:
             showToast(controller == nil ? "Pair a controller in System Settings › Bluetooth" : "Press its Menu button any time to come home")
+        case .arrangeApps: openOrganizer()
+        case .topShelfPreferences: openTopShelfPreferences()
+        case .playbackCheck: openPlaybackCheck()
+        case .dedicatedTV: setDedicatedTVMode(!dedicatedTVMode)
+        case .preferredDisplay: stepTVDisplay(1, wrap: true)
+        case .launchAtLogin: setLaunchAtLogin(!launchAtLogin)
         case .sleepTimer: stepSleepTimer(by: 1, wrap: true)
         case .autoSkip: autoSkip.toggle()
         case .autoNext: autoNext.toggle()
@@ -103,6 +112,7 @@ extension TVController {
 struct SettingsSheet: View {
     @ObservedObject var tv: TVController
     @Environment(\.canvasSize) private var canvas
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var focusSpace
 
     var body: some View {
@@ -111,45 +121,76 @@ struct SettingsSheet: View {
             Text("Settings").font(.system(size: 52, weight: .heavy)).tracking(-1)
                 .padding(.bottom, 8)
 
-            group("Remote")
-            row(.phoneRemote, "Phone remote", panel) {
-                trailing(tv.phonePaired ? "Show QR code" : "Set up", chevron: true)
-            }
-            row(.controller, "Game controller", panel) {
-                if let controller = tv.controller {
-                    HStack(spacing: 10) {
-                        Text(controller.name)
-                        if controller.battery != nil || controller.charging { Image(systemName: controller.batterySymbol) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        group("Remote")
+                        row(.phoneRemote, "Phone remote", panel) {
+                            trailing(tv.phonePaired ? "Show QR code" : "Set up", chevron: true)
+                        }
+                        row(.controller, "Game controller", panel) {
+                            if let controller = tv.controller {
+                                HStack(spacing: 10) {
+                                    Text(controller.name)
+                                    if controller.battery != nil || controller.charging { Image(systemName: controller.batterySymbol) }
+                                }
+                                .font(.system(size: 24, weight: .semibold)).opacity(0.7)
+                            } else {
+                                trailing("None connected", chevron: false)
+                            }
+                        }
+
+                        row(.arrangeApps, "Arrange Apps", panel) {
+                            trailing("Order and favourites", chevron: true)
+                        }
+
+                        row(.topShelfPreferences, "Top Shelf", panel) { trailing("Choose sources", chevron: true) }
+                        row(.playbackCheck, "Playback check", panel) { trailing("Check playback", chevron: true) }
+
+                        group("Dedicated TV")
+                        row(.dedicatedTV, tv.dedicatedTVMode ? "Exit TV mode" : "Enter TV mode", panel) {
+                            SettingSwitch(on: tv.dedicatedTVMode)
+                        }
+                        row(.preferredDisplay, "Preferred display", panel) {
+                            trailing(tv.preferredTVDisplayName, chevron: true)
+                        }
+                        row(.launchAtLogin, "Launch at login", panel) {
+                            if tv.loginNeedsApproval { trailing("Approval needed", chevron: false) }
+                            else { SettingSwitch(on: tv.launchAtLogin) }
+                        }
+
+                        group("Watching")
+                        row(.sleepTimer, "Sleep timer", panel) {
+                            let minutes = tv.sleepMinutesLeft
+                            HStack(spacing: 14) {
+                                if panel.row == .sleepTimer { Image(systemName: "chevron.left").opacity(0.6) }
+                                Text(minutes == 0 ? "Off" : "\(minutes) min left").monospacedDigit()
+                                if panel.row == .sleepTimer { Image(systemName: "chevron.right").opacity(0.6) }
+                            }
+                            .font(.system(size: 24, weight: .semibold))
+                        }
+                        row(.autoSkip, "Skip intros and recaps", panel) { SettingSwitch(on: tv.autoSkip) }
+                        row(.autoNext, "Play next episode automatically", panel) { SettingSwitch(on: tv.autoNext) }
+
+                        group("Power")
+                        Text(tv.lidStatus)
+                            .font(.system(size: 21))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .padding(.horizontal, 4)
+                            .padding(.bottom, 2)
+                        row(.keepMacAwake, "Keep Mac awake while Mac TV is open", panel) { SettingSwitch(on: tv.keepMacAwake) }
+                        row(.lidOverride, "Stay awake with lid closed", panel) { SettingSwitch(on: tv.lidOverride) }
+                        row(.screenOff, "Turn screen off", panel) { EmptyView() }
+                        row(.sleepMac, panel.confirmingSleep ? "Press again to sleep the Mac" : "Sleep Mac", panel) { EmptyView() }
                     }
-                    .font(.system(size: 24, weight: .semibold)).opacity(0.7)
-                } else {
-                    trailing("None connected", chevron: false)
+                    .padding(8)
+                }
+                .frame(height: min(720, max(300, canvas.height - 320)))
+                .onAppear { proxy.scrollTo(panel.row, anchor: .center) }
+                .onChange(of: panel.row) { _, row in
+                    withAnimation(reduceMotion ? nil : Motion.focus) { proxy.scrollTo(row, anchor: .center) }
                 }
             }
-
-            group("Watching")
-            row(.sleepTimer, "Sleep timer", panel) {
-                let minutes = tv.sleepMinutesLeft
-                HStack(spacing: 14) {
-                    if panel.row == .sleepTimer { Image(systemName: "chevron.left").opacity(0.6) }
-                    Text(minutes == 0 ? "Off" : "\(minutes) min left").monospacedDigit()
-                    if panel.row == .sleepTimer { Image(systemName: "chevron.right").opacity(0.6) }
-                }
-                .font(.system(size: 24, weight: .semibold))
-            }
-            row(.autoSkip, "Skip intros and recaps", panel) { SettingSwitch(on: tv.autoSkip) }
-            row(.autoNext, "Play next episode automatically", panel) { SettingSwitch(on: tv.autoNext) }
-
-            group("Power")
-            Text(tv.lidStatus)
-                .font(.system(size: 21))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.horizontal, 4)
-                .padding(.bottom, 2)
-            row(.keepMacAwake, "Keep Mac awake while Mac TV is open", panel) { SettingSwitch(on: tv.keepMacAwake) }
-            row(.lidOverride, "Stay awake with lid closed", panel) { SettingSwitch(on: tv.lidOverride) }
-            row(.screenOff, "Turn screen off", panel) { EmptyView() }
-            row(.sleepMac, panel.confirmingSleep ? "Press again to sleep the Mac" : "Sleep Mac", panel) { EmptyView() }
         }
         .padding(56)
         .frame(width: 1100, alignment: .leading)
@@ -202,6 +243,7 @@ struct SettingsSheet: View {
         .animation(Motion.focus, value: focused)
         .contentShape(Rectangle())
         .onTapGesture { tv.activateSetting(row) }
+        .id(row)
     }
 }
 

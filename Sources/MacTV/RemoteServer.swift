@@ -9,7 +9,10 @@ final class RemoteServer {
     typealias IconProvider = @MainActor (String) -> Data?
     typealias Routes = @MainActor (HTTPRequest) -> HTTPResponse?
 
-    private let token: String
+    private let pairing: PairingStore
+    private var legacyCode: String?
+    private let legacyUntil: Date
+    private let now: () -> Date
     private let onCommand: CommandHandler
     private let state: StateProvider
     private let icon: IconProvider
@@ -18,21 +21,31 @@ final class RemoteServer {
     private var failedAttempts: [Date] = []
 
     init(token: String, onCommand: @escaping CommandHandler, state: @escaping StateProvider,
-         icon: @escaping IconProvider, routes: @escaping Routes) {
-        self.token = token
+         icon: @escaping IconProvider, routes: @escaping Routes,
+         pairing: PairingStore = PairingStore(), defaults: UserDefaults = .standard,
+         now: @escaping () -> Date = Date.init) {
+        self.pairing = pairing
+        self.now = now
+        self.legacyCode = defaults.string(forKey: "pairingCode")
+        self.legacyUntil = now().addingTimeInterval(300)
+        defaults.removeObject(forKey: "pairingCode")
         self.onCommand = onCommand
         self.state = state
         self.icon = icon
         self.routes = routes
     }
 
-    /// The 6-digit code a phone needs, kept across launches so paired phones stay paired.
-    static func pairingCode() -> String {
-        let defaults = UserDefaults.standard
-        if let code = defaults.string(forKey: "pairingCode") { return code }
-        let code = String(format: "%06d", Int.random(in: 0...999_999))
-        defaults.set(code, forKey: "pairingCode")
-        return code
+    /// A new code is generated after five minutes, and is never accepted as a device token.
+    private static var currentCode = ""
+    private static var codeExpires = Date.distantPast
+    static func pairingCode(now: Date = Date()) -> String {
+        if now >= codeExpires {
+            var next: String
+            repeat { next = String(format: "%06d", Int.random(in: 0...999_999)) } while next == currentCode
+            currentCode = next
+            codeExpires = now.addingTimeInterval(300)
+        }
+        return currentCode
     }
 
     /// Listens on the first free port in `ports`.
@@ -94,7 +107,7 @@ final class RemoteServer {
     }
 
     @MainActor
-    private func respond(to request: HTTPRequest) -> HTTPResponse {
+    func respond(to request: HTTPRequest) -> HTTPResponse {
         if request.method == "GET", request.path == "/" {
             return HTTPResponse(contentType: "text/html; charset=utf-8", body: Data(RemotePage.html.utf8))
         }
@@ -120,14 +133,43 @@ final class RemoteServer {
             return HTTPResponse(contentType: "image/png", body: png)
         }
 
-        // Slow down anyone guessing the pairing code.
-        failedAttempts.removeAll { $0.timeIntervalSinceNow < -60 }
-        guard failedAttempts.count < 20 else {
-            return .json(["error": "Too many wrong codes. Try again in a minute."], status: "429 Too Many Requests")
+        if request.method == "POST", request.path == "/pair" {
+            failedAttempts.removeAll { now().timeIntervalSince($0) >= 60 }
+            guard failedAttempts.count < 20 else {
+                return .json(["error": "Too many wrong codes. Try again in a minute."], status: "429 Too Many Requests")
+            }
+            guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
+                  let code = object["code"] as? String,
+                  code == Self.pairingCode(now: now()) || (now() < legacyUntil && code == legacyCode) else {
+                failedAttempts.append(now())
+                return .json(["error": "Wrong or expired pairing code"], status: "401 Unauthorized")
+            }
+            do {
+                let token = try pairing.issue(name: object["name"] as? String ?? "Phone", guest: object["guest"] as? Bool ?? false)
+                return .json(["token": token])
+            } catch { return .json(["error": "Could not save paired device"], status: "500 Internal Server Error") }
         }
-        guard request.headers["x-couch-key"] == token else {
-            failedAttempts.append(Date())
-            return .json(["error": "Wrong or missing pairing code"], status: "401 Unauthorized")
+        guard let device = pairing.authenticate(request.headers["x-couch-key"]) else {
+            return .json(["error": "Pair with the TV first"], status: "401 Unauthorized")
+        }
+        if request.path == "/devices" || request.path.hasPrefix("/devices/") {
+            guard !device.isGuest else { return .json(["error": "Guests cannot manage devices"], status: "403 Forbidden") }
+            switch (request.method, request.path) {
+            case ("GET", "/devices"):
+                return .json(pairing.activeDevices().map { d in
+                    ["id": d.id, "name": d.name, "guest": d.isGuest, "current": d.id == device.id,
+                     "expiresAt": d.expiresAt.map { ISO8601DateFormatter().string(from: $0) } ?? ""] as [String: Any]
+                })
+            case ("POST", "/devices/revoke"):
+                guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
+                      let id = object["id"] as? String else { return .json(["error": "Missing device"], status: "400 Bad Request") }
+                do { try pairing.revoke(id: id); return .json(["ok": true]) }
+                catch { return .json(["error": "Could not save changes"], status: "500 Internal Server Error") }
+            case ("POST", "/devices/revoke-all"):
+                do { try pairing.revokeAll(); legacyCode = nil; return .json(["ok": true]) }
+                catch { return .json(["error": "Could not save changes"], status: "500 Internal Server Error") }
+            default: return .json(["error": "Not found"], status: "404 Not Found")
+            }
         }
 
         switch (request.method, request.path) {
@@ -170,7 +212,7 @@ struct HTTPRequest {
             headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
 
-        let length = Int(headers["content-length"] ?? "0") ?? 0
+        guard let length = Int(headers["content-length"] ?? "0"), length >= 0, length <= 1 << 20 else { return nil }
         let bodyStart = headerEnd.upperBound
         guard data.count - bodyStart >= length else { return nil }
 
