@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ece0c6">
+<title>Privacy Policy · Mac TV</title>
+<meta name="description" content="Mac TV's privacy policy: no account, no analytics, no Mac TV servers.">
+<link rel="icon" type="image/png" href="screenshots/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-apple" viewBox="0 0 24 24" fill="currentColor"><path d="M16.37 1.43c0 1.14-.49 2.27-1.18 3.08-.74.9-1.99 1.57-2.99 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.57-2.27 1.21-2.98.8-.94 2.14-1.64 3.25-1.68.03.13.05.28.05.43Zm4.56 15.71c-.03.07-.46 1.58-1.52 3.12-.94 1.34-1.94 2.71-3.43 2.71-1.52 0-1.9-.88-3.63-.88-1.7 0-2.3.91-3.67.91-1.38 0-2.33-1.26-3.43-2.8C4.04 18.38 3 15.57 3 12.92c0-4.28 2.8-6.55 5.55-6.55 1.45 0 2.68.95 3.6.95.87 0 2.22-1.01 3.9-1.01.62 0 2.89.06 4.38 2.19-.13.09-2.38 1.37-2.38 4.19 0 3.26 2.85 4.42 2.95 4.45Z"/></symbol>
+</svg>
+<nav class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="screenshots/icon.png" alt="">Mac TV</a>
+    <div class="links">
+      <a href="privacy.html" aria-current="page">Privacy</a>
+      <a href="terms.html">Terms</a>
+      <a class="dl" href="https://github.com/Arunprakaash/mac-tv/releases/latest"><svg class="apple"><use href="#i-apple"/></svg>Download</a>
+    </div>
+  </div>
+</nav>
+<main class="wrap"><div class="doc">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated October 31, 2026</p>
+
+    <div class="summary">
+      <p><strong>In short:</strong> Mac TV has no account, no analytics and no servers of its own. It doesn't collect, sell or share your data. What it stores stays on your Mac. The streaming services you use in it have their own privacy policies.</p>
+    </div>
+
+    <h2>Who this covers</h2>
+    <p>This policy covers the Mac TV app for macOS, the phone remote page it serves from your Mac, and this website. Mac TV is made by Arunprakaash ("I") as a free, open-source project. Its source code is public on <a href="https://github.com/Arunprakaash/mac-tv">GitHub</a>, so anyone can check what it does.</p>
+
+    <h2>What Mac TV doesn't do</h2>
+    <ul>
+      <li>It has no sign-up and no Mac TV account.</li>
+      <li>It sends no analytics, crash reports, usage data or advertising identifiers.</li>
+      <li>It has no servers. Nothing you do in Mac TV is sent to me.</li>
+      <li>It doesn't record what you watch or listen to.</li>
+    </ul>
+
+    <h2>What stays on your Mac</h2>
+    <ul>
+      <li><strong>Sign-ins and website data.</strong> Streaming services run in Apple's WebKit engine. Their cookies and sign-ins are stored by WebKit in your Mac user account's Library, like Safari's, and only those services can read them.</li>
+      <li><strong>Your apps.</strong> The apps you add and their icons are kept in <code>~/Library/Application Support/Mac TV</code>.</li>
+      <li><strong>Settings.</strong> Options such as the sleep timer, playback and power settings, and the remote's pairing code are kept in Mac TV's preferences on your Mac.</li>
+    </ul>
+    <p>Deleting Mac TV and those folders removes all of it.</p>
+
+    <h2>When Mac TV goes online</h2>
+    <ul>
+      <li><strong>Streaming services you open.</strong> Netflix, YouTube, Prime Video and the others load directly from their own websites. What they collect is covered by their own privacy policies, exactly as when you use them in Safari.</li>
+      <li><strong>Finding icons for apps you add.</strong> When you add an app, Mac TV looks up its name on Apple's App Store search (iTunes Search API), with your country, to find its official icon. It may also download the icon from the website you added. Nothing else is sent.</li>
+    </ul>
+
+    <h2>The phone remote</h2>
+    <p>The remote is a web page served by Mac TV from your Mac, on your own network or your Tailscale network. It doesn't pass through the internet or any server of mine. Only phones that enter the 6-digit pairing code shown on your TV can control Mac TV. The phone remembers that code in its browser so you don't have to enter it again.</p>
+    <p>On your home network the remote uses plain HTTP, so it's meant for networks you trust. Tailscale encrypts the connection itself.</p>
+
+    <h2>Permissions on your Mac</h2>
+    <ul>
+      <li><strong>Local network:</strong> so your phone can reach the remote.</li>
+      <li><strong>Accessibility</strong> (optional): only to send remote presses to Mac apps you open from Mac TV.</li>
+      <li><strong>Power settings:</strong> keeping the Mac awake, and staying awake with the lid closed when you turn that on, change power behaviour on your Mac only. They're undone when Mac TV quits.</li>
+    </ul>
+
+    <h2>This website</h2>
+    <p>This site is hosted by GitHub Pages. It uses no cookies, analytics or trackers of its own. GitHub may keep standard server logs, such as IP addresses, under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>.</p>
+
+    <h2>Children</h2>
+    <p>Mac TV doesn't collect personal information from anyone, including children.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, the new version will be posted here with a new date. Earlier versions stay visible in the project's history on GitHub.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about privacy? Open an issue on <a href="https://github.com/Arunprakaash/mac-tv/issues">GitHub</a>.</p>
+  </div></main>
+
+<footer>
+  <div class="wrap">
+    <span>Made by Arunprakaash · MIT License</span>
+    <nav>
+      <a href="./">Home</a>
+      <a href="https://github.com/Arunprakaash/mac-tv">GitHub</a>
+      <a href="https://github.com/Arunprakaash/mac-tv/issues">Contact</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,185 @@
+/* Mac TV's site, built from the app icon: cream, charcoal and brass, with the CRT's phosphor green.
+   Bricolage Grotesque for display, IBM Plex Mono for labels, the system font (SF Pro) for reading. */
+:root {
+  --cream: #ece0c6;
+  --ink: #1d1a17;
+  --ink-2: #5b5247;
+  --line: rgba(29, 26, 23, .18);
+  --brass: #c69a52;
+  --brass-d: #7e5e2e;
+  --cabinet: #2b2a2e;
+  --phosphor: #1f7a4a;
+  --display: "Bricolage Grotesque", "Arial Narrow", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body { margin: 0; color: var(--ink); background: var(--cream); font: 17px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+img { display: block; max-width: 100%; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--phosphor); outline-offset: 3px; }
+.wrap { width: 100%; max-width: 1160px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Navigation and buttons. */
+nav.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: rgba(236, 224, 198, .85); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 70px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; white-space: nowrap; font-family: var(--mono); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; }
+.brand img { width: 30px; height: 30px; }
+nav.top .links { display: flex; align-items: center; gap: 22px; font-family: var(--mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+nav.top .links a { text-decoration: none; }
+nav.top .links a[aria-current] { color: var(--phosphor); }
+.dl {
+  display: inline-flex; align-items: center; gap: 9px; height: 42px; padding: 0 18px; border-radius: 8px; white-space: nowrap;
+  background: var(--ink); color: var(--cream); text-decoration: none;
+  font-family: var(--mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
+  box-shadow: 0 4px 0 var(--brass-d); transition: transform .1s, box-shadow .1s;
+}
+.dl:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--brass-d); }
+.dl.big { height: 52px; padding: 0 22px; font-size: 14px; }
+.apple { width: 15px; height: 17px; margin-top: -3px; fill: currentColor; }
+
+/* Hero: the headline beside the TV set. */
+.hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 40px; align-items: center; padding-top: 50px; }
+.eyebrow { font-family: var(--mono); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+h1 { margin: 14px 0 0; font-family: var(--display); font-size: clamp(56px, 9vw, 120px); line-height: .86; letter-spacing: -.035em; font-weight: 800; font-variation-settings: "wdth" 78; text-wrap: balance; }
+h1 span { color: var(--phosphor); }
+.hero p { margin: 22px 0 0; max-width: 430px; font-size: 19px; color: var(--ink-2); }
+.act { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 30px; }
+.act .src { font-family: var(--mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.hero .hint { max-width: none; margin: 44px 0 0; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); text-align: right; }
+
+/* The TV set from the icon: charcoal cabinet, glass, brass knobs, a grille and feet. */
+/* The set's wrapper is the size reference: inside it, 1cqw is 1% of the set's width. */
+.set { container-type: inline-size; min-width: 0; }
+.crt { position: relative; padding: 4.2cqw 21cqw 4.2cqw 4.2cqw; border-radius: 9cqw; background: linear-gradient(180deg, #47464c, var(--cabinet) 45%, #1c1c20); box-shadow: inset 0 2px 0 rgba(255, 255, 255, .18), 0 40px 60px -30px rgba(40, 30, 20, .7); }
+.crt .feet { position: absolute; bottom: -5%; left: 11%; right: 11%; display: flex; justify-content: space-between; z-index: -1; }
+.crt .feet i { width: 9%; aspect-ratio: 1.2; background: linear-gradient(180deg, #2c241d, #15110d); clip-path: polygon(0 0, 100% 0, 82% 100%, 18% 100%); border-radius: 0 0 4px 4px; }
+.crt::before { content: ""; position: absolute; z-index: -2; left: 6%; right: 6%; bottom: -9%; height: 8%; border-radius: 50%; background: radial-gradient(50% 50% at 50% 50%, rgba(60, 42, 20, .38), rgba(60, 42, 20, 0)); }
+.crt .glass { position: relative; padding: 1.6cqw; border-radius: 6.6cqw; background: #121214; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .04); }
+.crt .glass .tv { border-radius: 5cqw; }
+.crt .tv::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 7;
+  background: repeating-linear-gradient(180deg, rgba(0, 0, 0, .07) 0 1px, transparent 1px 3px), radial-gradient(120% 120% at 50% 50%, transparent 62%, rgba(0, 0, 0, .5)), radial-gradient(60% 40% at 25% 15%, rgba(255, 255, 255, .1), transparent 70%);
+  box-shadow: inset 0 0 40px rgba(63, 240, 142, .12);
+}
+.crt .panel { position: absolute; right: 4%; top: 8%; bottom: 7%; width: 12%; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+/* A knob is a fixed base (its shadow and the light on it stay put) and a brass face that turns. */
+.knob {
+  position: relative; width: 82%; aspect-ratio: 1; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+  -webkit-appearance: none; appearance: none; background: transparent; -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 6px 10px -3px rgba(0, 0, 0, .6), 0 2px 3px rgba(0, 0, 0, .35);
+}
+.knob .face {
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 0deg, rgba(60, 40, 15, .22) 0deg 3deg, rgba(255, 240, 200, .08) 3deg 6deg),
+    conic-gradient(from 200deg, #f3d9a4, var(--brass), var(--brass-d), var(--brass), #f3d9a4);
+  box-shadow: inset 0 0 0 1px rgba(80, 55, 20, .35);
+  transition: transform .35s cubic-bezier(.3, 1.4, .5, 1);
+}
+.knob .face::before { content: ""; position: absolute; inset: 22%; border-radius: 50%; background: radial-gradient(circle, #8f6d38, #6e5228 60%, #57411f); box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 230, 180, .12); }
+.knob .face::after { content: ""; position: absolute; left: 46%; top: 7%; width: 8%; height: 28%; border-radius: 4px; background: linear-gradient(180deg, #fff3d4, #e8cf96); box-shadow: 0 1px 1px rgba(0, 0, 0, .3); }
+/* The room's light falls from the top left and doesn't turn with the knob. */
+.knob::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 32% 24%, rgba(255, 246, 222, .5) 0%, rgba(255, 246, 222, .12) 30%, rgba(255, 246, 222, 0) 55%), radial-gradient(circle at 70% 82%, rgba(30, 20, 5, .25), rgba(30, 20, 5, 0) 55%);
+  box-shadow: inset 0 1px 0 rgba(255, 245, 215, .5), inset 0 -2px 3px rgba(60, 40, 15, .35);
+}
+.knob-label { font-family: var(--mono); font-size: clamp(7px, .8vw, 10px); letter-spacing: .1em; color: #a9a39a; }
+.grille { width: 92%; display: grid; gap: 5%; padding: 8% 0; }
+.grille i { height: 4px; border-radius: 2px; background: #121214; box-shadow: 0 1px 0 rgba(255, 255, 255, .08); }
+.led { width: 9%; aspect-ratio: 1; border-radius: 50%; background: #3ff08e; box-shadow: 0 0 6px 1px rgba(63, 240, 142, .8), 0 0 14px 3px rgba(63, 240, 142, .35); }
+.led.blink { animation: blink .5s ease-out; }
+@keyframes blink { 0% { opacity: .25; box-shadow: none; } 100% { opacity: 1; } }
+
+/* The playable Mac TV inside the set, sized in container units (1cqw is 19.2 of the app's points). */
+.tv { position: relative; aspect-ratio: 16 / 9; container-type: inline-size; overflow: hidden; border-radius: 7% / 10%; background: #050608; color: #fff; outline: none; user-select: none; -webkit-user-select: none; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif; line-height: 1.2; }
+.tv:focus-visible { box-shadow: 0 0 0 3px rgba(63, 240, 142, .6); }
+.tv-art, .tv-layer, .tv-shade { position: absolute; inset: 0; }
+.tv-layer { opacity: 0; transition: opacity .5s ease; }
+.tv-layer.on { opacity: 1; }
+.tv-shade { background: linear-gradient(90deg, rgba(0, 0, 0, .5), rgba(0, 0, 0, .12) 40%, transparent 65%), linear-gradient(180deg, transparent 50%, rgba(0, 0, 0, .7)); }
+.tv.expanded .tv-shade { background: linear-gradient(90deg, rgba(0, 0, 0, .78), rgba(0, 0, 0, .38) 40%, transparent 65%), linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, .8)); }
+.tv-name { position: absolute; left: 5cqw; top: 5cqw; font-size: 4.8cqw; font-weight: 700; letter-spacing: -.08cqw; line-height: 1; text-shadow: 0 .3cqw .9cqw rgba(0, 0, 0, .35); transition: top .5s cubic-bezier(.2, .8, .2, 1); }
+.tv.expanded .tv-name { top: 34cqw; }
+.tv-open { position: absolute; left: 5cqw; top: 41.5cqw; display: flex; align-items: center; gap: .7cqw; height: 3.4cqw; padding: 0 1.8cqw; border: 0; border-radius: 99px; background: #fff; color: #000; font-size: 1.25cqw; font-weight: 700; cursor: pointer; opacity: 0; transform: translateY(1cqw); pointer-events: none; transition: opacity .35s, transform .35s cubic-bezier(.2, .8, .2, 1); }
+.tv-open svg { width: 1.2cqw; height: 1.2cqw; }
+.tv.expanded .tv-open { opacity: 1; transform: none; pointer-events: auto; }
+.tv-pills { position: absolute; right: 5cqw; top: 2.9cqw; display: flex; gap: .7cqw; transition: opacity .25s; }
+.tv-pill { height: 2.6cqw; padding: 0 1.05cqw; display: flex; align-items: center; border-radius: 99px; font-size: 1.25cqw; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; background: rgba(255, 255, 255, .12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18), inset 0 .08cqw 0 rgba(255, 255, 255, .25); backdrop-filter: blur(1.2cqw); -webkit-backdrop-filter: blur(1.2cqw); }
+.tv-volume { position: absolute; right: 5cqw; top: 2.7cqw; height: 3.8cqw; padding: 0 1.5cqw; display: flex; align-items: center; gap: 1cqw; border-radius: 99px; background: rgba(255, 255, 255, .14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2), inset 0 .08cqw 0 rgba(255, 255, 255, .3); backdrop-filter: blur(1.4cqw); -webkit-backdrop-filter: blur(1.4cqw); opacity: 0; transform: scale(.9); transition: opacity .25s, transform .3s cubic-bezier(.3, 1.3, .5, 1); }
+.tv-volume svg { width: 1.6cqw; height: 1.6cqw; }
+.tv-volume b { position: relative; width: 13cqw; height: .45cqw; border-radius: 99px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+.tv-volume i { position: absolute; inset: 0 auto 0 0; background: #fff; border-radius: inherit; transition: width .2s; }
+.tv.volume .tv-volume { opacity: 1; transform: none; }
+.tv.volume .tv-pills { opacity: 0; }
+.tv-toast { position: absolute; left: 50%; top: 2.4cqw; z-index: 6; padding: .8cqw 1.4cqw; border-radius: 99px; white-space: nowrap; font-size: 1.1cqw; font-weight: 600; background: rgba(255, 255, 255, .16); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); backdrop-filter: blur(1.5cqw); -webkit-backdrop-filter: blur(1.5cqw); opacity: 0; transform: translate(-50%, -1cqw); transition: opacity .3s, transform .35s cubic-bezier(.2, .8, .2, 1); }
+.tv.toasting .tv-toast { opacity: 1; transform: translate(-50%, 0); }
+.tv-chevron { position: absolute; left: 50%; top: 36.4cqw; width: 2cqw; transform: translateX(-50%); color: rgba(255, 255, 255, .7); transition: opacity .3s; }
+.tv.expanded .tv-chevron { opacity: 0; }
+.tv-dock, .tv-row { position: absolute; left: 5cqw; right: 5cqw; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.45cqw; transition: transform .55s cubic-bezier(.2, .8, .2, 1), opacity .4s; }
+.tv-dock { top: 39cqw; padding: 1.6cqw; border-radius: 2.5cqw; background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14), inset 0 .1cqw 0 rgba(255, 255, 255, .22), 0 1.5cqw 3cqw rgba(0, 0, 0, .25); backdrop-filter: blur(1.6cqw) saturate(160%); -webkit-backdrop-filter: blur(1.6cqw) saturate(160%); }
+.tv-row { top: 53.2cqw; padding: 0 1.6cqw; }
+.tv.expanded .tv-dock, .tv.expanded .tv-row { transform: translateY(18cqw); opacity: 0; }
+.tile { position: relative; aspect-ratio: 5 / 3; border-radius: 1.15cqw; overflow: hidden; cursor: pointer; transition: transform .28s cubic-bezier(.3, 1.4, .5, 1), box-shadow .28s; }
+.tile img { width: 100%; height: 100%; object-fit: cover; }
+.tile::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); pointer-events: none; }
+.tile.focused { transform: translateY(-.5cqw) scale(1.14); z-index: 2; box-shadow: 0 1.4cqw 1.4cqw rgba(0, 0, 0, .6); }
+.tile.focused::after { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); background: radial-gradient(90% 70% at 50% 0%, rgba(255, 255, 255, .28), transparent 70%); mix-blend-mode: plus-lighter; }
+.tv-row .tile { cursor: default; }
+.crt .tv-row { -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 70%); mask-image: linear-gradient(180deg, #000 0%, transparent 70%); opacity: .75; }
+.tile.add { display: grid; place-items: center; font-size: 3.4cqw; font-weight: 300; color: rgba(255, 255, 255, .9); background: rgba(255, 255, 255, .08); }
+.tile.add::after { box-shadow: none; border: .16cqw dashed rgba(255, 255, 255, .45); }
+.tile.gear { display: grid; place-items: center; background: linear-gradient(135deg, #9a9aa2, #4a4a50); }
+.tile.gear svg { width: 3.4cqw; height: 3.4cqw; }
+
+/* What's on: a listings column. */
+h2 { margin: 120px 0 0; font-family: var(--display); font-size: clamp(36px, 5vw, 60px); line-height: .95; letter-spacing: -.03em; font-weight: 800; font-variation-settings: "wdth" 80; }
+.guide { list-style: none; margin: 34px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; }
+.guide li { display: flex; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1.5px solid var(--line); font-family: var(--display); font-size: 20px; font-weight: 600; }
+.guide span { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); font-weight: 500; align-self: center; text-align: right; }
+
+/* The end: a charcoal panel like the TV's cabinet. */
+.end { margin-top: 100px; padding: 46px 24px; border-radius: 24px; background: var(--cabinet); color: var(--cream); text-align: center; display: flex; flex-direction: column; align-items: center; }
+.end h2 { margin: 0; }
+.end .dl { margin-top: 24px; background: var(--cream); color: var(--ink); }
+.end small { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #a9a39a; }
+.end .finder { width: 18px; height: 18px; filter: grayscale(1) contrast(.85); opacity: .7; }
+
+footer { margin-top: 30px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 20px; padding-block: 30px 44px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+footer nav { display: flex; flex-wrap: wrap; gap: 18px; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--ink); }
+
+/* Privacy policy and terms. */
+.doc { max-width: 720px; margin: 0 auto; padding-top: 56px; }
+.doc h1 { font-size: clamp(48px, 8vw, 84px); }
+.doc .updated { margin: 12px 0 28px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.doc .summary { padding: 20px 24px; border-radius: 16px; background: var(--cabinet); color: var(--cream); }
+.doc .summary p, .doc .summary strong { margin: 0; color: var(--cream); }
+.doc h2 { margin: 44px 0 8px; font-size: 30px; }
+.doc p, .doc li { color: var(--ink-2); }
+.doc strong { color: var(--ink); }
+.doc ul { padding-left: 22px; }
+.doc li { margin: 6px 0; }
+.doc a { color: var(--ink); text-decoration-color: var(--brass); text-underline-offset: 3px; }
+.doc code { font: 14px var(--mono); color: var(--ink); background: rgba(29, 26, 23, .07); padding: 2px 6px; border-radius: 6px; }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; }
+  .guide { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  nav.top .links a:not(.dl) { display: none; }
+  .guide li { font-size: 17px; }
+  .hint { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv *, .tv-layer, .knob .face, .dl { transition: none !important; }
+  .led.blink { animation: none; }
+}

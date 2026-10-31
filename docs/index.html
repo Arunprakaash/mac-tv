@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mac TV</title>
+<meta name="description" content="Turn your Mac into a TV set: a home screen for your streaming apps, and your phone as the remote. Free and open source.">
+<meta name="theme-color" content="#ece0c6">
+<meta property="og:title" content="Mac TV">
+<meta property="og:description" content="Tune in from the couch. Turn your Mac into a TV set, with your phone as the remote.">
+<meta property="og:image" content="screenshots/home.png">
+<link rel="icon" type="image/png" href="screenshots/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.37 1.43c0 1.14-.49 2.27-1.18 3.08-.74.9-1.99 1.57-2.99 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.57-2.27 1.21-2.98.8-.94 2.14-1.64 3.25-1.68.03.13.05.28.05.43Zm4.56 15.71c-.03.07-.46 1.58-1.52 3.12-.94 1.34-1.94 2.71-3.43 2.71-1.52 0-1.9-.88-3.63-.88-1.7 0-2.3.91-3.67.91-1.38 0-2.33-1.26-3.43-2.8C4.04 18.38 3 15.57 3 12.92c0-4.28 2.8-6.55 5.55-6.55 1.45 0 2.68.95 3.6.95.87 0 2.22-1.01 3.9-1.01.62 0 2.89.06 4.38 2.19-.13.09-2.38 1.37-2.38 4.19 0 3.26 2.85 4.42 2.95 4.45Z"/></symbol>
+</svg>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="screenshots/icon.png" alt="">Mac TV</a>
+    <div class="links">
+      <a href="https://github.com/Arunprakaash/mac-tv">Source</a>
+      <a href="https://github.com/Arunprakaash/mac-tv/releases">Changelog</a>
+      <a class="dl" href="https://github.com/Arunprakaash/mac-tv/releases/latest"><svg class="apple"><use href="#i-apple"/></svg>Download</a>
+    </div>
+  </div>
+</nav>
+
+<main class="wrap">
+  <header class="hero">
+    <div>
+      <div class="eyebrow">For Macs connected to a TV</div>
+      <h1>Tune in from the <span>couch</span>.</h1>
+      <p>Mac TV turns your Mac into a TV set: a home screen for your streaming apps, and your phone as the remote.</p>
+      <div class="act">
+        <a class="dl big" href="https://github.com/Arunprakaash/mac-tv/releases/latest"><svg class="apple"><use href="#i-apple"/></svg>Download for Mac</a>
+        <a class="src" href="https://github.com/Arunprakaash/mac-tv">Free · Open source</a>
+      </div>
+    </div>
+    <div class="set">
+      <!-- The icon's TV set, built for real: the screen is a working Mac TV, the knobs turn. -->
+      <div class="crt">
+        <div class="glass"><div data-tv></div></div>
+        <div class="panel">
+          <button class="knob" data-knob="channel" aria-label="Next channel"><span class="face"></span></button><span class="knob-label">CHANNEL</span>
+          <button class="knob" data-knob="volume" aria-label="Volume up"><span class="face"></span></button><span class="knob-label">VOLUME</span>
+          <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <span class="led" title="On air"></span>
+        </div>
+        <div class="feet"><i></i><i></i></div>
+      </div>
+      <p class="hint">Turn the knobs, or use your arrow keys ↗</p>
+    </div>
+  </header>
+
+  <section>
+    <h2>What's on</h2>
+    <ul class="guide">
+      <li>Apple TV-style home screen <span>Liquid Glass</span></li>
+      <li>Netflix, YouTube, Prime Video <span>Official players</span></li>
+      <li>Your phone is the remote <span>Scan a QR code</span></li>
+      <li>Any app or website <span>Its own tile</span></li>
+      <li>Skip intros, next episode <span>Automatic</span></li>
+      <li>Works with the lid closed <span>Battery-safe</span></li>
+      <li>Sleep timer and screensaver <span>Apple aerials</span></li>
+      <li>No account, no tracking <span>Nothing kept</span></li>
+    </ul>
+  </section>
+
+  <section class="end">
+    <h2>Your Mac is on air.</h2>
+    <a class="dl big" href="https://github.com/Arunprakaash/mac-tv/releases/latest"><svg class="apple"><use href="#i-apple"/></svg>Download for Mac</a>
+    <small><img class="finder" src="finder.png" alt="">macOS 14 or later · Apple silicon</small>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Made by Arunprakaash · MIT License</span>
+    <nav>
+      <a href="https://github.com/Arunprakaash/mac-tv">GitHub</a>
+      <a href="https://github.com/Arunprakaash/mac-tv/issues">Contact</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const APPS = [
+    { id: "netflix", name: "Netflix", accent: "#E50914", deep: "#2B0204" },
+    { id: "youtube", name: "YouTube", accent: "#FF2D2D", deep: "#2B0606" },
+    { id: "prime", name: "Prime Video", accent: "#1A98FF", deep: "#05213F" },
+    { id: "hotstar", name: "JioHotstar", accent: "#2C6BED", deep: "#081538" },
+    { id: "appletv", name: "Apple TV", accent: "#9A9AA2", deep: "#18181B" },
+    { id: "spotify", name: "Spotify", accent: "#1ED760", deep: "#06210F" },
+  ];
+  const GEAR = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>';
+
+  // A playable Mac TV home screen, drawn at the app's 1920 x 1080 proportions.
+  const host = document.querySelector("[data-tv]");
+  host.className = "tv";
+  host.tabIndex = 0;
+  host.setAttribute("role", "application");
+  host.setAttribute("aria-label", "Try Mac TV. Use the arrow keys, or turn the knobs.");
+  host.innerHTML = `
+    <div class="tv-art"></div><div class="tv-shade"></div>
+    <div class="tv-name"></div>
+    <button class="tv-open" tabindex="-1"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg><span></span></button>
+    <div class="tv-pills"><div class="tv-pill" data-clock>3:34 PM</div></div>
+    <div class="tv-volume"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9h3l5-4v14l-5-4H4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><b><i></i></b></div>
+    <div class="tv-toast"></div>
+    <svg class="tv-chevron" viewBox="0 0 40 14"><path d="M4 11 20 4l16 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="tv-dock">${APPS.map((a, i) => `<div class="tile" data-i="${i}"><img src="tiles/${a.id}.png" alt="${a.name}"></div>`).join("")}</div>
+    <div class="tv-row"><div class="tile"><img src="tiles/ytmusic.png" alt=""></div><div class="tile"><img src="tiles/iina.png" alt=""></div><div class="tile add">+</div><div class="tile gear">${GEAR}</div></div>`;
+  const q = s => host.querySelector(s);
+  const art = q(".tv-art"), name = q(".tv-name"), toast = q(".tv-toast"), bar = q(".tv-volume i");
+  const tiles = [...q(".tv-dock").children];
+  let focus = 0, expanded = false, level = 60, toastTimer, volTimer;
+
+  // Each app's colours across the screen, cross-faded like the app's Top Shelf.
+  function paint(app) {
+    const layer = document.createElement("div");
+    layer.className = "tv-layer";
+    layer.style.background = `radial-gradient(60% 85% at 74% 28%, ${app.accent}cc 0%, ${app.accent}33 45%, transparent 75%), radial-gradient(30% 45% at 56% 62%, ${app.accent}5c 0%, transparent 70%), linear-gradient(180deg, ${app.deep}, #050608)`;
+    art.appendChild(layer);
+    requestAnimationFrame(() => layer.classList.add("on"));
+    setTimeout(() => { while (art.children.length > 1) art.firstChild.remove(); }, 600);
+  }
+  function render() {
+    const app = APPS[focus];
+    tiles.forEach((t, i) => t.classList.toggle("focused", !expanded && i === focus));
+    host.classList.toggle("expanded", expanded);
+    if (name.textContent !== app.name) { name.textContent = app.name; paint(app); }
+    q(".tv-open span").textContent = `Open ${app.name}`;
+  }
+  function say(text) {
+    toast.textContent = text;
+    host.classList.add("toasting");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => host.classList.remove("toasting"), 1900);
+  }
+  function volumeUp() {
+    level = level >= 100 ? 10 : level + 10;
+    bar.style.width = level + "%";
+    host.classList.add("volume");
+    clearTimeout(volTimer);
+    volTimer = setTimeout(() => host.classList.remove("volume"), 1400);
+  }
+  const launch = () => say(`${APPS[focus].name} opens here, full screen`);
+
+  tiles.forEach((t, i) => {
+    t.addEventListener("mouseenter", () => { focus = i; expanded = false; render(); });
+    t.addEventListener("click", () => { focus = i; render(); launch(); });
+  });
+  q(".tv-open").addEventListener("click", launch);
+  host.addEventListener("keydown", e => {
+    if (e.key === "ArrowLeft" && !expanded) focus = Math.max(0, focus - 1);
+    else if (e.key === "ArrowRight" && !expanded) focus = Math.min(APPS.length - 1, focus + 1);
+    else if (e.key === "ArrowUp") expanded = true;
+    else if (e.key === "ArrowDown" || e.key === "Escape") expanded = false;
+    else if (e.key === "Enter" || e.key === " ") launch();
+    else return;
+    e.preventDefault();
+    render();
+  });
+
+  // A light haptic tick when a knob turns. Android phones vibrate; iPhones (iOS 18 and later)
+  // tick when a switch flips, so a hidden one is flipped. Computers have no haptics for web pages.
+  const tickHaptic = (() => {
+    if (typeof navigator.vibrate === "function") return () => navigator.vibrate(8);
+    const label = document.createElement("label");
+    label.style.display = "none";
+    label.setAttribute("aria-hidden", "true");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.setAttribute("switch", "");
+    input.tabIndex = -1;
+    label.appendChild(input);
+    document.body.appendChild(label);
+    return () => label.click();
+  })();
+
+  // The brass knobs turn: Channel moves to the next app, Volume turns it up.
+  document.querySelectorAll("[data-knob]").forEach(knob => {
+    let turn = 0;
+    knob.addEventListener("click", () => {
+      turn += 45;
+      try { tickHaptic(); } catch (e) {}
+      knob.querySelector(".face").style.transform = `rotate(${turn}deg)`;
+      const led = document.querySelector(".led");
+      led.classList.remove("blink"); void led.offsetWidth; led.classList.add("blink");
+      if (knob.dataset.knob === "channel") { expanded = false; focus = (focus + 1) % APPS.length; render(); }
+      else volumeUp();
+    });
+  });
+
+  paint(APPS[0]);
+  render();
+  bar.style.width = level + "%";
+
+  // The TV's clock shows the visitor's own time.
+  const tick = () => document.querySelectorAll("[data-clock]").forEach(el =>
+    el.textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+  tick();
+  setInterval(tick, 15000);
+})();
+</script>
+</body>
+</html>
