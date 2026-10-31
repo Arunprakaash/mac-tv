@@ -51,10 +51,11 @@ final class AppLibrary {
     var hasHiddenBuiltIns: Bool { !saved.hidden.isEmpty }
 
     func services() -> [Service] {
-        let builtIn = Catalog.services.filter { $0.kind != .settings && !saved.hidden.contains($0.id) }
+        let fixed: Set<Service.Kind> = [.addApp, .settings]
+        let builtIn = Catalog.services.filter { !fixed.contains($0.kind) && !saved.hidden.contains($0.id) }
         let added = saved.added.compactMap(service(for:))
-        let settings = Catalog.services.filter { $0.kind == .settings }
-        return (builtIn + added).filter(\.isInstalled) + settings
+        let tail = Catalog.services.filter { fixed.contains($0.kind) }
+        return (builtIn + added).filter(\.isInstalled) + tail
     }
 
     func iconFile(for id: String) -> URL { iconsFolder.appendingPathComponent("\(id).png") }
@@ -94,7 +95,7 @@ final class AppLibrary {
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added.remove(at: index)
             try? FileManager.default.removeItem(at: iconFile(for: id))
-        } else if Catalog.services.contains(where: { $0.id == id && $0.kind != .settings }) {
+        } else if Catalog.services.contains(where: { $0.id == id && $0.kind != .settings && $0.kind != .addApp }) {
             saved.hidden.insert(id)
         }
         save()

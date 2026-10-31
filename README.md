@@ -56,10 +56,14 @@ Open **Settings** on the TV and scan the QR code with your phone's camera. No ap
 
 The built-in apps are Netflix, YouTube, Prime Video, JioHotstar, Apple TV, Spotify, YouTube Music and IINA (if it's installed).
 
-On the phone remote, open **Apps**:
-- **Add app → Website:** type an address. Mac TV finds the app's official icon itself and turns it into a tile that matches the rest.
-- **Add app → Mac app:** pick any app installed on the Mac.
-- **Edit:** removes apps. Removed built-in apps can be restored.
+Choose **Add App** at the end of the home screen, or open **Apps** on the phone remote:
+- **Website:** type an address. Mac TV finds the app's official icon itself and turns it into a tile that matches the rest.
+- **Mac app:** pick any app installed on the Mac.
+- **Edit** (phone remote): removes apps. Removed built-in apps can be restored.
+
+On the TV, type with the keyboard or the remote's keyboard, and move between fields with the arrows.
+
+![Add App on the TV](docs/screenshots/add-app.png)
 
 Tiles are generated automatically from any square app icon (`TileArt.swift`). Mac TV reads the icon's background, finds the logo, sizes it to a standard visual weight, and extends the background to the 5:3 tile.
 

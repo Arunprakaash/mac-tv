@@ -106,6 +106,8 @@ final class TVController: NSObject, ObservableObject {
     /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
     @Published var tilt: CGSize = .zero
     @Published var pairing = false
+    /// The add-app sheet on the TV, while it's open.
+    @Published var adder: AppAdder?
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
     @Published private(set) var screensaver = false
     @Published private(set) var sleepAt: Date?
@@ -259,7 +261,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func removeApp(_ id: String) {
-        guard let service = services.first(where: { $0.id == id }), service.kind != .settings else { return }
+        guard let service = services.first(where: { $0.id == id }), service.kind != .settings, service.kind != .addApp else { return }
         library.remove(id)
         Icons.forget(id)
         reloadServices()
@@ -387,6 +389,10 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
+        if adder != nil {
+            handleAdder(command)
+            return
+        }
         if pairing {
             switch command {
             case .select, .back: pairing = false
@@ -427,10 +433,12 @@ final class TVController: NSObject, ObservableObject {
         var state: [String: Any] = [
             "device": deviceName,
             "mode": "launcher",
-            "apps": services.filter { $0.kind != .settings }.map {
+            "apps": services.filter { $0.kind != .settings && $0.kind != .addApp }.map {
                 ["id": $0.id, "name": $0.name, "icon": Icons.image(for: $0) != nil]
             },
             "canRestore": library.hasHiddenBuiltIns,
+            // Which sheet is open on the TV, if any: the remote can show it.
+            "sheet": adder != nil ? "add-app" : (pairing ? "pairing" : ""),
             "autoSkip": autoSkip,
             "autoNext": autoNext,
             // Minutes left on the sleep timer; 0 when it's off.
@@ -501,6 +509,8 @@ final class TVController: NSObject, ObservableObject {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
             launchedAppID = bundleID
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        case .addApp:
+            adder = AppAdder()
         case .settings:
             pairing = true
         }

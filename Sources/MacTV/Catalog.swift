@@ -4,6 +4,7 @@ struct Service: Identifiable, Hashable {
     enum Kind: Hashable {
         case web(URL)
         case app(bundleID: String)
+        case addApp
         case settings
     }
 
@@ -71,6 +72,7 @@ enum Catalog {
                 icon: "ytmusic.png", accent: "#FF2D2D", deep: "#2B0606", shelf: .row("Recently Played")),
         Service(id: "iina", name: "IINA", kind: .app(bundleID: "com.colliderli.iina"),
                 icon: "iina.png"),
+        Service(id: "add-app", name: "Add App", kind: .addApp),
         Service(id: "settings", name: "Settings", kind: .settings),
     ]
 }

@@ -51,6 +51,12 @@ struct RootView: View {
                         .background(.ultraThinMaterial.opacity(0.9))
                         .transition(.opacity)
                 }
+                if tv.adder != nil {
+                    TVCanvas { AddAppSheet(tv: tv) }
+                        .ignoresSafeArea()
+                        .background(.ultraThinMaterial.opacity(0.9))
+                        .transition(.opacity)
+                }
                 if tv.screensaver {
                     TVCanvas { Screensaver() }
                         .ignoresSafeArea()
@@ -75,6 +81,7 @@ struct RootView: View {
         .background(Color.black.ignoresSafeArea())
         .animation(.easeOut(duration: 0.25), value: tv.toast)
         .animation(.easeOut(duration: 0.25), value: tv.pairing)
+        .animation(.easeOut(duration: 0.25), value: tv.adder != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
     }
 }
@@ -377,7 +384,16 @@ struct AppTile: View {
     }
 
     @ViewBuilder private var artwork: some View {
-        if case .settings = service.kind {
+        if case .addApp = service.kind {
+            ZStack {
+                Color.white.opacity(0.08)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                Image(systemName: "plus")
+                    .font(.system(size: 64, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+        } else if case .settings = service.kind {
             ZStack {
                 LinearGradient(colors: [Color(hex: "#8E8E93"), Color(hex: "#3A3A3C")],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -700,5 +716,143 @@ extension Color {
         self.init(red: Double((value >> 16) & 0xFF) / 255,
                   green: Double((value >> 8) & 0xFF) / 255,
                   blue: Double(value & 0xFF) / 255)
+    }
+}
+
+// MARK: Add an app, on the TV
+
+struct AddAppSheet: View {
+    @ObservedObject var tv: TVController
+    @Environment(\.canvasSize) private var canvas
+
+    var body: some View {
+        let a = tv.adder ?? AppAdder()
+        VStack(alignment: .leading, spacing: 26) {
+            Text("Add an app").font(.system(size: 52, weight: .heavy)).tracking(-1)
+
+            HStack(spacing: 6) {
+                tab("Website", .website, a)
+                tab("Mac app", .macApp, a)
+            }
+            .padding(6)
+            .background(.white.opacity(0.08), in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(a.row == 0 ? 0.9 : 0), lineWidth: 3))
+
+            if a.tab == .website {
+                AdderField(label: "Website", text: a.address, placeholder: "e.g. crunchyroll.com", focused: a.row == 1) { set(row: 1) }
+                AdderField(label: "Name (optional)", text: a.name, placeholder: "Taken from the website", focused: a.row == 2) { set(row: 2) }
+                ShelfButton(title: "Add to Home Screen", systemImage: "plus", focused: a.row == 3) {
+                    set(row: 3)
+                    tv.submitAdder()
+                }
+            } else {
+                AdderField(label: "Search apps on this Mac", text: a.query, placeholder: "Type to filter", focused: a.row == 1) { set(row: 1) }
+                macList(a)
+            }
+
+            Text(a.message ?? "Type with the keyboard or the remote's typing box. Esc or Back closes.")
+                .font(.system(size: 22, weight: a.message == nil ? .regular : .semibold))
+                .foregroundStyle(a.failed ? Color(hex: "#FF8A80") : .white.opacity(a.message == nil ? 0.55 : 0.9))
+        }
+        .padding(56)
+        .frame(width: 1100, alignment: .leading)
+        .background(Color(hex: "#282A32").opacity(0.9), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).strokeBorder(.white.opacity(0.16)))
+        .shadow(color: .black.opacity(0.5), radius: 50, y: 30)
+        .foregroundStyle(.white)
+        .frame(width: canvas.width, height: canvas.height)
+        .animation(.easeOut(duration: 0.18), value: a)
+    }
+
+    private func set(row: Int) {
+        tv.adder?.row = row
+    }
+
+    private func tab(_ title: String, _ tab: AppAdder.Tab, _ a: AppAdder) -> some View {
+        let on = a.tab == tab
+        return Text(title)
+            .font(.system(size: 24, weight: .bold))
+            .padding(.horizontal, 30)
+            .frame(height: 54)
+            .foregroundStyle(on ? .black : .white)
+            .background(on ? Color.white : Color.clear, in: Capsule())
+            .contentShape(Capsule())
+            .onTapGesture {
+                tv.adder?.tab = tab
+                tv.adder?.row = 1
+                tv.adder?.selected = 0
+            }
+    }
+
+    /// Eight rows at a time, scrolled to keep the highlighted app in view.
+    @ViewBuilder private func macList(_ a: AppAdder) -> some View {
+        let matches = tv.adderMatches
+        let window = 8
+        let start = min(max(0, a.selected - window / 2), max(0, matches.count - window))
+        VStack(spacing: 6) {
+            if matches.isEmpty {
+                Text("No apps match.").font(.system(size: 24)).opacity(0.6)
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            }
+            ForEach(Array(matches.enumerated().dropFirst(start).prefix(window)), id: \.element.bundleID) { index, app in
+                let focused = a.row == 2 && a.selected == index
+                let added = tv.isOnHomeScreen(app)
+                HStack(spacing: 18) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+                        .resizable().frame(width: 44, height: 44)
+                    Text(app.name).font(.system(size: 26, weight: .semibold)).lineLimit(1)
+                    Spacer()
+                    if added {
+                        Text("On TV").font(.system(size: 18, weight: .bold)).opacity(0.6)
+                    }
+                }
+                .padding(.horizontal, 18)
+                .frame(height: 60)
+                .foregroundStyle(focused ? .black : .white)
+                .background(focused ? Color.white : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .opacity(added && !focused ? 0.55 : 1)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    tv.adder?.row = 2
+                    tv.adder?.selected = index
+                    tv.addSelectedMacApp()
+                }
+            }
+        }
+    }
+}
+
+/// A text field drawn for the TV: typed into by the D-pad flow, with a blinking caret when focused.
+struct AdderField: View {
+    let label: String
+    let text: String
+    let placeholder: String
+    let focused: Bool
+    let tap: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label).font(.system(size: 20, weight: .bold)).tracking(1).textCase(.uppercase).opacity(0.6)
+            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                let caretOn = focused && Int(context.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
+                HStack(spacing: 2) {
+                    Text(text.isEmpty ? placeholder : text)
+                        .opacity(text.isEmpty ? 0.4 : 1)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    if focused {
+                        Rectangle().frame(width: 3, height: 34).opacity(caretOn ? 1 : 0)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 30, weight: .medium))
+                .padding(.horizontal, 24)
+                .frame(height: 72)
+                .background(.white.opacity(focused ? 0.16 : 0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(focused ? 0.9 : 0.12), lineWidth: focused ? 3 : 1))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: tap)
     }
 }

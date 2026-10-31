@@ -59,6 +59,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+            for (name, adder) in [("add-website", AppAdder(tab: .website, row: 1, address: "crunchyroll.co")),
+                                  ("add-macapp", AppAdder(tab: .macApp, row: 2, query: "", selected: 1))] {
+                let tv = TVController()
+                tv.adder = adder
+                let renderer = ImageRenderer(content: ZStack { Wallpaper(); HomeView(tv: tv); Color.black.opacity(0.55); AddAppSheet(tv: tv) }
+                    .frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
+                renderer.scale = 1
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: folder.appendingPathComponent("\(name).png"))
+                }
+            }
             let saver = ImageRenderer(content: Screensaver().frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
             saver.scale = 1
             if let image = saver.nsImage, let tiff = image.tiffRepresentation,
@@ -149,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, event.window === window else { return event }
             if tv.noteActivity() { return nil }
-            guard tv.mode == .launcher, !tv.pairing else { return event }
+            guard tv.mode == .launcher, !tv.pairing, tv.adder == nil else { return event }
             // One move per swipe: ignore momentum, and pause briefly after each move.
             guard event.momentumPhase.isEmpty else { return nil }
             if event.phase == .began { scrollTotal = 0 }
@@ -167,6 +179,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if tv.noteActivity() { return nil }
             guard tv.mode == .launcher else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
+            // The add-app sheet takes typing: letters, Space, Delete and ⌘V go to its fields.
+            if tv.adder != nil {
+                if mods == [.command], event.charactersIgnoringModifiers == "v",
+                   let pasted = NSPasteboard.general.string(forType: .string) {
+                    tv.handle(.text(pasted))
+                    return nil
+                }
+                if mods.isEmpty, event.keyCode == 51 {
+                    tv.handle(.deleteBackward)
+                    return nil
+                }
+                let navigation: Set<UInt16> = [123, 124, 125, 126, 36, 76, 53]
+                if !navigation.contains(event.keyCode), mods.subtracting(.shift).isEmpty,
+                   let typed = event.characters, !typed.isEmpty,
+                   typed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) {
+                    tv.handle(.text(typed))
+                    return nil
+                }
+            }
             guard mods.isEmpty else { return event }
             switch event.keyCode {
             case 123: tv.handle(.move(.left))
