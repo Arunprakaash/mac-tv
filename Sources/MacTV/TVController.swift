@@ -14,6 +14,7 @@ enum RemoteCommand {
     case launch(String), openInBrowser
     case screenOff, sleepMac
     case sleepTimer(minutes: Int)
+    case controlCenter
     case setting(String, Bool)
 
     init?(json: [String: Any]) {
@@ -43,6 +44,7 @@ enum RemoteCommand {
         case "screenoff": self = .screenOff
         case "sleep": self = .sleepMac
         case "sleeptimer": self = .sleepTimer(minutes: json["m"] as? Int ?? 0)
+        case "controlcenter": self = .controlCenter
         case "setting":
             guard let key = json["k"] as? String, let value = json["v"] as? Bool else { return nil }
             self = .setting(key, value)
@@ -96,10 +98,21 @@ final class TVController: NSObject, ObservableObject {
         case movie
     }
 
-    /// What has focus on the home screen: an app tile, or an item in the Top Shelf.
+    /// What has focus on the home screen: an app tile, an item in the Top Shelf, or a pill in the
+    /// status row at the top right.
     enum Focus: Equatable {
         case app(Int)
         case shelf(Int)
+        case status(StatusItem)
+    }
+
+    /// The status row's pills that take focus, left to right; the clock doesn't.
+    enum StatusItem: Equatable {
+        case lid, controlCenter, profile
+    }
+
+    var statusItems: [StatusItem] {
+        (lidSleepOff ? [.lid] : []) + [.controlCenter, .profile]
     }
 
     @Published private(set) var mode: Mode = .launcher
@@ -115,6 +128,14 @@ final class TVController: NSObject, ObservableObject {
     @Published var adder: AppAdder?
     /// The Movies app's screen, while it's open.
     @Published var movies: MoviesBrowser?
+    /// First-run setup, while it's showing.
+    @Published var setup: SetupFlow?
+    /// Control Center, while it's open.
+    @Published var controlCenter: ControlCenterPanel?
+    /// The "Who's watching?" screen, while it's showing.
+    @Published var profilePicker: ProfilePicker?
+    /// Who's watching: their apps and their sign-ins.
+    @Published var profile: Profile
     /// The movie playing, in `.movie` mode.
     @Published private(set) var moviePlayer: MoviePlayer?
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
@@ -133,7 +154,8 @@ final class TVController: NSObject, ObservableObject {
 
     /// The home screen's apps, in order; changes when the user adds or removes apps.
     @Published private(set) var services: [Service] = []
-    let library = AppLibrary()
+    let profiles: ProfileStore
+    var library: AppLibrary
     let columns = 6
     let deviceName = Host.current().localizedName ?? "Mac"
     weak var window: NSWindow?
@@ -207,9 +229,12 @@ final class TVController: NSObject, ObservableObject {
     private var wakeObserver: NSObjectProtocol?
     private static let lowBattery = 20
     private var lastActivity = Date()
-    private static let screensaverDelay: TimeInterval = 5 * 60
 
     override init() {
+        let store = ProfileStore()
+        profiles = store
+        profile = store.current
+        library = AppLibrary(profileID: store.current.id)
         super.init()
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
@@ -230,9 +255,16 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, !pairing, settings == nil, !screensaver, Date().timeIntervalSince(lastActivity) > Self.screensaverDelay {
-            screensaver = true
+        if mode == .launcher, !pairing, settings == nil, setup == nil, profilePicker == nil, controlCenter == nil, !screensaver,
+           Date().timeIntervalSince(lastActivity) > TimeInterval(ScreenSaverSettings.delayMinutes * 60) {
+            showScreensaver()
         }
+    }
+
+    func showScreensaver() {
+        ScreenSaverSettings.playing = ScreenSaverSettings.pictures(for: ScreenSaverSettings.wallpaper)
+        lastActivity = Date()
+        screensaver = true
     }
 
     /// Stops playback, goes home and turns the screen off after `minutes`; 0 cancels.
@@ -338,7 +370,7 @@ final class TVController: NSObject, ObservableObject {
 
     // MARK: Adding and removing apps
 
-    private func reloadServices() {
+    func reloadServices() {
         services = library.services()
         if case .app(let index) = focus, index >= services.count { setFocus(.app(max(services.count - 1, 0))) }
         if shelfAppIndex >= min(columns, services.count) { shelfAppIndex = 0 }
@@ -482,8 +514,12 @@ final class TVController: NSObject, ObservableObject {
     /// under a resting pointer and bounce focus back and forth. Clicks, keys, the remote and
     /// scrolling change rows instead.
     func hover(_ index: Int, tilt: CGSize) {
-        if case .shelf = focus { return }
+        switch focus {
+        case .shelf, .status: return
+        case .app: break
+        }
         guard (index >= columns) == inGrid else { return }
+        if focus != .app(index) { Feedback.shared.play(.move, from: .pointer) }
         setFocus(.app(index))
         self.tilt = tilt
     }
@@ -508,6 +544,8 @@ final class TVController: NSObject, ObservableObject {
                     setFocus(.app(index - columns))
                 } else if shelfCount > 0 {
                     setFocus(.shelf(0))
+                } else {
+                    setFocus(.status(.controlCenter))
                 }
             }
         case .shelf(let index):
@@ -515,8 +553,28 @@ final class TVController: NSObject, ObservableObject {
             case .left: if index > 0 { setFocus(.shelf(index - 1)) }
             case .right: if index + 1 < shelfCount { setFocus(.shelf(index + 1)) }
             case .down: setFocus(.app(shelfAppIndex))
+            // Up from the Top Shelf reaches the status row, like Apple TV.
+            case .up: setFocus(.status(.controlCenter))
+            }
+        case .status(let item):
+            let items = statusItems
+            let index = items.firstIndex(of: item) ?? items.firstIndex(of: .controlCenter) ?? 0
+            switch direction {
+            case .left: setFocus(.status(items[max(0, index - 1)]))
+            case .right: setFocus(.status(items[min(items.count - 1, index + 1)]))
+            case .down: setFocus(shelfCount > 0 ? .shelf(0) : .app(shelfAppIndex))
             case .up: break
             }
+        }
+    }
+
+    /// Select on a status pill: Control Center, the profile picker, or the Power settings for the lid.
+    func activateStatus(_ item: StatusItem) {
+        setFocus(.status(item))
+        switch item {
+        case .lid: settings = SettingsPanel(section: .power, open: true, row: 1)
+        case .controlCenter: openControlCenter()
+        case .profile: openProfiles()
         }
     }
 
@@ -525,6 +583,18 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
+        if setup != nil {
+            handleSetup(command)
+            return
+        }
+        if profilePicker != nil {
+            handleProfiles(command)
+            return
+        }
+        if controlCenter != nil {
+            handleControlCenter(command)
+            return
+        }
         if adder != nil {
             handleAdder(command)
             return
@@ -550,9 +620,14 @@ final class TVController: NSObject, ObservableObject {
             switch focus {
             case .app(let index): if services.indices.contains(index) { open(services[index]) }
             case .shelf(let index): activateShelf(index)
+            case .status(let item): activateStatus(item)
             }
         case .back:
-            if case .shelf = focus { setFocus(.app(shelfAppIndex)) } else if inGrid { setFocus(.app(0)) }
+            switch focus {
+            case .status: setFocus(shelfCount > 0 ? .shelf(0) : .app(shelfAppIndex))
+            case .shelf: setFocus(.app(shelfAppIndex))
+            case .app: if inGrid { setFocus(.app(0)) }
+            }
         case .pointer(let dx, let dy): movePointer(dx: dx, dy: dy)
         case .click: clickPointer()
         default: break
@@ -574,6 +649,7 @@ final class TVController: NSObject, ObservableObject {
     /// What the phone remote shows. Only called for a phone that knows the pairing code.
     func remoteState() -> [String: Any] {
         phonePaired = true
+        notePhoneDuringSetup()
         var state: [String: Any] = [
             "device": deviceName,
             "mode": "launcher",
@@ -582,7 +658,10 @@ final class TVController: NSObject, ObservableObject {
             },
             "canRestore": library.hasHiddenBuiltIns,
             // Which sheet is open on the TV, if any: the remote can show it.
-            "sheet": adder != nil ? "add-app" : pairing ? "pairing" : settings != nil ? "settings" : "",
+            "profile": profile.name,
+            // Where focus is on the home screen, for the remote and for testing.
+            "focus": String(describing: focus),
+            "sheet": setup != nil ? "setup" : profilePicker != nil ? "profiles" : adder != nil ? "add-app" : pairing ? "pairing" : settings != nil ? "settings" : "",
             "autoSkip": autoSkip,
             "autoNext": autoNext,
             "keepMacAwake": keepMacAwake,
@@ -605,11 +684,16 @@ final class TVController: NSObject, ObservableObject {
         return state
     }
 
+    /// Everything a press can change on Mac TV's own screens; a change means focus moved somewhere.
+    private var feedbackState: String {
+        String(describing: (focus, setup, profilePicker, controlCenter, settings, adder, movies, pairing, mode == .launcher))
+    }
+
     func iconPNG(for id: String) -> Data? {
         services.first { $0.id == id }.flatMap { Icons.png(for: $0) }
     }
 
-    func handle(_ command: RemoteCommand) {
+    func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
         // The first press only wakes the screensaver.
         if noteActivity() { return }
 
@@ -640,6 +724,14 @@ final class TVController: NSObject, ObservableObject {
             goHome()
             SystemControl.sleepNow()
             return
+        case .controlCenter:
+            if controlCenter != nil {
+                controlCenter = nil
+            } else {
+                if mode != .launcher || movies != nil { goHome() }
+                openControlCenter()
+            }
+            return
         default: break
         }
 
@@ -652,8 +744,23 @@ final class TVController: NSObject, ObservableObject {
             return
         }
 
+        // Driven from the sofa while another app is in front: come forward. The TV is what's being watched,
+        // and macOS frosts the glass of a window that isn't active.
+        if source == .remote || source == .controller, !NSApp.isActive {
+            bringToFront()
+        }
+
         switch mode {
-        case .launcher: handleInLauncher(command)
+        case .launcher:
+            let before = feedbackState
+            handleInLauncher(command)
+            let changed = feedbackState != before
+            switch command {
+            case .move where changed: Feedback.shared.play(.move, from: source)
+            case .select: Feedback.shared.play(.select, from: source)
+            case .back where changed: Feedback.shared.play(.back, from: source)
+            default: break
+            }
         case .player(let service): handleInPlayer(command, service: service)
         case .movie: handleInMovie(command)
         }
@@ -712,6 +819,7 @@ final class TVController: NSObject, ObservableObject {
         mode = .launcher
         pairing = false
         settings = nil
+        controlCenter = nil
         pointer = nil
         launchedAppID = nil
         keepAwake.release()
@@ -957,7 +1065,8 @@ final class TVController: NSObject, ObservableObject {
 
     private func makeWebView(for service: Service) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default() // keeps sign-ins between launches
+        // Each profile's own store keeps its sign-ins between launches.
+        config.websiteDataStore = profile.websiteDataStore
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsAirPlayForMediaPlayback = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = true

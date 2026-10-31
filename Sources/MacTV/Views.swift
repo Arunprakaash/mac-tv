@@ -49,29 +49,46 @@ struct RootView: View {
                     // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
                     TVCanvas { MoviesScreen(tv: tv) }
                         .ignoresSafeArea()
-                        .transition(.opacity)
                 } else {
                     Wallpaper().ignoresSafeArea()
                     TVCanvas { HomeView(tv: tv) }
                         .ignoresSafeArea()
                 }
+                if tv.controlCenter != nil {
+                    // Drops in from the top like Apple TV's; glass slides rather than fades, so it keeps refracting.
+                    TVCanvas { ControlCenterView(tv: tv) }
+                        .ignoresSafeArea()
+                        .transition(.move(edge: .top))
+                }
                 if tv.settings != nil {
                     TVCanvas { SettingsSheet(tv: tv) }
                         .ignoresSafeArea()
-                        .background(.ultraThinMaterial.opacity(0.9))
+                        .background { SheetBackdrop() }
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.pairing {
                     TVCanvas { PairSheet(links: tv.remoteLinks, code: tv.remoteToken) { tv.pairing = false } }
                         .ignoresSafeArea()
-                        .background(.ultraThinMaterial.opacity(0.9))
+                        .background { SheetBackdrop() }
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.adder != nil {
                     TVCanvas { AddAppSheet(tv: tv) }
                         .ignoresSafeArea()
-                        .background(.ultraThinMaterial.opacity(0.9))
+                        .background { SheetBackdrop() }
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
+                }
+                if tv.profilePicker != nil {
+                    TVCanvas { ProfilesScreen(tv: tv) }
+                        .ignoresSafeArea()
+                        .background { SheetBackdrop() }
+                        .transition(.opacity)
+                }
+                if tv.setup != nil {
+                    TVCanvas { SetupScreen(tv: tv) }
+                        .ignoresSafeArea()
+                        .background { SheetBackdrop() }
+                        .transition(.opacity)
                 }
                 if tv.screensaver {
                     TVCanvas { Screensaver() }
@@ -104,27 +121,32 @@ struct RootView: View {
                 .allowsHitTesting(false)
             }
 
-            if let toast = tv.toast {
-                VStack {
-                    GlassGroup {
+            // Always in place, so the toast's glass materializes in and out rather than fading.
+            TVCanvas {
+                GlassGroup {
+                    if let toast = tv.toast {
                         Text(toast)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.tv(.callout))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 22).padding(.vertical, 12)
+                            .padding(.horizontal, 34).padding(.vertical, 18)
                             .tvGlass(in: Capsule())
                             .tvGlassTransition()
                     }
-                    .padding(.top, 36)
-                    Spacer()
                 }
-                .transition(reduceMotion ? .opacity : .offset(y: -24).combined(with: .opacity))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 52)
             }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
         .environment(\.colorScheme, .dark)
         .background(Color.black.ignoresSafeArea())
         .animation(Motion.appear, value: tv.toast)
         .animation(Motion.appear, value: tv.pairing)
         .animation(Motion.appear, value: tv.settings != nil)
+        .animation(Motion.appear, value: tv.setup != nil)
+        .animation(Motion.appear, value: tv.profilePicker != nil)
+        .animation(Motion.appear, value: tv.controlCenter != nil)
         .animation(Motion.appear, value: tv.adder != nil)
         .animation(Motion.appear, value: tv.movies != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
@@ -139,41 +161,30 @@ struct Screensaver: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            if Aerials.films.isEmpty {
-                DriftingColor()
-            } else {
-                AerialPlayer(films: Aerials.films)
-            }
-            // Keeps the clock legible over bright skies.
-            LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .center)
+            ScreenSaverBackdrop(wallpaper: ScreenSaverSettings.wallpaper, pictures: ScreenSaverSettings.playing)
+            if ScreenSaverSettings.showClock {
+                // Keeps the clock legible over bright skies.
+                LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .center)
 
-            TimelineView(.everyMinute) { context in
-                VStack(spacing: 0) {
-                    Text(context.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                        .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                    Text(context.date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()))
-                        .font(.system(size: 230, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.92))
-                        .tracking(-4)
+                TimelineView(.everyMinute) { context in
+                    VStack(spacing: 0) {
+                        Text(context.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                            .font(.tv(.callout))
+                            .foregroundStyle(.white.opacity(0.85))
+                        Text(context.date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()))
+                            .font(.system(size: 230, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.92))
+                            .tracking(-4)
+                    }
+                    .shadow(color: .black.opacity(0.25), radius: 24, y: 6)
+                    .padding(.top, 70)
                 }
-                .shadow(color: .black.opacity(0.25), radius: 24, y: 6)
-                .padding(.top, 70)
             }
         }
         .frame(width: canvas.width, height: canvas.height)
         .clipped()
     }
-}
-
-/// Apple's aerial screen-saver films, if the Mac has downloaded any.
-enum Aerials {
-    static let films: [URL] = {
-        let folder = URL(fileURLWithPath: "/Library/Application Support/com.apple.idleassetsd/Customer", isDirectory: true)
-        guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil) else { return [] }
-        return walker.compactMap { $0 as? URL }.filter { $0.pathExtension.lowercased() == "mov" }.shuffled()
-    }()
 }
 
 /// Plays aerial films one after another, muted and filling the screen.
@@ -258,8 +269,11 @@ struct HomeView: View {
     @Namespace private var pills
 
     private var shelfFocused: Bool {
-        if case .shelf = tv.focus { return true }
-        return false
+        // The status row sits above the Top Shelf, so the banner stays open while it has focus.
+        switch tv.focus {
+        case .shelf, .status: return true
+        case .app: return false
+        }
     }
 
     var body: some View {
@@ -269,9 +283,8 @@ struct HomeView: View {
                 .opacity(tv.inGrid ? 0 : 1)
 
             AppGrid(tv: tv)
-                // An expanded banner takes the whole screen; the dock slides away.
-                .offset(y: tv.inGrid ? -layout.gridShift : (shelfFocused ? 360 : 0))
-                .opacity(shelfFocused ? 0 : 1)
+                // An expanded banner takes the whole screen; the dock slides away, off the bottom.
+                .offset(y: tv.inGrid ? -layout.gridShift : (shelfFocused ? 420 : 0))
 
             if !tv.inGrid && !shelfFocused && tv.shelfCount > 0 {
                 Image(systemName: "chevron.compact.up")
@@ -281,29 +294,51 @@ struct HomeView: View {
                     .transition(.opacity)
             }
 
+            // The status row: always the same pills, Control Center or not. Up from the Top Shelf focuses it;
+            // Left and Right move along it, skipping the clock.
             GlassGroup { HStack(spacing: 14) {
                 // While the Mac can't sleep with its lid closed, say so where it's always seen.
                 if tv.lidSleepOff {
+                    let focused = tv.focus == .status(.lid)
                     Label("Lid sleep off", systemImage: "moon.zzz")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.tv(.caption2))
                         .padding(.horizontal, 20)
                         .frame(height: 50)
-                        .tvGlass(in: Capsule())
+                        .foregroundStyle(focused ? .black : .white)
+                        .focusPlatter(Capsule(), focused: focused)
+                        .contentShape(Capsule())
+                        .onTapGesture { tv.activateStatus(.lid) }
                         .tvGlassID("lid", in: pills)
                 }
                 if let controller = tv.controller {
                     ControllerHints(info: controller).tvGlassID("controller", in: pills)
                 }
+                // Control Center: white while it's open or focused, like Apple TV's.
+                let lit = tv.focus == .status(.controlCenter) || tv.controlCenter != nil
+                Image(systemName: "switch.2")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(lit ? .black : .white)
+                    .frame(width: 50, height: 50)
+                    .focusPlatter(Circle(), focused: lit)
+                    .contentShape(Circle())
+                    .onTapGesture { tv.controlCenter == nil ? tv.activateStatus(.controlCenter) : (tv.controlCenter = nil) }
+                    .tvGlassID("control-center", in: pills)
                 ClockPill().tvGlassID("clock", in: pills)
+                let profileFocused = tv.focus == .status(.profile)
+                ProfileAvatar(profile: tv.profile, size: 50)
+                    .overlay(Circle().strokeBorder(.white, lineWidth: profileFocused ? 3 : 0).padding(-5))
+                    .contentShape(Circle())
+                    .onTapGesture { tv.activateStatus(.profile) }
             } }
+                .animation(Motion.focus, value: tv.focus)
                 .animation(Motion.appear, value: tv.lidSleepOff)
                 .animation(Motion.appear, value: tv.controller)
-                // The volume indicator and the controller banner take this corner while they show.
-                .opacity(tv.volume == nil && tv.controllerNotice == nil ? 1 : 0)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 96)
                 .padding(.top, 56)
-                .opacity(tv.inGrid ? 0 : 1)
+                // Out of the way while the grid, the volume or a controller banner has the corner. It slides up
+                // off the screen rather than fading, so the glass never goes translucent.
+                .offset(y: tv.inGrid || tv.volume != nil || tv.controllerNotice != nil ? -200 : 0)
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .clipped()
@@ -318,7 +353,7 @@ struct ClockPill: View {
     var body: some View {
         TimelineView(.everyMinute) { context in
             Text(context.date.formatted(date: .omitted, time: .shortened))
-                .font(.system(size: 24, weight: .semibold))
+                .font(.tv(.caption1))
                 .monospacedDigit()
                 .padding(.horizontal, 20)
                 .frame(height: 50)
@@ -342,10 +377,9 @@ struct AppGrid: View {
             Array(cells[$0..<min($0 + tv.columns, cells.count)])
         }
         ZStack(alignment: .topLeading) {
-            GlassDock()
+            GlassDock(visible: !tv.inGrid)
                 .frame(width: layout.dockFrame.width, height: layout.dockFrame.height)
                 .offset(x: layout.dockFrame.minX, y: layout.dockFrame.minY)
-                .opacity(tv.inGrid ? 0 : 1)
 
             ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
                 HStack(spacing: Layout.tileSpacing) {
@@ -368,10 +402,25 @@ struct AppGrid: View {
 
 /// tvOS 26 dock: frosted Liquid Glass with a lit top edge.
 struct GlassDock: View {
+    /// In the grid the dock's glass dissolves to nothing (`.identity`) instead of fading, which would flatten it.
+    var visible = true
+
     var body: some View {
         Color.clear
-            .tvGlass(in: RoundedRectangle(cornerRadius: 48, style: .continuous))
-            .shadow(color: .black.opacity(0.25), radius: 30, y: 16)
+            .shadow(color: .black.opacity(visible ? 0.25 : 0), radius: 30, y: 16)
+            .tvGlass(in: RoundedRectangle(cornerRadius: 48, style: .continuous), enabled: visible)
+    }
+}
+
+/// The frosted backdrop behind full-screen sheets (Settings, Add App, Profiles, Setup): the home screen
+/// blurred and dimmed. Sheets on it use plain panels and platters, not glass.
+struct SheetBackdrop: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+            Rectangle().fill(.ultraThinMaterial)
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -392,7 +441,7 @@ struct AppCell: View {
         AppTile(service: service, focused: focused, tilt: focused ? tv.tilt : .zero)
             .overlay(alignment: .bottom) {
                 Text(service.name)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.tv(.caption1))
                     .fixedSize()
                     .offset(y: 50)
                     .opacity(focused && showsLabel ? 1 : 0)
@@ -485,7 +534,7 @@ struct AppTile: View {
         } else {
             ZStack {
                 Color(hex: "#2C2C2E")
-                Text(service.name).font(.system(size: 30, weight: .heavy))
+                Text(service.name).font(.tv(.body, emphasized: true))
             }
         }
     }
@@ -574,8 +623,8 @@ struct AppBanner: View {
                 } else {
                     // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
                     Text(service.name)
-                        .font(.system(size: 92, weight: .bold))
-                        .tracking(-1.5)
+                        .font(.tv(.title1, emphasized: true))
+
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
@@ -585,7 +634,7 @@ struct AppBanner: View {
                         tv.setFocus(.shelf(0)); tv.activateShelf(0)
                     }
                     .padding(.top, 20)
-                    .transition(.opacity.combined(with: .offset(y: 16)))
+                    .tvGlassTransition()
                 }
             }
             .frame(width: 1100, alignment: .leading)
@@ -602,6 +651,8 @@ struct ShelfButton: View {
     let title: String
     var systemImage: String? = nil
     let focused: Bool
+    /// Glass over artwork, like the Top Shelf; a plain platter on a frosted sheet, where glass has nothing to refract.
+    var glass = true
     let action: () -> Void
 
     var body: some View {
@@ -610,11 +661,14 @@ struct ShelfButton: View {
                 if let systemImage { Image(systemName: systemImage) }
                 Text(title)
             }
-            .font(.system(size: 24, weight: .bold))
-            .padding(.horizontal, 34)
-            .frame(height: 66)
+            .font(.tv(.callout, emphasized: true))
+            .padding(.horizontal, 38)
+            .frame(height: 72)
             .foregroundStyle(focused ? .black : .white)
-            .tvGlass(in: Capsule(), interactive: true, tint: focused ? .white : nil)
+            .background {
+                if !glass { Capsule().fill(.white.opacity(0.12)) }
+            }
+            .focusPlatter(Capsule(), focused: focused, glass: glass)
             .scaleEffect(focused ? 1.08 : 1)
             .shadow(color: .black.opacity(focused ? 0.4 : 0), radius: 20, y: 14)
             .animation(Motion.focus, value: focused)
@@ -655,7 +709,7 @@ struct PairSheet: View {
                     RoundedRectangle(cornerRadius: 28).fill(.white.opacity(0.1))
                         .frame(width: 300, height: 300)
                         .overlay(Text("Connect to Wi-Fi\nor Tailscale").multilineTextAlignment(.center)
-                            .font(.system(size: 22, weight: .semibold)).opacity(0.7))
+                            .font(.tv(.caption2)).opacity(0.7))
                 }
                 ForEach(links) { link in
                     VStack(spacing: 14) {
@@ -665,31 +719,31 @@ struct PairSheet: View {
                                 .padding(20)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                         }
-                        Text(link.label).font(.system(size: 22, weight: .semibold)).opacity(0.8)
+                        Text(link.label).font(.tv(.caption2)).opacity(0.8)
                     }
                 }
             }
             VStack(alignment: .leading, spacing: 18) {
-                Text("MAC TV REMOTE").font(.system(size: 20, weight: .bold)).tracking(2.4).opacity(0.6)
+                Text("MAC TV REMOTE").font(.tv(.caption2, emphasized: true)).tracking(2.4).opacity(0.6)
                 Text("Use your phone as a remote")
-                    .font(.system(size: 46, weight: .heavy)).tracking(-1)
+                    .font(.tv(.title3, emphasized: true))
                 Text("Scan with your phone's camera, then add the page to your home screen. Use the Tailscale code when you're away from home or your Wi-Fi keeps devices apart.")
-                    .font(.system(size: 23)).foregroundStyle(.white.opacity(0.75))
+                    .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.75))
                     .lineSpacing(4)
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(links) { link in Text("\(link.label): \(link.address)") }
                     Text("Pairing code \(code)")
                 }
-                .font(.system(size: 20, weight: .medium))
+                .font(.tv(.caption2))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
-                ShelfButton(title: "Done", focused: true, action: done)
+                ShelfButton(title: "Done", focused: true, glass: false, action: done)
                     .padding(.top, 8)
             }
             .frame(maxWidth: 760, alignment: .leading)
         }
         .padding(56)
-        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
     }
@@ -729,15 +783,33 @@ extension View {
     /// regular variant (these carry text), applied after the view's other appearance
     /// modifiers; `interactive` makes a control respond to the pointer, and `tint` marks
     /// prominence, like a focused button. Frosted material before macOS 26.
+    /// `enabled: false` keeps the modifier in place as `.identity`, so switching glass off never changes the view's identity.
     @ViewBuilder
-    func tvGlass<S: InsettableShape>(in shape: S, interactive: Bool = false, tint: Color? = nil) -> some View {
+    func tvGlass<S: InsettableShape>(in shape: S, interactive: Bool = false, tint: Color? = nil, enabled: Bool = true) -> some View {
         if #available(macOS 26, *) {
-            glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
-        } else {
+            glassEffect(enabled ? .regular.tint(tint).interactive(interactive) : .identity, in: shape)
+        } else if enabled {
             background(tint ?? .clear, in: shape)
                 .background(.ultraThinMaterial, in: shape)
                 .overlay(shape.strokeBorder(.white.opacity(0.18)))
+        } else {
+            self
         }
+    }
+
+    /// tvOS focus on a control: a solid white platter when focused, the control's glass otherwise. Tinting the
+    /// glass white instead reads milky grey over dark artwork, and dark text on it loses contrast. The glass
+    /// switches to `.identity` rather than going away, so focus moving never changes the view's identity.
+    func focusPlatter<S: InsettableShape>(_ shape: S, focused: Bool, color: Color = .white, glass: Bool = true) -> some View {
+        background { shape.fill(color).opacity(focused ? 1 : 0) }
+            .tvGlass(in: shape, enabled: glass && !focused)
+    }
+
+    /// A plain panel for sheets that sit on the frosted backdrop. Glass there would have only blur to
+    /// refract and read as a flat grey slab, so these group their content with a quiet fill instead.
+    func tvPanel<S: InsettableShape>(in shape: S) -> some View {
+        background(.white.opacity(0.07), in: shape)
+            .overlay(shape.strokeBorder(.white.opacity(0.12)))
     }
 
     /// Related glass in one GlassGroup morphs between shapes when one appears or leaves.
@@ -761,10 +833,12 @@ extension View {
     }
 }
 
-/// Groups nearby glass so it renders in one pass and can blend and morph together
-/// (GlassEffectContainer); a plain stack before macOS 26.
+/// Groups nearby glass so it renders in one pass and samples the same backdrop (GlassEffectContainer);
+/// a plain stack before macOS 26. `spacing` is how close two shapes must come before they melt into
+/// one another: 0 keeps every shape separate, so a focused tile growing or a pressed button
+/// shrinking never pulls its neighbours' glass towards it. Raise it only where merging is the point.
 struct GlassGroup<Content: View>: View {
-    var spacing: CGFloat = 14
+    var spacing: CGFloat = 0
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -802,7 +876,7 @@ struct VolumeHUD: View {
                 }
                 .frame(width: 260, height: 8)
             } else {
-                Text("Volume is set on the TV").font(.system(size: 22, weight: .semibold))
+                Text("Volume is set on the TV").font(.tv(.caption2))
             }
         }
         .foregroundStyle(.white)
@@ -832,7 +906,7 @@ struct AddAppSheet: View {
     var body: some View {
         let a = tv.adder ?? AppAdder()
         VStack(alignment: .leading, spacing: 26) {
-            Text("Add an app").font(.system(size: 52, weight: .heavy)).tracking(-1)
+            Text("Add an app").font(.tv(.title3, emphasized: true))
 
             HStack(spacing: 6) {
                 tab("Website", .website, a)
@@ -846,7 +920,7 @@ struct AddAppSheet: View {
             if a.tab == .website {
                 AdderField(label: "Website", text: a.address, placeholder: "e.g. crunchyroll.com", focused: a.row == 1) { set(row: 1) }
                 AdderField(label: "Name (optional)", text: a.name, placeholder: "Taken from the website", focused: a.row == 2) { set(row: 2) }
-                ShelfButton(title: "Add to Home Screen", systemImage: "plus", focused: a.row == 3) {
+                ShelfButton(title: "Add to Home Screen", systemImage: "plus", focused: a.row == 3, glass: false) {
                     set(row: 3)
                     tv.submitAdder()
                 }
@@ -859,12 +933,12 @@ struct AddAppSheet: View {
 
             Text(a.message ?? (a.tab == .steam ? "Games open through Steam, and Mac TV comes back when you quit. Esc or Back closes."
                                                 : "Type with the keyboard or the remote's typing box. Esc or Back closes."))
-                .font(.system(size: 22, weight: a.message == nil ? .regular : .semibold))
+                .font(.tv(.caption2, emphasized: a.message != nil))
                 .foregroundStyle(a.failed ? Color(hex: "#FF8A80") : .white.opacity(a.message == nil ? 0.55 : 0.9))
         }
         .padding(56)
         .frame(width: 1100, alignment: .leading)
-        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(Motion.focus, value: a)
@@ -877,7 +951,7 @@ struct AddAppSheet: View {
     private func tab(_ title: String, _ tab: AppAdder.Tab, _ a: AppAdder) -> some View {
         let on = a.tab == tab
         return Text(title)
-            .font(.system(size: 24, weight: .bold))
+            .font(.tv(.caption1, emphasized: true))
             .padding(.horizontal, 30)
             .frame(height: 54)
             .foregroundStyle(on ? .black : .white)
@@ -910,9 +984,9 @@ struct AddAppSheet: View {
                         }
                     }
                     .frame(width: 44, height: 44)
-                    Text(game.name).font(.system(size: 26, weight: .semibold)).lineLimit(1)
+                    Text(game.name).font(.tv(.body)).lineLimit(1)
                     Spacer()
-                    if added { Text("On TV").font(.system(size: 18, weight: .bold)).opacity(0.6) }
+                    if added { Text("On TV").font(.tv(.caption2, emphasized: true)).opacity(0.6) }
                 }
                 .padding(.horizontal, 18)
                 .frame(height: 60)
@@ -935,7 +1009,7 @@ struct AddAppSheet: View {
             }
             if games.count == 1 {
                 Text("No Steam games installed yet. Install some in Steam and they'll show up here.")
-                    .font(.system(size: 22)).opacity(0.6).padding(.top, 6)
+                    .font(.tv(.caption2)).opacity(0.6).padding(.top, 6)
             }
         }
     }
@@ -947,7 +1021,7 @@ struct AddAppSheet: View {
         let start = min(max(0, a.selected - window / 2), max(0, matches.count - window))
         VStack(spacing: 6) {
             if matches.isEmpty {
-                Text("No apps match.").font(.system(size: 24)).opacity(0.6)
+                Text("No apps match.").font(.tv(.caption1)).opacity(0.6)
                     .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
             }
             ForEach(Array(matches.enumerated().dropFirst(start).prefix(window)), id: \.element.bundleID) { index, app in
@@ -956,10 +1030,10 @@ struct AddAppSheet: View {
                 HStack(spacing: 18) {
                     Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
                         .resizable().frame(width: 44, height: 44)
-                    Text(app.name).font(.system(size: 26, weight: .semibold)).lineLimit(1)
+                    Text(app.name).font(.tv(.body)).lineLimit(1)
                     Spacer()
                     if added {
-                        Text("On TV").font(.system(size: 18, weight: .bold)).opacity(0.6)
+                        Text("On TV").font(.tv(.caption2, emphasized: true)).opacity(0.6)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -995,7 +1069,7 @@ struct AdderField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(label).font(.system(size: 20, weight: .bold)).tracking(1).textCase(.uppercase).opacity(0.6)
+            Text(label).font(.tv(.caption2, emphasized: true)).tracking(1).textCase(.uppercase).opacity(0.6)
             TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 let caretOn = focused && Int(context.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
                 HStack(spacing: 2) {

@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import SwiftUI
 
@@ -111,6 +112,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             exit(0)
         }
+        // `--export-sounds <folder>` writes the interface sounds as WAV files, for listening to.
+        if let flag = CommandLine.arguments.firstIndex(of: "--export-sounds"), flag + 1 < CommandLine.arguments.count {
+            let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+            for cue in Feedback.Cue.allCases {
+                guard let buffer = Feedback.synthesize(cue, format: format),
+                      let file = try? AVAudioFile(forWriting: folder.appendingPathComponent("\(cue).wav"), settings: format.settings)
+                else { continue }
+                try? file.write(from: buffer)
+            }
+            exit(0)
+        }
         // `--export-home <folder>` renders the home screen in a few focus states, for design checks.
         if let flag = CommandLine.arguments.firstIndex(of: "--export-home"), flag + 1 < CommandLine.arguments.count {
             let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
@@ -134,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             do {
                 let tv = TVController()
-                tv.settings = SettingsPanel(row: .lidOverride)
+                tv.settings = SettingsPanel(section: .power, open: true, row: 1)
                 let renderer = ImageRenderer(content: ZStack { Wallpaper(); HomeView(tv: tv); Color.black.opacity(0.55); SettingsSheet(tv: tv) }
                     .frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
                 renderer.scale = 1
@@ -148,6 +161,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let tv = TVController()
                 tv.adder = adder
                 let renderer = ImageRenderer(content: ZStack { Wallpaper(); HomeView(tv: tv); Color.black.opacity(0.55); AddAppSheet(tv: tv) }
+                    .frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
+                renderer.scale = 1
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: folder.appendingPathComponent("\(name).png"))
+                }
+            }
+            for (name, flow) in [("setup-welcome", SetupFlow()), ("setup-apps", SetupFlow(step: .apps, index: 1)),
+                                 ("setup-remote", SetupFlow(step: .remote)), ("setup-done", SetupFlow(step: .done))] {
+                let tv = TVController()
+                tv.setup = flow
+                let renderer = ImageRenderer(content: ZStack { Wallpaper(); HomeView(tv: tv); Color.black.opacity(0.7); SetupScreen(tv: tv) }
+                    .environment(\.canvasSize, CGSize(width: 1920, height: 1080))
                     .frame(width: 1920, height: 1080).environment(\.colorScheme, .dark))
                 renderer.scale = 1
                 if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
@@ -195,7 +221,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
-        if !tv.phonePaired {
+        // `--setup` shows first-run setup again.
+        if tv.needsSetup || CommandLine.arguments.contains("--setup") {
+            tv.startSetup()
+        } else if tv.profiles.all.count > 1 {
+            tv.openProfiles()
+        } else if !tv.phonePaired {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(1.5))
                 self?.tv.showToast("Pair your phone as a remote: open Settings below")
@@ -230,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tv.remoteToken = token
         let server = RemoteServer(
             token: token,
-            onCommand: { [weak self] in self?.tv.handle($0) },
+            onCommand: { [weak self] in self?.tv.handle($0, from: .remote) },
             state: { [weak self] in self?.tv.remoteState() ?? [:] },
             icon: { [weak self] in self?.tv.iconPNG(for: $0) },
             routes: { [weak self] in self?.tv.handleAppsRequest($0) })
@@ -253,14 +284,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, event.window === window else { return event }
             if tv.noteActivity() { return nil }
-            guard tv.mode == .launcher, !tv.pairing, tv.settings == nil, tv.adder == nil else { return event }
+            guard tv.mode == .launcher, !tv.pairing, tv.settings == nil, tv.adder == nil, tv.setup == nil, tv.profilePicker == nil, tv.controlCenter == nil else { return event }
             // One move per swipe: ignore momentum, and pause briefly after each move.
             guard event.momentumPhase.isEmpty else { return nil }
             if event.phase == .began { scrollTotal = 0 }
             scrollTotal += event.scrollingDeltaY
             if abs(scrollTotal) > 30, Date() >= scrollReadyAt {
                 // Content follows the fingers: swiping up reveals what's below.
-                tv.handle(.move(scrollTotal < 0 ? .down : .up))
+                tv.handle(.move(scrollTotal < 0 ? .down : .up), from: .trackpad)
                 scrollTotal = 0
                 scrollReadyAt = Date().addingTimeInterval(0.45)
             }
@@ -272,7 +303,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard tv.mode == .launcher || tv.mode == .movie else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
             // The add-app sheet takes typing: letters, Space, Delete and ⌘V go to its fields.
-            if tv.adder != nil {
+            // So does naming a new profile.
+            if tv.adder != nil || tv.profilePicker?.naming != nil {
                 if mods == [.command], event.charactersIgnoringModifiers == "v",
                    let pasted = NSPasteboard.general.string(forType: .string) {
                     tv.handle(.text(pasted))
