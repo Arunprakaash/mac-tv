@@ -22,7 +22,7 @@ final class BraveSession {
 
     struct KeyStroke: Equatable {
         let code: CGKeyCode
-        var shift = false
+        var flags: CGEventFlags = []
     }
 
     private var application: NSRunningApplication?
@@ -32,6 +32,7 @@ final class BraveSession {
     private var lastBoundsRead = Date.distantPast
     private var pointer: CGPoint?
     private var compiledScript: NSAppleScript?
+    private var invalidated = false
 
     /// YouTube's TV page expects a TV user agent; Brave should use its normal desktop page.
     static func streamingURL(_ url: URL) throws -> URL {
@@ -46,7 +47,7 @@ final class BraveSession {
 
     static func keyStroke(for command: RemoteCommand) -> KeyStroke? {
         switch command {
-        case .move(.up), .previousControl: return KeyStroke(code: 48, shift: true)
+        case .move(.up), .previousControl: return KeyStroke(code: 48, flags: .maskShift)
         case .move(.down), .nextControl: return KeyStroke(code: 48)
         case .move(.left): return KeyStroke(code: 123)
         case .move(.right): return KeyStroke(code: 124)
@@ -55,19 +56,22 @@ final class BraveSession {
         case .playPause: return KeyStroke(code: 49)
         case .seek(let forward): return KeyStroke(code: forward ? 124 : 123)
         case .deleteBackward: return KeyStroke(code: 51)
+        case .browserFullscreen: return KeyStroke(code: 3, flags: [.maskControl, .maskCommand])
         default: return nil
         }
     }
 
     func open(_ url: URL) async throws {
         let destination = try Self.streamingURL(url)
-        if windowID != nil { try close() }
+        guard !invalidated else { throw CancellationError() }
+        if windowID != nil { throw SessionError.noWindow }
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") else {
             throw SessionError.unavailable
         }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
         let app = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
+        guard !invalidated else { throw CancellationError() }
         let token = "Mac TV \(UUID().uuidString)"
         application = app
         ownershipToken = token
@@ -82,11 +86,21 @@ final class BraveSession {
         }
     }
 
+    func fit(to screen: NSScreen) throws {
+        let area = screen.visibleFrame
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? area.maxY
+        let bounds = NSRect(x: area.minX, y: primaryHeight - area.maxY, width: area.width, height: area.height)
+        _ = try runScript("position", bounds: bounds)
+        cachedBounds = nil
+        pointer = nil
+    }
+
     func activate() throws {
         _ = try runScript("activate")
     }
 
     func close() throws {
+        invalidated = true
         guard windowID != nil else { return }
         _ = try runScript("close")
         application = nil
@@ -126,6 +140,8 @@ final class BraveSession {
             let next = CGPoint(x: min(max(current.x + dx, bounds.minX + 1), bounds.maxX - 1),
                                y: min(max(current.y + dy, bounds.minY + 1), bounds.maxY - 1))
             pointer = next
+            CGWarpMouseCursorPosition(next)
+            NSCursor.setHiddenUntilMouseMoves(false)
             guard let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: next, mouseButton: .left) else { throw SessionError.eventCreation }
             event.postToPid(app.processIdentifier)
             return true
@@ -156,7 +172,7 @@ final class BraveSession {
     private func postKey(_ key: KeyStroke, to pid: pid_t) throws {
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: nil, virtualKey: key.code, keyDown: down) else { throw SessionError.eventCreation }
-            if key.shift { event.flags = .maskShift }
+            event.flags = key.flags
             event.postToPid(pid)
         }
     }
@@ -176,11 +192,11 @@ final class BraveSession {
     }
 
     // Values are AppleEvent descriptors, never interpolated into AppleScript source. The target
-    // is the original process, and the random window name also guards against window ID reuse.
+    // is Brave, guarded by the original process still running and a random window ownership name.
     static let scriptSource = """
-        on run(targetApp, operation, windowID, marker, valueText)
+        on perform_action(operation, windowID, marker, valueText)
           using terms from application "Brave Browser"
-            tell targetApp
+            tell application id "com.brave.Browser"
               if operation is "create" then
                 set w to make new window
                 try
@@ -205,12 +221,14 @@ final class BraveSession {
                 set minimized of w to false
                 set index of w to 1
                 activate
+              else if operation is "position" then
+                set bounds of w to valueText
               else if operation is "bounds" then
                 return bounds of w
               end if
             end tell
           end using terms from
-        end run
+        end perform_action
         """
     static func compileScript() throws -> NSAppleScript {
         guard let script = NSAppleScript(source: scriptSource) else { throw SessionError.eventCreation }
@@ -232,23 +250,31 @@ final class BraveSession {
         return .script(error?[NSAppleScript.errorMessage] as? String ?? "Apple Events permission or a browser error")
     }
 
-    private func runScript(_ action: String, value: String = "") throws -> NSAppleEventDescriptor {
+    private func runScript(_ action: String, value: String = "", bounds: NSRect? = nil) throws -> NSAppleEventDescriptor {
         guard let app = application, !app.isTerminated, let token = ownershipToken else { throw SessionError.unavailable }
         let script: NSAppleScript
         if let cached = compiledScript { script = cached }
         else { script = try Self.compileScript(); compiledScript = script }
         let event = NSAppleEventDescriptor(eventClass: AEEventClass(kASAppleScriptSuite), eventID: AEEventID(kASSubroutineEvent), targetDescriptor: nil, returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
-        event.setParam(NSAppleEventDescriptor(string: "run"), forKeyword: AEKeyword(keyASSubroutineName))
+        event.setParam(NSAppleEventDescriptor(string: "perform_action"), forKeyword: AEKeyword(keyASSubroutineName))
         let args = NSAppleEventDescriptor.list()
-        args.insert(NSAppleEventDescriptor(processIdentifier: app.processIdentifier), at: 1)
-        args.insert(NSAppleEventDescriptor(string: action), at: 2)
-        args.insert(NSAppleEventDescriptor(string: windowID ?? ""), at: 3)
-        args.insert(NSAppleEventDescriptor(string: token), at: 4)
-        args.insert(NSAppleEventDescriptor(string: value), at: 5)
+        args.insert(NSAppleEventDescriptor(string: action), at: 1)
+        args.insert(NSAppleEventDescriptor(string: windowID ?? ""), at: 2)
+        args.insert(NSAppleEventDescriptor(string: token), at: 3)
+        if let bounds {
+            let rect = NSAppleEventDescriptor.list()
+            for (index, value) in [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].enumerated() {
+                rect.insert(NSAppleEventDescriptor(int32: Int32(clamping: Int(value))), at: index + 1)
+            }
+            args.insert(rect, at: 4)
+        } else { args.insert(NSAppleEventDescriptor(string: value), at: 4) }
         event.setParam(args, forKeyword: AEKeyword(keyDirectObject))
         var error: NSDictionary?
         let result = script.executeAppleEvent(event, error: &error)
-        if let error { throw Self.scriptError(error) }
+        if let error {
+            if CommandLine.arguments.contains("--selftest-brave") { print("Brave AppleEvent error: \(error)") }
+            throw Self.scriptError(error)
+        }
         return result
     }
 }

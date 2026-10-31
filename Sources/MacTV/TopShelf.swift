@@ -1,4 +1,5 @@
 import SwiftUI
+import Vision
 
 /// Each streaming app's latest shows for the Top Shelf, like Apple TV's: series with new episodes
 /// on that app in the past two weeks, most popular first, from TVmaze's public streaming schedule
@@ -74,8 +75,20 @@ final class TopShelfFeed: ObservableObject {
         return lists.filter { musicApps.contains($0.key) }
     }
 
-    /// Only show programmes associated with this service; unrelated apps have no featured title.
-    func shows(for serviceID: String) -> [Show] { ready[serviceID] ?? [] }
+    /// An app's own shows; apps with none (websites, Mac apps, games) get the top of every app's.
+    func shows(for serviceID: String) -> [Show] {
+        if let own = ready[serviceID], !own.isEmpty { return own }
+        return mix
+    }
+
+    /// Every app's most popular shows taken in turn: the first of each, then the second of each…
+    private var mix: [Show] {
+        let lists = ready.keys.sorted().compactMap { ready[$0]?.filter { !$0.square } }.filter { !$0.isEmpty }
+        let longest = lists.map(\.count).max() ?? 0
+        var seen = Set<Int>()
+        return (0..<longest).flatMap { rank in lists.compactMap { rank < $0.count ? $0[rank] : nil } }
+            .filter { seen.insert($0.id).inserted }
+    }
 
     func currentShow(for serviceID: String) -> Show? {
         let shows = shows(for: serviceID)
@@ -101,8 +114,10 @@ final class TopShelfFeed: ObservableObject {
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let saved = (try? Data(contentsOf: listFile)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
-        if let saved, let old = saved.preferences { use(Self.reusableLists(saved.services, from: old, to: preferences)) }
-        if saved.map({ $0.services.values.allSatisfy { $0.isEmpty } || $0.preferences != preferences || Date().timeIntervalSince($0.fetched) > 20 * 3600 }) ?? true {
+        // A list saved before Top Shelf preferences existed was made with the defaults.
+        let savedPreferences = saved.map { $0.preferences ?? ShelfPreferences() }
+        if let saved, let savedPreferences { use(Self.reusableLists(saved.services, from: savedPreferences, to: preferences)) }
+        if saved.map({ $0.services.values.allSatisfy { $0.isEmpty } || savedPreferences != preferences || Date().timeIntervalSince($0.fetched) > 20 * 3600 }) ?? true {
             refreshTask = Task { await refresh() }
         }
         Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
@@ -119,7 +134,8 @@ final class TopShelfFeed: ObservableObject {
         for day in 0..<14 {
             let date = ISO8601DateFormatter.string(from: today.addingTimeInterval(Double(-day) * 86400), timeZone: .current,
                                                    formatOptions: [.withFullDate])
-            for region in [preferences.region.isEmpty ? "" : "&country=\(preferences.region)"] {
+            // Worldwide also takes in India's and the US's catalogues, the biggest on these apps.
+            for region in preferences.region.isEmpty ? ["", "&country=IN", "&country=US"] : ["&country=\(preferences.region)"] {
                 guard !Task.isCancelled else { return }
                 guard let episodes = await Self.json("https://api.tvmaze.com/schedule/web?date=\(date)\(region)") as? [[String: Any]] else { continue }
                 for episode in episodes {
@@ -191,12 +207,27 @@ final class TopShelfFeed: ObservableObject {
         return wide.max { $0.width < $1.width }.flatMap { URL(string: $0.url) }
     }
 
-    /// Cache artwork regardless of the script used in its title.
+    /// Saves a show's picture to the cache, unless it carries writing in a script other than Latin:
+    /// a title in a language most people here can't read looks like a mistake.
     private nonisolated static func download(_ url: URL, to file: URL) async -> Bool {
         guard let (data, response) = try? await URLSession.shared.data(from: url),
               (response as? HTTPURLResponse)?.statusCode == 200,
               NSImage(data: data) != nil else { return false }
+        guard await !Task.detached(operation: { hasForeignText(data) }).value else { return false }
         do { try data.write(to: file, options: .atomic); return true } catch { return false }
+    }
+
+    private nonisolated static func hasForeignText(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+        let request = VNRecognizeTextRequest()
+        request.automaticallyDetectsLanguage = true
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).contains { observation in
+            guard let text = observation.topCandidates(1).first, text.confidence >= 0.5 else { return false }
+            let latin = { (letter: Unicode.Scalar) in letter.value < 0x250 || (0x1E00...0x1EFF).contains(letter.value) }
+            return text.string.unicodeScalars.filter { $0.properties.isAlphabetic && !latin($0) }.count >= 3
+        }
     }
 
     /// TVmaze allows about 20 requests every 10 seconds, so requests are paced.

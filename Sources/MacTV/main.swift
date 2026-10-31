@@ -21,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var tvMode: TVMode?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let flag = CommandLine.arguments.firstIndex(of: "--selftest-brave"), flag + 1 < CommandLine.arguments.count,
+           let url = URL(string: CommandLine.arguments[flag + 1]) {
+            BraveSessionProbe.start(url)
+            return
+        }
         if CommandLine.arguments.contains("--selftest-drm") {
             DRMSelfTest.start()
             return
@@ -225,8 +230,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         // `--setup` shows first-run setup again.
+        // Usage analytics sends nothing unless the user has said yes (Analytics.swift).
+        Analytics.start(context: tv.analyticsContext)
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
+        } else if Analytics.available, Analytics.consent == .unasked {
+            // An install from before the question: ask it once.
+            tv.askAboutAnalytics()
         } else if tv.profiles.all.count > 1 {
             tv.openProfiles()
         } else if !tv.phonePaired {

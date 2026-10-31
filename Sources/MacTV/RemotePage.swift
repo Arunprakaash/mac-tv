@@ -184,6 +184,9 @@ enum RemotePage {
         <button type="button" data-a="previouscontrol">Previous control</button>
         <button type="button" data-a="nextcontrol">Next control</button>
         <button type="button" data-a="activatebrowser">Return to Brave</button>
+        <button type="button" data-a="browserfullscreen">Full screen</button>
+        <button type="button" id="browser-retry" hidden>Retry</button>
+        <p class="note err" id="browser-error" role="status" hidden></p>
         <p class="note" id="browser-control-note" role="status"></p>
       </div>
 
@@ -397,8 +400,13 @@ enum RemotePage {
         $('#website-player').value = s.websitePlayer === 'brave' ? 'brave' : 'embedded';
         const browser = s.externalBrowser;
         $('#browser-controls').hidden = !browser;
+        const browserError = browser && typeof browser.error === 'string' ? browser.error : '';
+        $('#browser-error').textContent = browserError;
+        $('#browser-error').hidden = !browserError;
+        $('#browser-retry').hidden = !browserError;
+        $('#browser-retry').disabled = !!(browser && browser.opening);
         $('#browser-control-note').textContent = browser && browser.accessibilityAllowed === false
-          ? 'Allow Accessibility access for Mac TV to send input to Brave. Automation access is also needed to open and control its window.' : ''; 
+          ? 'Allow Accessibility access for Mac TV to send input to Brave. Automation access is also needed to open and control its window.' : '';
         const sig = JSON.stringify([s.apps, s.canRestore]);
         if (sig !== appsShown) {
           appsShown = sig;
@@ -809,6 +817,7 @@ enum RemotePage {
 
     // Buttons
     document.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => send(b.dataset.a, {}, b.dataset.h || 'tick')));
+    $('#browser-retry').onclick = () => send('retrybrowser', {}, 'tap').then(refresh);
     $('#type').onsubmit = e => {
       e.preventDefault();
       const t = $('#typed').value;
@@ -933,14 +942,24 @@ enum RemotePage {
     (() => {
       const tp = $('#touchpad');
       const fingers = new Map();
-      let travel = 0, downAt = 0, multi = false, timer = 0;
+      let travel = 0, downAt = 0, multi = false, timer = 0, inFlight = null;
       let acc = { dx: 0, dy: 0, sy: 0 };
       const flush = () => {
+        clearTimeout(timer);
         timer = 0;
-        const { dx, dy, sy } = acc;
-        acc = { dx: 0, dy: 0, sy: 0 };
-        if (dx || dy) api('/cmd', { a: 'pointer', dx: Math.round(dx), dy: Math.round(dy) }).catch(() => {});
-        if (sy) api('/cmd', { a: 'scroll', dy: Math.round(-sy * 3) }).catch(() => {});
+        if (inFlight) return inFlight;
+        inFlight = (async () => {
+          // Keep fractional remainders so frequent small movements are not rounded away.
+          while (true) {
+            const dx = Math.round(acc.dx), dy = Math.round(acc.dy), sy = Math.round(acc.sy * -3);
+            if (!dx && !dy && !sy) break;
+            acc.dx -= dx; acc.dy -= dy; acc.sy += sy / 3;
+            // One request at a time, including when a gesture changes from moving to scrolling.
+            if (dx || dy) await api('/cmd', { a: 'pointer', dx, dy }).catch(() => {});
+            if (sy) await api('/cmd', { a: 'scroll', dy: sy }).catch(() => {});
+          }
+        })().finally(() => { inFlight = null; });
+        return inFlight;
       };
       tp.addEventListener('pointerdown', e => {
         tp.setPointerCapture(e.pointerId);
@@ -960,7 +979,10 @@ enum RemotePage {
       });
       const lift = e => {
         if (!fingers.delete(e.pointerId)) return;
-        if (fingers.size === 0 && !multi && travel < 8 && Date.now() - downAt < 300) send('click', {}, 'tap');
+        if (fingers.size === 0 && e.type === 'pointerup' && !multi && travel < 8 && Date.now() - downAt < 300) {
+          // Deliver the last movement before the tap, even on a slow connection.
+          flush().then(() => send('click', {}, 'tap'));
+        }
       };
       tp.addEventListener('pointerup', lift);
       tp.addEventListener('pointercancel', lift);

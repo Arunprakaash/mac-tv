@@ -15,7 +15,7 @@ enum RemoteCommand {
     case screenOff, sleepMac
     case sleepTimer(minutes: Int)
     case controlCenter
-    case nextControl, previousControl, activateBrowser
+    case nextControl, previousControl, activateBrowser, browserFullscreen, retryBrowser
     case setting(String, Bool)
 
     init?(json: [String: Any]) {
@@ -49,6 +49,8 @@ enum RemoteCommand {
         case "nextcontrol": self = .nextControl
         case "previouscontrol": self = .previousControl
         case "activatebrowser": self = .activateBrowser
+        case "browserfullscreen": self = .browserFullscreen
+        case "retrybrowser": self = .retryBrowser
         case "setting":
             guard let key = json["k"] as? String, let value = json["v"] as? Bool else { return nil }
             self = .setting(key, value)
@@ -157,6 +159,7 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var externalBrowser: BraveSession?
     @Published private(set) var externalBrowserService: Service?
     @Published private(set) var externalBrowserError: String?
+    @Published private(set) var externalBrowserOpening = false
     let browserPreferences: BrowserPreferences
     @Published private(set) var toast: String?
     /// The volume indicator, shown for a moment after the remote changes the volume.
@@ -286,6 +289,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func showScreensaver() {
+        Analytics.send(.screenSaverStarted, ["wallpaper": ScreenSaverSettings.wallpaper.rawValue])
         ScreenSaverSettings.playing = ScreenSaverSettings.pictures(for: ScreenSaverSettings.wallpaper)
         lastActivity = Date()
         screensaver = true
@@ -767,7 +771,7 @@ final class TVController: NSObject, ObservableObject {
         state["websitePlayer"] = browserPreferences.choice(for: profile.id).rawValue
         state["braveInstalled"] = braveInstalled
         if externalBrowser != nil {
-            state["externalBrowser"] = ["name": "Brave", "service": externalBrowserService?.name ?? "Website", "accessibilityAllowed": AXIsProcessTrusted()]
+            state["externalBrowser"] = ["name": "Brave", "service": externalBrowserService?.name ?? "Website", "accessibilityAllowed": AXIsProcessTrusted(), "error": externalBrowserError ?? "", "opening": externalBrowserOpening]
         }
         state["iinaInstalled"] = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.colliderli.iina") != nil
         if let movie = currentLocalMovie {
@@ -797,6 +801,7 @@ final class TVController: NSObject, ObservableObject {
     func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
         // The first press only wakes the screensaver.
         if noteActivity() { return }
+        Analytics.noteInput(source)
 
         switch command {
         case .pointer, .click, .scroll: break
@@ -808,6 +813,9 @@ final class TVController: NSObject, ObservableObject {
         case .home: goHome(); return
         case .activateBrowser:
             activateExternalBrowser()
+            return
+        case .retryBrowser:
+            retryExternalBrowser()
             return
         case .launch(let id):
             if let service = services.first(where: { $0.id == id }) { open(service) }
@@ -888,6 +896,7 @@ final class TVController: NSObject, ObservableObject {
 
     func open(_ service: Service) {
         closeExternalBrowser()
+        Analytics.send(.appOpened, ["app": analyticsAppName(service)])
         playbackRequest = UUID()
         settings = nil
         pairing = false
@@ -1054,28 +1063,47 @@ final class TVController: NSObject, ObservableObject {
 
     private func playInBrave(_ service: Service, url: URL) {
         closeExternalBrowser()
-        let request = UUID()
-        playbackRequest = request
         webView?.pauseAllMediaPlayback(completionHandler: nil)
         webView?.stopLoading()
         webView = nil
         currentLocalMovie = nil
         playerFailure = nil
+        moviePlayer?.stop()
+        moviePlayer = nil
+        launchedAppID = nil
         let session = BraveSession()
         externalBrowser = session
         externalBrowserService = service
-        externalBrowserError = nil
         mode = .player(service)
         keepAwake.hold(reason: "Watching \(service.name) in Brave")
+        openExternalBrowser(session, url: url)
+    }
+
+    func retryExternalBrowser() {
+        guard !externalBrowserOpening, externalBrowser != nil,
+              let service = externalBrowserService, case .web(let url) = service.kind else { return }
+        playInBrave(service, url: url)
+    }
+
+    private func openExternalBrowser(_ session: BraveSession, url: URL) {
+        let request = UUID()
+        playbackRequest = request
+        externalBrowserError = nil
+        externalBrowserOpening = true
         Task { @MainActor [weak self] in
             do {
                 try await session.open(url)
                 guard let self, self.playbackRequest == request, self.externalBrowser === session else {
                     try? session.close(); return
                 }
+                if let screen = self.window?.screen ?? NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 }) ?? NSScreen.main {
+                    try session.fit(to: screen)
+                }
                 try session.activate()
+                self.externalBrowserOpening = false
             } catch {
                 guard let self, self.playbackRequest == request, self.externalBrowser === session else { return }
+                self.externalBrowserOpening = false
                 self.externalBrowserError = error.localizedDescription
                 self.bringToFront()
             }
@@ -1092,6 +1120,7 @@ final class TVController: NSObject, ObservableObject {
         externalBrowser = nil
         externalBrowserService = nil
         externalBrowserError = nil
+        externalBrowserOpening = false
         do { try previous?.close() }
         catch BraveSession.SessionError.noWindow {} // It may already have been closed by the user.
         catch BraveSession.SessionError.unavailable {}
@@ -1102,6 +1131,7 @@ final class TVController: NSObject, ObservableObject {
 
     /// Plays a movie in Mac TV's own player; files it can't play open in IINA or VLC.
     func playMovie(_ movie: Movie, from seconds: Double) {
+        closeExternalBrowser()
         let request = UUID()
         playbackRequest = request
         currentLocalMovie = movie
@@ -1118,9 +1148,16 @@ final class TVController: NSObject, ObservableObject {
                 if case .success(let engine) = opened { engine.stop() }
                 return
             }
+            // The kind of file and how it played, never its name.
+            let format = movie.url.pathExtension.lowercased()
             switch opened {
-            case .success(let engine): startMovie(movie, engine: engine, from: seconds)
-            case .failure: openElsewhere(movie)
+            case .success(let engine):
+                Analytics.send(.moviePlayed, ["format": format, "player": engine is AVPlayback ? "system" : "matroska",
+                                              "resumed": String(seconds > 0)])
+                startMovie(movie, engine: engine, from: seconds)
+            case .failure:
+                Analytics.send(.moviePlayed, ["format": format, "player": "external"])
+                openElsewhere(movie)
             }
         }
     }

@@ -16,6 +16,8 @@ cp "$BIN/MacTV" "$APP/Contents/MacOS/MacTV"
 cp Info.plist "$APP/Contents/Info.plist"
 cp -R Icons "$APP/Contents/Resources/Icons"
 cp Assets/AppIcon.icns Assets/AppIcon.png "$APP/Contents/Resources/"
+# Swift packages' resource bundles (TelemetryDeck's privacy manifest).
+for bundle in "$BIN"/*.bundle; do [ -e "$bundle" ] && cp -R "$bundle" "$APP/Contents/Resources/"; done
 # Sign with the local certificate when it exists (scripts/make-signing-cert.sh), so macOS keeps
 # permissions like Accessibility across builds; otherwise sign ad hoc.
 IDENTITY="${MACTV_SIGN_IDENTITY:-Mac TV Local Signing}"

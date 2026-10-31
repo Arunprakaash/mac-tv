@@ -28,5 +28,7 @@
 	<string>Mac TV opens and controls its own Brave window for streaming websites.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Mac TV runs a remote control page that your phone opens over your Wi-Fi.</string>
+	<key>TelemetryDeckAppID</key>
+	<string></string>
 </dict>
 </plist>

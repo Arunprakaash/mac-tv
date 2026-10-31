@@ -29,12 +29,12 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac. One download runs 
 
 ## How it works
 
-Mac TV is a native Mac app. Each streaming service runs in its official web player inside Apple's Safari engine (WebKit), with WebKit's DRM capabilities. Actual quality depends on the service, Mac, subscription, display and connection; the Playback check screen reports capabilities without claiming a verified resolution. It isn't Android TV and doesn't emulate anything.
+Mac TV is a native Mac app. By default, each streaming service runs in its official web player inside Apple's Safari engine (WebKit), with WebKit's DRM capabilities. Actual quality depends on the service, Mac, subscription, display and connection; the Playback check screen reports capabilities without claiming a verified resolution. It isn't Android TV and doesn't emulate anything.
 
 - **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. The Top Shelf shows the focused app in its own colours; move up for Open, and down for the full app grid. Sheets, buttons, pills and the volume indicator use Apple's Liquid Glass, and motion uses Apple's system springs. With Reduce Motion on, things fade instead of moving. It fills any screen shape edge to edge.
 - **Window:** opens as a normal window on your external display and remembers its place. Use the green button or ⌃⌘F for full screen.
 - **Keyboard and trackpad:** arrows, Return and Escape. Scroll to move between the dock and the grid. ⌘⇧H goes home.
-- **Websites built for a mouse:** a focus ring slides between links and buttons, so the D-pad works everywhere.
+- **Websites built for a mouse:** the built-in player provides a focus ring between links and buttons. In Brave, use the phone touchpad or Previous / Next control buttons.
 
 ## Phone remote
 
@@ -57,7 +57,32 @@ Pair a PlayStation, Xbox, Switch Pro or other MFi controller with the Mac in Sys
 - **Screensaver:** after a few idle minutes (2 to 30, your choice), a lock-screen-style clock appears over the wallpaper you pick in **Settings › Screen Saver**: Apple's live wallpapers (the same aerials as System Settings › Wallpaper, shuffled or by category: Landscapes, Cities, Underwater, Space and more; downloaded ones play from the Mac, the rest stream from Apple), the Top Shelf's show art, a folder of your photos, or drifting colour. The clock can be turned off.
 - **Top Shelf:** each streaming app's Top Shelf rotates through artwork from the latest shows on that app, like Apple TV: series with new episodes in the past two weeks, most popular first. That includes YouTube. Spotify and YouTube Music show this week's most-played albums, the cover over its own colours. Any other app you put in the top row (a website, a Mac app, a game) rotates through the top shows from every app. Mac TV refreshes the lists once a day from [TVmaze](https://www.tvmaze.com) (CC BY-SA) and Apple's public music charts. Art with writing in a script other than Latin is skipped; that check runs on your Mac.
 - **Movies:** plays the video files in your Movies folder, and any other folders or drives you turn on. MKV files with H.264 or HEVC video and AAC, Dolby Digital, Dolby Digital Plus, Opus or MP3 audio play in Mac TV's own player using macOS's decoders, with nothing converted; so do MP4, MOV and M4V. The player has Apple TV's controls in Liquid Glass: left and right skip 10 seconds, select plays or pauses, down opens subtitles and audio, and they all work with the mouse too. Subtitles inside the file and `.srt` files next to it both work. Movies you've started appear in Continue Watching, with Resume or Start from the Beginning. Posters come from Apple's movie catalogue when the title matches exactly, otherwise from a frame of the film. Anything else (AVI, 10-bit H.264, VP9) opens in IINA or VLC if you have one.
-- **Privacy:** Mac TV doesn't keep a list of what you watch in streaming apps, and the home screen never shows one. The Movies app remembers where you stopped in your own files, on your Mac, for Continue Watching.
+- **Privacy:** Mac TV doesn't keep a list of what you watch in streaming apps, and the home screen never shows one. The Movies app remembers where you stopped in your own files, on your Mac, for Continue Watching. It asks once whether to share anonymous usage (which features you use, never what you watch) through [TelemetryDeck](https://telemetrydeck.com); it sends nothing unless you say yes, and Settings › About turns it off. Every event is in [`Analytics.swift`](Sources/MacTV/Analytics.swift); details in the [privacy policy](https://arunprakaash.github.io/mac-tv/privacy.html).
+
+### Brave website player
+
+Choose **Settings › Watching › Website player › Brave**, or select Brave in the phone remote’s
+**TV controls**. The choice saves per Mac TV profile and applies when you next open a website.
+Install [Brave Browser](https://brave.com/download/) first. Mac TV opens a separate Brave window
+on its display; **Home** closes only that window, leaving your other Brave windows open.
+
+Brave chooses its browser profile: that profile’s sign-ins, extensions and Shields settings apply
+across Mac TV profiles. WebKit sign-ins are separate. For stronger blocking, set **Block trackers
+& ads › Aggressive** in Brave’s Shields settings. Mac TV does not change your browser settings.
+Brave maintains its own blocker and filter updates; Mac TV does not bundle an ad-block engine.
+No blocker guarantees ad-free playback on every service, and some sites refuse playback with
+blocking enabled. Protected streaming may also require enabling Widevine in Brave.
+
+Allow **Mac TV › Brave Browser** in macOS **Privacy & Security › Automation** to open and manage
+the window, and allow Mac TV under **Accessibility** for phone input. JavaScript from Apple
+Events and a remote debugging port are not needed. If permission was denied, fix it in System
+Settings and press **Retry** on the TV or phone.
+
+The phone offers **Return to Brave**, **Full screen**, **Previous control**, **Next control**,
+typing and a pointer touchpad. Play/pause sends Space; skip sends the arrow keys, so their effect
+depends on the website’s focused player. Built-in auto-skip, auto-next and WebKit playback
+diagnostics apply to the built-in player. YouTube opens its desktop website in Brave.
+Local movie files continue to use Mac TV’s player or IINA.
 
 ## Power and the lid
 
@@ -108,6 +133,7 @@ swift scripts/make-icon.swift   # redraws Assets/AppIcon.png and .icns
 These checks run on their own and don't need the app open, unless noted:
 - `swift test --disable-xctest` checks saved app-list migration, favourites, ordering and fixed utility tiles (requires Swift 6 or newer).
 - `MacTV --selftest-drm` prints the DRM systems available.
+- `MacTV --selftest-brave <http-or-https-url>` opens and closes a test Brave window, and checks key delivery if Accessibility is allowed. This is an interactive smoke check, not an automated provider-playback test.
 - `--export-tiles <folder>` renders the dock tiles, `--export-home <folder>` the home screen, and `--export-remote <file.png> [apps|controls]` the phone remote. The remote export needs Mac TV running and `MACTV_REMOTE_CODE` set to its current displayed pairing PIN.
 
 Some Swift 6.4 Command Line Tools installations have a [TestingMacros loading issue](https://github.com/swiftlang/swift-build/issues/1870).

@@ -42,6 +42,7 @@ struct ControlCenterPanel: Equatable {
 extension TVController {
     func openControlCenter() {
         controlCenter = ControlCenterPanel()
+        Analytics.send(.controlCenterOpened)
     }
 
     func handleControlCenter(_ command: RemoteCommand) {
@@ -75,6 +76,7 @@ extension TVController {
 
     func activateControl(_ item: ControlCenterPanel.Item) {
         controlCenter?.item = item
+        Analytics.send(.controlUsed, ["control": String(describing: item)])
         switch item {
         case .sleepMac:
             if controlCenter?.confirmingSleep == true {

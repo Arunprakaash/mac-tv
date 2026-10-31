@@ -652,13 +652,13 @@ struct AppBanner: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(show?.name ?? service.name)
-                    .font(.tv(.title1, emphasized: true))
-                    .tracking(-1.5).lineLimit(2).minimumScaleFactor(0.5)
-                    .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
-                if show != nil {
-                    Text(service.name).font(.tv(.callout, emphasized: true))
-                        .foregroundStyle(.white.opacity(0.8))
+                if show == nil {
+                    // The show's artwork alone carries it; nothing is drawn over it. Without art, the app's name.
+                    Text(service.name)
+                        .font(.tv(.title1, emphasized: true))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
                 }
                 if expanded {
                     HStack(spacing: 18) {

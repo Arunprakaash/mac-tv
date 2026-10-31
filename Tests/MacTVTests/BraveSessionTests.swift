@@ -16,11 +16,19 @@ import Testing
         _ = try BraveSession.compileScript()
     }
 
+    @Test func closedSessionCannotStartANewLaunch() async throws {
+        let session = BraveSession()
+        try session.close()
+        await #expect(throws: CancellationError.self) {
+            try await session.open(URL(string: "https://example.com")!)
+        }
+    }
+
     @Test func remoteKeys() {
         #expect(BraveSession.keyStroke(for: .move(.down)) == .init(code: 48))
-        #expect(BraveSession.keyStroke(for: .move(.up)) == .init(code: 48, shift: true))
+        #expect(BraveSession.keyStroke(for: .move(.up)) == .init(code: 48, flags: .maskShift))
         #expect(BraveSession.keyStroke(for: .nextControl) == .init(code: 48))
-        #expect(BraveSession.keyStroke(for: .previousControl) == .init(code: 48, shift: true))
+        #expect(BraveSession.keyStroke(for: .previousControl) == .init(code: 48, flags: .maskShift))
         #expect(BraveSession.keyStroke(for: .seek(forward: true)) == .init(code: 124))
         #expect(BraveSession.keyStroke(for: .select) == .init(code: 36))
         #expect(BraveSession.keyStroke(for: .text("'\\\"\n")) == nil)

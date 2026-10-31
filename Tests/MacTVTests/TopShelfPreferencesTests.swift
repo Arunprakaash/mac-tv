@@ -6,7 +6,7 @@ import Testing
 struct TopShelfPreferencesTests {
     @Test
     func languageSelectionIncludesAllOrSelectedOnly() {
-        var preferences = ShelfPreferences()
+        var preferences = ShelfPreferences(languages: [])
         #expect(preferences.includes(language: nil))
         #expect(preferences.includes(language: "Tamil"))
         preferences.languages = ["Tamil", "Japanese"]

@@ -18,10 +18,15 @@ struct BravePlaybackView: View {
                 Text("Brave’s profile, sign-ins and Shields apply. Mac TV does not guarantee ad-free playback.")
                     .font(.tv(.callout)).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.center)
                 HStack(spacing: 24) {
+                    if tv.externalBrowserError != nil {
+                        Button("Retry") { tv.retryExternalBrowser() }
+                            .disabled(tv.externalBrowserOpening)
+                    }
                     Button("Return to Brave") { tv.activateExternalBrowser() }
+                    Button("Full screen") { tv.handle(.browserFullscreen) }
                     Button("Home") { tv.goHome() }
                 }.font(.tv(.body, emphasized: true)).buttonStyle(.borderedProminent)
-            }.padding(60).frame(width: 1280)
+            }.padding(40).frame(maxWidth: 1100)
         }.foregroundStyle(.white)
     }
 }

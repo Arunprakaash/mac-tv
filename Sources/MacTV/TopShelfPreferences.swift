@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// An empty language list means all languages. Region is an ISO country code, or empty for worldwide.
+/// Out of the box: worldwide (plus India and the US), in languages people here watch.
 struct ShelfPreferences: Codable, Equatable {
     var region = ""
-    var languages: [String] = []
+    var languages: [String] = ["Bengali", "English", "Hindi", "Japanese", "Kannada", "Korean", "Malayalam",
+                               "Marathi", "Spanish", "Tamil", "Telugu"]
     static let regions: [(code: String, name: String)] = [("", "Worldwide"), ("GB", "United Kingdom"), ("IN", "India"), ("US", "United States"), ("CA", "Canada"), ("AU", "Australia")]
     static let languageOptions = ["English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi", "Japanese", "Korean", "Spanish", "French"]
     func includes(language: String?) -> Bool {
