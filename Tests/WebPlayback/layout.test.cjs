@@ -65,15 +65,20 @@ async function run() {
     localStorage.setItem('mactvKey', 'a'.repeat(64));
     window.testState = { apps: [], canRestore: false, autoSkip: false, autoNext: false,
       keepMacAwake: false, lidOverride: false, displaySetup: { displays: [] } };
-    window.fetch = async path => ({ status: 200, ok: true, json: async () => path === '/state' ? window.testState : [] });
+    window.sentCommands = [];
+    window.fetch = async (path, options) => {
+      if (path === '/cmd') window.sentCommands.push(JSON.parse(options.body).a);
+      return { status: 200, ok: true, json: async () => path === '/state' ? window.testState : [] };
+    };
   ` });
   await call('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
   await delay(500);
   const sizes = [[320,568],[375,667],[390,844],[430,932],[568,320],[844,390]];
   for (const [width, height] of sizes) {
     await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
-    for (const mode of ['none', 'brave', 'iina']) {
+    for (const mode of ['none', 'embedded', 'brave', 'iina']) {
       const geometry = await evaluate(`(async () => {
+        testState.mode = ${mode === 'none' ? "'launcher'" : "'player'"};
         testState.externalBrowser = ${mode === 'brave' ? "{name:'Brave',service:'Video',accessibilityAllowed:true}" : 'null'};
         testState.externalPlayer = ${mode === 'iina' ? "{name:'IINA',status:'Playing'}" : 'null'};
         await refresh();
@@ -90,6 +95,18 @@ async function run() {
       for (const arrow of geometry.arrows) assert.ok(arrow.w >= 44 && arrow.h >= 44, `${label}: 44px D-pad target`);
       assert.ok(geometry.scroll <= geometry.viewport + 1, `${label}: no horizontal overflow`);
       assert.ok(geometry.controls, `${label}: active controls visible`);
+      const home = await evaluate(`(async () => {
+        const button = document.querySelector('[data-a="home"]');
+        const before = sentCommands.length;
+        const rect = button.getBoundingClientRect();
+        button.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        return { label: button.textContent.trim(), width: rect.width, height: rect.height,
+          displayed: getComputedStyle(button).display !== 'none', action: sentCommands[before] };
+      })()`);
+      assert.equal(home.label, 'Home', `${label}: Home is visibly labeled`);
+      assert.ok(home.displayed && home.width >= 44 && home.height >= 44, `${label}: Home stays available`);
+      assert.equal(home.action, 'home', `${label}: Home sends its command`);
       if (width === 320 && height === 568 && (mode === 'none' || mode === 'brave')) await screenshot(`320x568-${mode}.png`);
       if (mode === 'none' && height > width) assert.ok(geometry.tool.bottom <= geometry.height + 1, `${label}: portrait controls fit`);
       if (mode === 'none' && height < width) assert.ok(geometry.page >= geometry.tool.bottom, `${label}: landscape controls scroll into view`);
