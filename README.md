@@ -30,7 +30,7 @@ Requires macOS 14 or later.
 
 Mac TV is a native Mac app. Each streaming service runs in its official web player inside Apple's Safari engine (WebKit), so it gets FairPlay DRM, the same playback quality as Safari, up to 4K on Netflix. It isn't Android TV and doesn't emulate anything.
 
-- **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. The Top Shelf shows the focused app in its own colours; move up for Open, and down for the full app grid. Sheets and controls use Apple TV's Liquid Glass. It fills any screen shape edge to edge.
+- **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. The Top Shelf shows the focused app in its own colours; move up for Open, and down for the full app grid. Sheets, buttons, pills and the volume indicator use Apple's Liquid Glass, and motion uses Apple's system springs. With Reduce Motion on, things fade instead of moving. It fills any screen shape edge to edge.
 - **Window:** opens as a normal window on your external display and remembers its place. Use the green button or ⌃⌘F for full screen.
 - **Keyboard and trackpad:** arrows, Return and Escape. Scroll to move between the dock and the grid. ⌘⇧H goes home.
 - **Websites built for a mouse:** a focus ring slides between links and buttons, so the D-pad works everywhere.

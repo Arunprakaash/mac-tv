@@ -101,6 +101,7 @@ extension TVController {
 struct SettingsSheet: View {
     @ObservedObject var tv: TVController
     @Environment(\.canvasSize) private var canvas
+    @Namespace private var focusSpace
 
     var body: some View {
         let panel = tv.settings ?? SettingsPanel()
@@ -142,7 +143,7 @@ struct SettingsSheet: View {
         .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
-        .animation(.easeOut(duration: 0.18), value: panel)
+        .animation(Motion.focus, value: panel)
     }
 
     private func group(_ title: String) -> some View {
@@ -173,11 +174,19 @@ struct SettingsSheet: View {
         .frame(height: 64)
         // tvOS focus: a bright white platter with dark text; Sleep Mac turns red to confirm.
         .foregroundStyle(focused && !warning ? .black : .white)
-        .background(warning ? Color(hex: "#FF453A") : focused ? .white : .white.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+            if focused {
+                // One platter that glides from row to row as focus moves, like tvOS.
+                shape.fill(warning ? Color(hex: "#FF453A") : .white)
+                    .matchedGeometryEffect(id: "focus", in: focusSpace)
+            } else {
+                shape.fill(.white.opacity(0.08))
+            }
+        }
         .scaleEffect(focused ? 1.02 : 1)
         .shadow(color: .black.opacity(focused ? 0.3 : 0), radius: 14, y: 8)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: focused)
+        .animation(Motion.focus, value: focused)
         .contentShape(Rectangle())
         .onTapGesture { tv.activateSetting(row) }
     }
@@ -195,6 +204,6 @@ struct SettingSwitch: View {
                 Circle().fill(.white).frame(width: 28, height: 28).padding(4)
                     .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
             }
-            .animation(.easeOut(duration: 0.15), value: on)
+            .animation(.snappy(duration: 0.2), value: on)
     }
 }

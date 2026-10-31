@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import IOKit.pwr_mgt
 import WebKit
 
@@ -115,6 +116,8 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var sleepAt: Date?
     @Published private(set) var webView: WKWebView?
     @Published private(set) var toast: String?
+    /// The volume indicator, shown for a moment after the remote changes the volume.
+    @Published private(set) var volume: VolumeLevel?
     /// Addresses a phone can open the remote at, one per network this Mac is on.
     @Published private(set) var remoteLinks: [RemoteLink] = []
 
@@ -174,6 +177,7 @@ final class TVController: NSObject, ObservableObject {
     private var addressTimer: Timer?
     private let keepAwake = KeepAwake()
     private var toastTask: Task<Void, Never>?
+    private var volumeTask: Task<Void, Never>?
     private var launchedAppID: String?
     private var pointer: CGPoint?
     private var popups: [NSWindow] = []
@@ -571,8 +575,8 @@ final class TVController: NSObject, ObservableObject {
         case .launch(let id):
             if let service = services.first(where: { $0.id == id }) { open(service) }
             return
-        case .volume(let delta): SystemControl.changeVolume(by: delta); return
-        case .mute: SystemControl.toggleMute(); return
+        case .volume(let delta): showVolume(SystemControl.changeVolume(by: delta)); return
+        case .mute: showVolume(SystemControl.toggleMute()); return
         case .screenOff: SystemControl.displayOff(); return
         case .sleepTimer(let minutes): setSleepTimer(minutes: minutes); return
         case .setting(let key, let value):
@@ -807,6 +811,15 @@ final class TVController: NSObject, ObservableObject {
     private func bringToFront() {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func showVolume(_ level: VolumeLevel) {
+        withAnimation(.smooth(duration: 0.3)) { volume = level }
+        volumeTask?.cancel()
+        volumeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.volume = nil } }
+        }
     }
 
     func showToast(_ text: String) {

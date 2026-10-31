@@ -36,6 +36,7 @@ extension EnvironmentValues {
 
 struct RootView: View {
     @ObservedObject var tv: TVController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -49,19 +50,19 @@ struct RootView: View {
                     TVCanvas { SettingsSheet(tv: tv) }
                         .ignoresSafeArea()
                         .background(.ultraThinMaterial.opacity(0.9))
-                        .transition(.opacity)
+                        .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.pairing {
                     TVCanvas { PairSheet(links: tv.remoteLinks, code: tv.remoteToken) { tv.pairing = false } }
                         .ignoresSafeArea()
                         .background(.ultraThinMaterial.opacity(0.9))
-                        .transition(.opacity)
+                        .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.adder != nil {
                     TVCanvas { AddAppSheet(tv: tv) }
                         .ignoresSafeArea()
                         .background(.ultraThinMaterial.opacity(0.9))
-                        .transition(.opacity)
+                        .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.screensaver {
                     TVCanvas { Screensaver() }
@@ -70,25 +71,41 @@ struct RootView: View {
                 }
             }
 
+            if let volume = tv.volume {
+                TVCanvas {
+                    GlassGroup {
+                        VolumeHUD(volume: volume).tvGlassTransition()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.trailing, 96)
+                    .padding(.top, 52)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+
             if let toast = tv.toast {
                 VStack {
-                    Text(toast)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 22).padding(.vertical, 12)
-                        .tvGlass(in: Capsule())
-                        .padding(.top, 36)
+                    GlassGroup {
+                        Text(toast)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 22).padding(.vertical, 12)
+                            .tvGlass(in: Capsule())
+                            .tvGlassTransition()
+                    }
+                    .padding(.top, 36)
                     Spacer()
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .offset(y: -24).combined(with: .opacity))
             }
         }
         .environment(\.colorScheme, .dark)
         .background(Color.black.ignoresSafeArea())
-        .animation(.easeOut(duration: 0.25), value: tv.toast)
-        .animation(.easeOut(duration: 0.25), value: tv.pairing)
-        .animation(.easeOut(duration: 0.25), value: tv.settings != nil)
-        .animation(.easeOut(duration: 0.25), value: tv.adder != nil)
+        .animation(Motion.appear, value: tv.toast)
+        .animation(Motion.appear, value: tv.pairing)
+        .animation(Motion.appear, value: tv.settings != nil)
+        .animation(Motion.appear, value: tv.adder != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
     }
 }
@@ -217,6 +234,7 @@ struct Wallpaper: View {
 struct HomeView: View {
     @ObservedObject var tv: TVController
     @Environment(\.canvasSize) private var canvas
+    @Namespace private var pills
 
     private var shelfFocused: Bool {
         if case .shelf = tv.focus { return true }
@@ -242,7 +260,7 @@ struct HomeView: View {
                     .transition(.opacity)
             }
 
-            HStack(spacing: 14) {
+            GlassGroup { HStack(spacing: 14) {
                 // While the Mac can't sleep with its lid closed, say so where it's always seen.
                 if tv.lidSleepOff {
                     Label("Lid sleep off", systemImage: "moon.zzz")
@@ -250,9 +268,13 @@ struct HomeView: View {
                         .padding(.horizontal, 20)
                         .frame(height: 50)
                         .tvGlass(in: Capsule())
+                        .tvGlassID("lid", in: pills)
                 }
-                ClockPill()
-            }
+                ClockPill().tvGlassID("clock", in: pills)
+            } }
+                .animation(Motion.appear, value: tv.lidSleepOff)
+                // The volume indicator takes this corner while it shows.
+                .opacity(tv.volume == nil ? 1 : 0)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 96)
                 .padding(.top, 56)
@@ -261,9 +283,9 @@ struct HomeView: View {
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .clipped()
         .foregroundStyle(.white)
-        .animation(.spring(response: 0.55, dampingFraction: 0.88), value: tv.inGrid)
-        .animation(.spring(response: 0.5, dampingFraction: 0.88), value: shelfFocused)
-        .animation(.easeInOut(duration: 0.35), value: tv.shelfAppIndex)
+        .animation(Motion.navigate, value: tv.inGrid)
+        .animation(Motion.navigate, value: shelfFocused)
+        .animation(Motion.appear, value: tv.shelfAppIndex)
     }
 }
 
@@ -349,7 +371,8 @@ struct AppCell: View {
                     .fixedSize()
                     .offset(y: 50)
                     .opacity(focused && showsLabel ? 1 : 0)
-                    .animation(.easeOut(duration: 0.2), value: focused)
+                    .offset(y: focused && showsLabel ? 0 : -8)
+                    .animation(Motion.focus, value: focused)
             }
             .contentShape(Rectangle())
             .onContinuousHover { phase in
@@ -373,25 +396,37 @@ struct AppTile: View {
     let service: Service
     let focused: Bool
     let tilt: CGSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        let tilt = reduceMotion ? .zero : tilt
         artwork
             .frame(width: Layout.tile.width, height: Layout.tile.height)
             .clipShape(shape)
+            // tvOS light: a soft glare on the focused tile that slides with the pointer.
             .overlay {
-                shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.06)],
-                                                  startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                RadialGradient(colors: [.white.opacity(0.32), .white.opacity(0)],
+                               center: UnitPoint(x: 0.5 + tilt.width * 1.2, y: 0.05 + tilt.height * 1.2),
+                               startRadius: 0, endRadius: Layout.tile.width * 0.75)
+                    .blendMode(.plusLighter)
+                    .clipShape(shape)
                     .opacity(focused ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            // A glass edge: a faint rim at rest, a bright top highlight when focused.
+            .overlay {
+                shape.strokeBorder(LinearGradient(colors: [.white.opacity(focused ? 0.55 : 0.14), .white.opacity(focused ? 0.08 : 0.03)],
+                                                  startPoint: .top, endPoint: .bottom), lineWidth: focused ? 1.5 : 1)
             }
             .rotation3DEffect(.degrees(-tilt.height * 10), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
             .rotation3DEffect(.degrees(tilt.width * 12), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-            .scaleEffect(focused ? 1.14 : 1)
-            .offset(y: focused ? -10 : 0)
+            .scaleEffect(focused ? (reduceMotion ? 1.06 : 1.14) : 1)
+            .offset(y: focused && !reduceMotion ? -10 : 0)
             // Resting icons sit flat on the glass; only the focused one casts a shadow.
-            .shadow(color: .black.opacity(focused ? 0.65 : 0), radius: focused ? 26 : 0, y: focused ? 26 : 0)
-            .animation(.spring(response: 0.32, dampingFraction: 0.78), value: focused)
-            .animation(.easeOut(duration: 0.12), value: tilt)
+            .shadow(color: .black.opacity(focused ? 0.6 : 0), radius: focused ? 28 : 0, y: focused ? 24 : 0)
+            .animation(Motion.focus, value: focused)
+            .animation(Motion.tilt, value: tilt)
     }
 
     @ViewBuilder private var artwork: some View {
@@ -477,7 +512,7 @@ struct AppBanner: View {
                         tv.setFocus(.shelf(0)); tv.activateShelf(0)
                     }
                     .padding(.top, 20)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(.opacity.combined(with: .offset(y: 16)))
                 }
             }
             .frame(width: 1100, alignment: .leading)
@@ -506,16 +541,10 @@ struct ShelfButton: View {
             .padding(.horizontal, 34)
             .frame(height: 66)
             .foregroundStyle(focused ? .black : .white)
-            .background {
-                if focused {
-                    Capsule().fill(.white)
-                } else {
-                    Color.clear.tvGlass(in: Capsule())
-                }
-            }
+            .tvGlass(in: Capsule(), interactive: true, tint: focused ? .white : nil)
             .scaleEffect(focused ? 1.08 : 1)
-            .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: 20, y: 14)
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: focused)
+            .shadow(color: .black.opacity(focused ? 0.4 : 0), radius: 20, y: 14)
+            .animation(Motion.focus, value: focused)
         }
         .buttonStyle(.plain)
     }
@@ -599,17 +628,112 @@ struct WebViewHost: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 
+/// Mac TV's motion, built from Apple's system springs so everything moves with one feel.
+/// With Reduce Motion on, views fade instead of moving, scaling or tilting.
+enum Motion {
+    /// Focus moving between tiles, rows and buttons: quick, with a hint of bounce.
+    static let focus = Animation.snappy(duration: 0.28, extraBounce: 0.04)
+    /// Scrolling between the Top Shelf, dock and grid.
+    static let navigate = Animation.smooth(duration: 0.5)
+    /// Sheets, toasts and pills arriving and leaving.
+    static let appear = Animation.smooth(duration: 0.35)
+    /// Tiles following the pointer.
+    static let tilt = Animation.interactiveSpring(response: 0.25, dampingFraction: 0.85)
+
+    /// A sheet settles into place from slightly larger, like tvOS modals.
+    static func sheet(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 1.04)),
+                                              removal: .opacity.combined(with: .scale(scale: 1.02)))
+    }
+}
+
 extension View {
-    /// Apple TV's glass for every surface in Mac TV: sheets, the dock, pills, buttons at rest.
-    /// Liquid Glass on macOS 26 and later, frosted material before that.
+    /// Apple TV's Liquid Glass, for Mac TV's controls layer only: sheets, the dock, pills,
+    /// buttons and the volume indicator, never content. Following Apple's guidance it's the
+    /// regular variant (these carry text), applied after the view's other appearance
+    /// modifiers; `interactive` makes a control respond to the pointer, and `tint` marks
+    /// prominence, like a focused button. Frosted material before macOS 26.
     @ViewBuilder
-    func tvGlass<S: InsettableShape>(in shape: S) -> some View {
+    func tvGlass<S: InsettableShape>(in shape: S, interactive: Bool = false, tint: Color? = nil) -> some View {
         if #available(macOS 26, *) {
-            glassEffect(.regular, in: shape)
+            glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
         } else {
-            background(.ultraThinMaterial, in: shape)
+            background(tint ?? .clear, in: shape)
+                .background(.ultraThinMaterial, in: shape)
                 .overlay(shape.strokeBorder(.white.opacity(0.18)))
         }
+    }
+
+    /// Related glass in one GlassGroup morphs between shapes when one appears or leaves.
+    @ViewBuilder
+    func tvGlassID(_ id: String, in namespace: Namespace.ID) -> some View {
+        if #available(macOS 26, *) {
+            glassEffectID(id, in: namespace)
+        } else {
+            self
+        }
+    }
+
+    /// Glass appearing and disappearing materializes, as Apple recommends, rather than fading.
+    @ViewBuilder
+    func tvGlassTransition() -> some View {
+        if #available(macOS 26, *) {
+            glassEffectTransition(.materialize)
+        } else {
+            transition(.opacity)
+        }
+    }
+}
+
+/// Groups nearby glass so it renders in one pass and can blend and morph together
+/// (GlassEffectContainer); a plain stack before macOS 26.
+struct GlassGroup<Content: View>: View {
+    var spacing: CGFloat = 14
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            GlassEffectContainer(spacing: spacing) { content }
+        } else {
+            content
+        }
+    }
+}
+
+/// Apple TV's volume indicator: a glass capsule with the speaker and the level.
+struct VolumeHUD: View {
+    let volume: VolumeLevel
+
+    private var symbol: String {
+        guard let level = volume.level else { return "tv" }
+        if volume.muted || level == 0 { return "speaker.slash.fill" }
+        return level < 34 ? "speaker.wave.1.fill" : level < 67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+    }
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Image(systemName: symbol)
+                .font(.system(size: 26, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 40)
+            if let level = volume.level {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.25))
+                        Capsule().fill(.white)
+                            .frame(width: geo.size.width * CGFloat(volume.muted ? 0 : level) / 100)
+                    }
+                }
+                .frame(width: 260, height: 8)
+            } else {
+                Text("Volume is set on the TV").font(.system(size: 22, weight: .semibold))
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 28)
+        .frame(height: 72)
+        .animation(.smooth(duration: 0.2), value: volume)
+        .tvGlass(in: Capsule())
     }
 }
 
@@ -627,6 +751,7 @@ extension Color {
 struct AddAppSheet: View {
     @ObservedObject var tv: TVController
     @Environment(\.canvasSize) private var canvas
+    @Namespace private var focusSpace
 
     var body: some View {
         let a = tv.adder ?? AppAdder()
@@ -662,7 +787,7 @@ struct AddAppSheet: View {
         .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
-        .animation(.easeOut(duration: 0.18), value: a)
+        .animation(Motion.focus, value: a)
     }
 
     private func set(row: Int) {
@@ -676,7 +801,9 @@ struct AddAppSheet: View {
             .padding(.horizontal, 30)
             .frame(height: 54)
             .foregroundStyle(on ? .black : .white)
-            .background(on ? Color.white : Color.clear, in: Capsule())
+            .background {
+                if on { Capsule().fill(.white).matchedGeometryEffect(id: "tab", in: focusSpace) }
+            }
             .contentShape(Capsule())
             .onTapGesture {
                 tv.adder?.tab = tab
@@ -710,7 +837,14 @@ struct AddAppSheet: View {
                 .padding(.horizontal, 18)
                 .frame(height: 60)
                 .foregroundStyle(focused ? .black : .white)
-                .background(focused ? Color.white : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    if focused {
+                        shape.fill(.white).matchedGeometryEffect(id: "focus", in: focusSpace)
+                    } else {
+                        shape.fill(.white.opacity(0.06))
+                    }
+                }
                 .opacity(added && !focused ? 0.55 : 1)
                 .contentShape(Rectangle())
                 .onTapGesture {

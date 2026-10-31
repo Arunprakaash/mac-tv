@@ -5,12 +5,26 @@ import IOKit.ps
 import IOKit.pwr_mgt
 
 enum SystemControl {
-    static func changeVolume(by delta: Int) {
-        runAppleScript("set volume output volume ((output volume of (get volume settings)) + \(delta))")
+    /// Raising the volume also unmutes, like the volume keys. Returns the new level.
+    static func changeVolume(by delta: Int) -> VolumeLevel {
+        runAppleScript("set volume output volume ((output volume of (get volume settings)) + \(delta))"
+                       + (delta > 0 ? "\nset volume output muted false" : ""))
+        return volume()
     }
 
-    static func toggleMute() {
+    static func toggleMute() -> VolumeLevel {
         runAppleScript("set volume output muted (not (output muted of (get volume settings)))")
+        return volume()
+    }
+
+    /// The output's volume and mute state. Outputs macOS can't set the volume of, like most
+    /// HDMI TVs, report no level.
+    static func volume() -> VolumeLevel {
+        var error: NSDictionary?
+        let script = "set s to get volume settings\nreturn (output volume of s as text) & \",\" & (output muted of s as text)"
+        let parts = NSAppleScript(source: script)?.executeAndReturnError(&error).stringValue?
+            .split(separator: ",").map(String.init) ?? []
+        return VolumeLevel(level: parts.first.flatMap { Int($0) }, muted: parts.count > 1 && parts[1] == "true")
     }
 
     /// Turns the displays off; playback and the remote keep working.
@@ -40,6 +54,12 @@ enum SystemControl {
         process.arguments = [argument]
         try? process.run()
     }
+}
+
+struct VolumeLevel: Equatable {
+    /// 0–100, or nil when the volume is set on the TV rather than the Mac.
+    var level: Int?
+    var muted: Bool
 }
 
 /// Holds one power assertion: the display awake while something plays, or the Mac awake while
