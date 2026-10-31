@@ -528,22 +528,9 @@ struct AppBanner: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                if let show {
-                    // The show's own title logo, as Apple TV shows it; never typed text.
-                    if let logo = feed.logos[show.id] {
-                        Group {
-                            if logo.asWhite {
-                                Image(nsImage: logo.image).renderingMode(.template).resizable().foregroundStyle(.white)
-                            } else {
-                                Image(nsImage: logo.image).resizable()
-                            }
-                        }
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: 620, maxHeight: 210, alignment: .leading)
-                        .shadow(color: .black.opacity(0.5), radius: 18, y: 4)
-                        .id(show.id)
-                        .transition(.opacity)
-                    }
+                if show != nil {
+                    // The show's artwork alone carries it; nothing is drawn over it.
+                    EmptyView()
                 } else {
                     // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
                     Text(service.name)

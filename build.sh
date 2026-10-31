@@ -14,7 +14,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/MacTV" "$APP/Contents/MacOS/MacTV"
 cp Info.plist "$APP/Contents/Info.plist"
 cp -R Icons "$APP/Contents/Resources/Icons"
-[ -f Resources/TopShelf.json ] && cp Resources/TopShelf.json "$APP/Contents/Resources/"
 cp Assets/AppIcon.icns Assets/AppIcon.png "$APP/Contents/Resources/"
 # Sign with the local certificate when it exists (scripts/make-signing-cert.sh), so macOS keeps
 # permissions like Accessibility across builds; otherwise sign ad hoc.

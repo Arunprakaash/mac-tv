@@ -1,30 +1,31 @@
 import SwiftUI
 
-/// Each streaming app's popular shows for the Top Shelf, like Apple TV's. The list is bundled
-/// (TopShelf.json, from TVmaze; scripts/update-top-shelf.py refreshes it) and the images are
-/// downloaded once into ~/Library/Application Support/Mac TV/Top Shelf. Nothing here comes from
-/// what you watch.
+/// Each streaming app's latest shows for the Top Shelf, like Apple TV's: series with new episodes
+/// on that app in the past two weeks, most popular first, from TVmaze's public streaming schedule
+/// (tvmaze.com, CC BY-SA, no key). Refreshed once a day in the background; the list and the images
+/// are kept in ~/Library/Application Support/Mac TV/Top Shelf. Nothing here comes from what you watch.
 @MainActor
 final class TopShelfFeed: ObservableObject {
-    struct Show: Decodable, Hashable, Identifiable {
+    struct Show: Codable, Hashable, Identifiable {
         let id: Int
         let name: String
         let image: URL
-        /// The show's own title logo, when Wikidata has one.
-        let logo: URL?
     }
 
-    /// A title logo, and whether to draw it white (a dark single-colour logo would vanish on dark art).
-    struct Logo {
-        let image: NSImage
-        let asWhite: Bool
-    }
-
-    private struct File: Decodable {
+    private struct Saved: Codable {
+        let fetched: Date
         let services: [String: [Show]]
     }
 
     static let shared = TopShelfFeed()
+
+    /// TVmaze's names for each app's streaming service.
+    private static let channels = ["Netflix": "netflix", "Prime Video": "prime", "Amazon Prime Video": "prime",
+                                   "Apple TV": "appletv", "Apple TV+": "appletv",
+                                   "JioHotstar": "hotstar", "Disney+ Hotstar": "hotstar", "Hotstar": "hotstar"]
+    /// Series only: sports, talk shows, news and reality TV make poor Top Shelf art.
+    private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary"]
+    private static let perApp = 8
 
     /// Shows whose image is ready, by app id.
     @Published private(set) var ready: [String: [Show]] = [:]
@@ -34,26 +35,16 @@ final class TopShelfFeed: ObservableObject {
     private(set) var turnStarted = Date()
     private var clock: Timer?
     private(set) var images: [Int: NSImage] = [:]
-    /// Title logos by show id; shows without one just get the artwork.
-    @Published private(set) var logos: [Int: Logo] = [:]
-    private let lists: [String: [Show]]
+    private var lists: [String: [Show]] = [:]
     private let folder = AppFolder.url.appendingPathComponent("Top Shelf", isDirectory: true)
+    private var listFile: URL { folder.appendingPathComponent("shows.json") }
     private var started = false
 
-    private init() {
-        let file = Bundle.main.url(forResource: "TopShelf", withExtension: "json")
-        lists = file.flatMap { try? JSONDecoder().decode(File.self, from: Data(contentsOf: $0)) }?.services ?? [:]
-    }
+    private init() {}
 
-    /// An app's shows that are ready to show. When at least three have a title logo, only those,
-    /// so the Top Shelf always carries the show's real title.
-    func shows(for serviceID: String) -> [Show] {
-        let all = ready[serviceID] ?? []
-        let titled = all.filter { $0.logo != nil }
-        return titled.count >= 3 ? titled : all
-    }
+    func shows(for serviceID: String) -> [Show] { ready[serviceID] ?? [] }
 
-    /// Loads cached images, and downloads the rest in the background.
+    /// Shows the last list straight away, then fetches a fresh one if it's a day old.
     func start() {
         guard !started else { return }
         started = true
@@ -65,11 +56,81 @@ final class TopShelfFeed: ObservableObject {
             }
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for (serviceID, shows) in lists {
+        let saved = (try? Data(contentsOf: listFile)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
+        if let saved { use(saved.services) }
+        if saved.map({ Date().timeIntervalSince($0.fetched) > 20 * 3600 }) ?? true {
+            Task { await refresh() }
+        }
+        Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
+            Task { await self?.refresh() }
+        }
+    }
+
+    /// Asks TVmaze for the past two weeks of streaming episodes, keeps each app's most popular series,
+    /// and finds a wide background picture for each.
+    func refresh() async {
+        var found: [String: [Int: (name: String, weight: Int)]] = [:]
+        let today = Date()
+        for day in 0..<14 {
+            let date = ISO8601DateFormatter.string(from: today.addingTimeInterval(Double(-day) * 86400), timeZone: .current,
+                                                   formatOptions: [.withFullDate])
+            for region in ["", "&country=IN", "&country=US"] {
+                guard let episodes = await Self.json("https://api.tvmaze.com/schedule/web?date=\(date)\(region)") as? [[String: Any]] else { continue }
+                for episode in episodes {
+                    guard let show = (episode["_embedded"] as? [String: Any])?["show"] as? [String: Any],
+                          let channel = (show["webChannel"] as? [String: Any])?["name"] as? String,
+                          let app = Self.channels[channel], let kind = show["type"] as? String, Self.kinds.contains(kind),
+                          let id = show["id"] as? Int, let name = show["name"] as? String else { continue }
+                    found[app, default: [:]][id] = (name, show["weight"] as? Int ?? 0)
+                }
+            }
+        }
+        guard !found.isEmpty else { return }  // Offline: keep what we have.
+        var services: [String: [Show]] = [:]
+        for (app, shows) in found {
+            var picked: [Show] = []
+            for (id, show) in shows.sorted(by: { $0.value.weight > $1.value.weight }) {
+                guard let image = await Self.background(for: id) else { continue }
+                picked.append(Show(id: id, name: show.name, image: image))
+                if picked.count == Self.perApp { break }
+            }
+            services[app] = picked
+        }
+        if let data = try? JSONEncoder().encode(Saved(fetched: Date(), services: services)) {
+            try? data.write(to: listFile, options: .atomic)
+        }
+        use(services)
+    }
+
+    /// A show's widest landscape background picture, at least 1280 wide.
+    private static func background(for id: Int) async -> URL? {
+        guard let images = await json("https://api.tvmaze.com/shows/\(id)/images") as? [[String: Any]] else { return nil }
+        let wide = images.compactMap { image -> (width: Int, url: String)? in
+            guard image["type"] as? String == "background",
+                  let original = (image["resolutions"] as? [String: Any])?["original"] as? [String: Any],
+                  let width = original["width"] as? Int, let height = original["height"] as? Int, let url = original["url"] as? String,
+                  width >= 1280, Double(width) / Double(max(height, 1)) >= 1.5 else { return nil }
+            return (width, url)
+        }
+        return wide.max { $0.width < $1.width }.flatMap { URL(string: $0.url) }
+    }
+
+    /// TVmaze allows about 20 requests every 10 seconds, so requests are paced.
+    private static func json(_ address: String) async -> Any? {
+        try? await Task.sleep(for: .milliseconds(550))
+        guard let url = URL(string: address), let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    /// Shows a list: cached pictures at once, the rest as they download.
+    private func use(_ services: [String: [Show]]) {
+        lists = services
+        ready = [:]
+        for (serviceID, shows) in services {
             for show in shows {
-                loadLogo(for: show)
                 let file = folder.appendingPathComponent("\(show.id).jpg")
-                if let image = NSImage(contentsOf: file) {
+                if let image = images[show.id] ?? NSImage(contentsOf: file) {
                     add(show, image, to: serviceID)
                     continue
                 }
@@ -81,47 +142,6 @@ final class TopShelfFeed: ObservableObject {
                 }
             }
         }
-    }
-
-    private func loadLogo(for show: Show) {
-        guard let url = show.logo else { return }
-        let file = folder.appendingPathComponent("\(show.id)-logo.png")
-        if let data = try? Data(contentsOf: file), let logo = Self.logo(from: data) {
-            logos[show.id] = logo
-            return
-        }
-        Task {
-            var request = URLRequest(url: url)
-            // Wikimedia asks apps to say who they are.
-            request.setValue("MacTV (https://github.com/Arunprakaash/mac-tv)", forHTTPHeaderField: "User-Agent")
-            guard let (data, response) = try? await URLSession.shared.data(for: request),
-                  (response as? HTTPURLResponse)?.statusCode == 200, let logo = Self.logo(from: data) else { return }
-            try? data.write(to: file, options: .atomic)
-            logos[show.id] = logo
-        }
-    }
-
-    /// Reads a logo and decides whether it's a dark single-colour mark that needs drawing in white.
-    private static func logo(from data: Data) -> Logo? {
-        guard let image = NSImage(data: data), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let width = 64, height = max(1, 64 * cg.height / max(cg.width, 1))
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        guard let ctx = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
-        var light = 0.0, colour = 0.0, count = 0.0
-        // A logo on a solid background isn't a title mark; the art alone is better.
-        let opaque = stride(from: 3, to: pixels.count, by: 4).filter { pixels[$0] > 250 }.count
-        guard Double(opaque) / Double(width * height) < 0.85 else { return nil }
-        for i in stride(from: 0, to: pixels.count, by: 4) where pixels[i + 3] > 128 {
-            let a = Double(pixels[i + 3]) / 255
-            let r = Double(pixels[i]) / 255 / a, g = Double(pixels[i + 1]) / 255 / a, b = Double(pixels[i + 2]) / 255 / a
-            light += 0.299 * r + 0.587 * g + 0.114 * b
-            colour += max(r, g, b) - min(r, g, b)
-            count += 1
-        }
-        guard count > 0 else { return nil }
-        return Logo(image: image, asWhite: light / count < 0.45 && colour / count < 0.2)
     }
 
     private func add(_ show: Show, _ image: NSImage, to serviceID: String) {
