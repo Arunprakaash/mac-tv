@@ -150,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installLauncherKeys()
         tv.startPowerManagement()
         tv.startControllers()
+        TopShelfFeed.shared.start()
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)

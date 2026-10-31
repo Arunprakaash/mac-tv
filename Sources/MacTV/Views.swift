@@ -497,32 +497,62 @@ struct TopShelf: View {
 /// dock brings up Open. Nothing about what was watched ever shows here.
 struct AppBanner: View {
     @ObservedObject var tv: TVController
+    @ObservedObject private var feed = TopShelfFeed.shared
     @Environment(\.canvasSize) private var canvas
     let service: Service
     let expanded: Bool
 
     var body: some View {
+        let shows = feed.shows(for: service.id)
+        let show = shows.isEmpty ? nil : shows[feed.turn % shows.count]
         ZStack(alignment: .topLeading) {
             Artwork(accent: service.accent, deep: service.deep)
                 .frame(width: canvas.width, height: canvas.height)
                 .clipped()
+            // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
+            if let show, let image = feed.images[show.id] {
+                ShowBackdrop(image: image, since: feed.turnStarted)
+                    .id(show.id)
+                    .transition(.opacity)
+            }
             // Legibility: a soft top-left wash for the name, a bottom wash for the dock or button.
-            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : 0.55), location: 0),
+            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil ? 0.55 : 0.18)), location: 0),
                                    .init(color: .black.opacity(expanded ? 0.4 : 0.15), location: 0.4),
                                    .init(color: .clear, location: 0.65)],
                            startPoint: .leading, endPoint: .trailing)
-            LinearGradient(stops: [.init(color: .clear, location: 0.5),
-                                   .init(color: .black.opacity(0.75), location: 1)],
+            LinearGradient(stops: [.init(color: .clear, location: 0.45),
+                                   .init(color: .black.opacity(show == nil ? 0.75 : 0.85), location: 1)],
                            startPoint: .top, endPoint: .bottom)
+            if show != nil {
+                LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)
+            }
 
-            VStack(alignment: .leading, spacing: 18) {
-                // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
-                Text(service.name)
-                    .font(.system(size: 92, weight: .bold))
-                    .tracking(-1.5)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.5)
-                    .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+            VStack(alignment: .leading, spacing: 12) {
+                if let show {
+                    // The show's own title logo, as Apple TV shows it; never typed text.
+                    if let logo = feed.logos[show.id] {
+                        Group {
+                            if logo.asWhite {
+                                Image(nsImage: logo.image).renderingMode(.template).resizable().foregroundStyle(.white)
+                            } else {
+                                Image(nsImage: logo.image).resizable()
+                            }
+                        }
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 620, maxHeight: 210, alignment: .leading)
+                        .shadow(color: .black.opacity(0.5), radius: 18, y: 4)
+                        .id(show.id)
+                        .transition(.opacity)
+                    }
+                } else {
+                    // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
+                    Text(service.name)
+                        .font(.system(size: 92, weight: .bold))
+                        .tracking(-1.5)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                }
                 if expanded {
                     ShelfButton(title: "Open \(service.name)", systemImage: "play.fill", focused: tv.focus == .shelf(0)) {
                         tv.setFocus(.shelf(0)); tv.activateShelf(0)
