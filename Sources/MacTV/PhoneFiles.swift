@@ -97,9 +97,10 @@ extension TVController {
     func phoneFiles() -> PhoneFiles {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
-        // Folders where videos usually are, not the whole home folder: a phone shouldn't see the names
-        // of everything in it.
+        // The whole home folder, with the usual video folders as shortcuts. Only the owner's paired phones
+        // get here (RemoteServer turns guests away), and only folders, videos and subtitles are listed.
         var roots: [PhoneFiles.Root] = [
+            .init(name: "Home", url: home),
             .init(name: "Movies", url: home.appendingPathComponent("Movies", isDirectory: true)),
             .init(name: "Downloads", url: home.appendingPathComponent("Downloads", isDirectory: true)),
             .init(name: "Desktop", url: home.appendingPathComponent("Desktop", isDirectory: true))
