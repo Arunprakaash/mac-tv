@@ -553,10 +553,10 @@ struct MoviePlayerView: View {
 
             GlassGroup(spacing: 40) {
                 HStack(spacing: 56) {
-                    PlayerButton(symbol: "gobackward.10", size: 100, lit: player.pressed == "back") { player.skip(-10) }
+                    PlayerButton(symbol: "gobackward.10", size: 100, pressed: player.pressed == "back") { player.skip(-10) }
                     PlayerButton(symbol: player.playing ? "pause.fill" : "play.fill", size: 136,
-                                 lit: player.pressed == "playpause") { player.togglePlayback() }
-                    PlayerButton(symbol: "goforward.10", size: 100, lit: player.pressed == "forward") { player.skip(10) }
+                                 pressed: player.pressed == "playpause") { player.togglePlayback() }
+                    PlayerButton(symbol: "goforward.10", size: 100, pressed: player.pressed == "forward") { player.skip(10) }
                 }
             }
 
@@ -669,30 +669,41 @@ struct MoviePlayerView: View {
     }
 }
 
-/// A round glass control in the player. `lit` shows it white, as a pressed or open control.
+/// A round glass control in the player. `lit` shows it white while its menu is open; `pressed`
+/// dips it briefly when the remote uses it, the same as a click.
 struct PlayerButton: View {
     let symbol: String
     let size: CGFloat
     var lit = false
+    var pressed = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                // Lit controls are solid white, like a focused tvOS button.
                 if lit { Circle().fill(.white) }
                 Image(systemName: symbol)
                     .font(.system(size: size * 0.38, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
             }
-                .frame(width: size, height: size)
-                .foregroundStyle(lit ? .black : .white)
-                .tvGlass(in: Circle(), interactive: true)
-                .contentShape(Circle())
-                .scaleEffect(lit ? 1.08 : 1)
-                .animation(Motion.focus, value: lit)
+            .frame(width: size, height: size)
+            .foregroundStyle(lit ? .black : .white)
+            .tvGlass(in: Circle())
+            .contentShape(Circle())
+            .scaleEffect(pressed ? 0.9 : 1)
+            .animation(Motion.focus, value: pressed)
+            .animation(Motion.focus, value: lit)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
+    }
+}
+
+/// Clicked controls dip and spring back, without a highlight.
+private struct PressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.9 : 1)
+            .animation(Motion.focus, value: configuration.isPressed)
     }
 }
 
