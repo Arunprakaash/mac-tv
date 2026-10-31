@@ -103,6 +103,8 @@ final class TVMode {
         }
     }
 
+    var playbackScreen: NSScreen? { targetScreen }
+
     private var targetScreen: NSScreen? {
         if let preferredID, let match = NSScreen.screens.first(where: { id($0) == preferredID }) { return match }
         return NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 }) ?? NSScreen.main ?? NSScreen.screens.first

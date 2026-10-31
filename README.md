@@ -29,7 +29,7 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac. One download runs 
 
 ## How it works
 
-Mac TV is a native Mac app. By default, each streaming service runs in its official web player inside Apple's Safari engine (WebKit), with WebKit's DRM capabilities. Actual quality depends on the service, Mac, subscription, display and connection; the Playback check screen reports capabilities without claiming a verified resolution. It isn't Android TV and doesn't emulate anything.
+Mac TV is a native Mac app. With the built-in player, each streaming service runs in its official web player inside Apple's Safari engine (WebKit), with WebKit's DRM capabilities. Actual quality depends on the service, Mac, subscription, display and connection; the Playback check screen reports capabilities without claiming a verified resolution. It isn't Android TV and doesn't emulate anything.
 
 - **Home screen:** Apple TV's layout. A Top Shelf fills the screen behind a frosted glass dock of app tiles, with the next row peeking below. The Top Shelf shows the focused app in its own colours; move up for Open, and down for the full app grid. Sheets, buttons, pills and the volume indicator use Apple's Liquid Glass, and motion uses Apple's system springs. With Reduce Motion on, things fade instead of moving. It fills any screen shape edge to edge.
 - **Window:** opens as a normal window on your external display and remembers its place. Use the green button or ⌃⌘F for full screen.
@@ -61,7 +61,8 @@ Pair a PlayStation, Xbox, Switch Pro or other MFi controller with the Mac in Sys
 
 ### Brave website player
 
-Choose **Settings › Watching › Website player › Brave**, or select Brave in the phone remote’s
+Brave is selected by default when installed; otherwise Mac TV uses the built-in player.
+Explicit saved choices are preserved. Change it in **Settings › Watching › Website player**, or select Brave in the phone remote’s
 **TV controls**. The choice saves per Mac TV profile and applies when you next open a website.
 Install [Brave Browser](https://brave.com/download/) first. Mac TV opens a separate Brave window
 on its display; **Home** closes only that window, leaving your other Brave windows open.
@@ -78,11 +79,31 @@ the window, and allow Mac TV under **Accessibility** for phone input. JavaScript
 Events and a remote debugging port are not needed. If permission was denied, fix it in System
 Settings and press **Retry** on the TV or phone.
 
-The phone offers **Return to Brave**, **Full screen**, **Previous control**, **Next control**,
-typing and a pointer touchpad. Play/pause sends Space; skip sends the arrow keys, so their effect
+Type an address into **Open a website** on the phone and press **Go** (or Enter) to browse without
+saving a tile. Missing schemes use HTTPS. Browsing another address in Brave reuses the owned
+window, retaining its full-screen state and history.
+
+The phone offers **Return to Brave**, **Full screen on/off**, **Previous control**, **Next control**,
+typing and a pointer touchpad. The full-screen button toggles in and out; **Home** returns to
+Mac TV and closes its Brave window. This website-player choice is separate from your macOS
+default browser setting. Play/pause sends Space; skip sends the arrow keys, so their effect
 depends on the website’s focused player. Built-in auto-skip, auto-next and WebKit playback
 diagnostics apply to the built-in player. YouTube opens its desktop website in Brave.
 Local movie files continue to use Mac TV’s player or IINA.
+
+### IINA on the TV
+
+Files selected with **Play in IINA** use a dedicated IINA process and a private local player
+connection. Pause, seek and full-screen commands continue to work when Mac TV or another app
+has focus. The phone offers **Return to IINA** and **Full screen on/off**; **Home** stops and closes
+only the IINA session Mac TV launched.
+
+Mac TV moves that player to the preferred display under **Dedicated TV**, or the connected
+external monitor by default, before entering full screen. Allow Mac TV under macOS
+**Privacy & Security › Accessibility** for window placement. Direct playback commands do not
+need Accessibility. The phone reports startup, display or player errors instead of silently
+routing commands to the foreground app. Subtitles added to the same IINA movie load without
+restarting it. IINA’s online subtitle-search menu still requires Accessibility.
 
 ## Power and the lid
 

@@ -69,6 +69,8 @@ enum RemotePage {
       .type { display:flex; align-items:center; gap:8px; height:52px; flex:none; padding:0 6px 0 16px; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); color:var(--dim); }
       .type input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:#fff; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; }
       .type button { width:40px; height:40px; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:#fff; }
+      .website-form button { width:auto; min-width:48px; padding:0 12px; font-weight:700; }
+      .website-form button:disabled { opacity:.45; }
       /* Short phones: a smaller touch surface so the controls fit without scrolling. */
       @media (max-height: 640px) { .surface { min-height:180px; } }
 
@@ -184,11 +186,24 @@ enum RemotePage {
         <button type="button" data-a="previouscontrol">Previous control</button>
         <button type="button" data-a="nextcontrol">Next control</button>
         <button type="button" data-a="activatebrowser">Return to Brave</button>
-        <button type="button" data-a="browserfullscreen">Full screen</button>
+        <button type="button" data-a="browserfullscreen">Full screen on/off</button>
         <button type="button" id="browser-retry" hidden>Retry</button>
         <p class="note err" id="browser-error" role="status" hidden></p>
         <p class="note" id="browser-control-note" role="status"></p>
       </div>
+
+      <div id="iina-controls" class="browser-controls" hidden aria-label="IINA controls">
+        <button type="button" data-a="activatebrowser">Return to IINA</button>
+        <button type="button" data-a="browserfullscreen">Full screen on/off</button>
+        <p class="note" id="iina-status" role="status" aria-live="polite" hidden></p>
+        <p class="note err" id="iina-error" role="status" aria-live="polite" hidden></p>
+      </div>
+
+      <form class="type website-form" id="open-website" autocomplete="off">
+        <input id="website-address" type="text" inputmode="url" placeholder="Open a website…" aria-label="Website address" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="submit" id="website-go">Go</button>
+      </form>
+      <p class="note err" id="website-open-error" role="status" aria-live="polite" hidden></p>
 
       <form class="type" id="type" autocomplete="off">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
@@ -398,6 +413,14 @@ enum RemotePage {
         $('#lid-override').checked = s.lidOverride;
         $('#lid-status').textContent = s.lidStatus || '';
         $('#website-player').value = s.websitePlayer === 'brave' ? 'brave' : 'embedded';
+        const player = s.externalPlayer && s.externalPlayer.name === 'IINA' ? s.externalPlayer : null;
+        $('#iina-controls').hidden = !player;
+        const iinaStatus = player && typeof player.status === 'string' ? player.status : '';
+        const iinaError = player && typeof player.error === 'string' ? player.error : '';
+        $('#iina-status').textContent = iinaStatus;
+        $('#iina-status').hidden = !iinaStatus;
+        $('#iina-error').textContent = iinaError;
+        $('#iina-error').hidden = !iinaError;
         const browser = s.externalBrowser;
         $('#browser-controls').hidden = !browser;
         const browserError = browser && typeof browser.error === 'string' ? browser.error : '';
@@ -818,6 +841,32 @@ enum RemotePage {
     // Buttons
     document.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => send(b.dataset.a, {}, b.dataset.h || 'tick')));
     $('#browser-retry').onclick = () => send('retrybrowser', {}, 'tap').then(refresh);
+    let websiteOpening = false;
+    $('#open-website').onsubmit = async e => {
+      e.preventDefault();
+      if (websiteOpening) return;
+      const input = $('#website-address'), note = $('#website-open-error');
+      const url = input.value.trim();
+      if (!url) { note.textContent = 'Enter a website address.'; note.hidden = false; return; }
+      websiteOpening = true;
+      $('#website-go').disabled = true;
+      note.hidden = true;
+      try {
+        await api('/browser/open', { url });
+        input.value = '';
+        haptic('tap');
+        await refresh();
+      } catch (error) {
+        if (error.message !== 'unpaired') {
+          note.textContent = error.message || 'Could not open website.';
+          note.hidden = false;
+          haptic('error');
+        }
+      } finally {
+        websiteOpening = false;
+        $('#website-go').disabled = false;
+      }
+    };
     $('#type').onsubmit = e => {
       e.preventDefault();
       const t = $('#typed').value;

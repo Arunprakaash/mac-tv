@@ -253,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         tv.closeExternalBrowser()
+        tv.closeIINAPlayback(terminating: true)
         tv.stopPowerManagement()
     }
 

@@ -151,6 +151,9 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var moviePlayer: MoviePlayer?
     @Published private(set) var currentLocalMovie: Movie?
     private var localMoviePlayer = "native"
+    private var iinaSession: IINAPlaybackSession?
+    @Published private(set) var iinaPlaybackError: String?
+    @Published private(set) var iinaPlaybackStatus = ""
     private var playbackRequest = UUID()
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
     @Published private(set) var screensaver = false
@@ -254,8 +257,8 @@ final class TVController: NSObject, ObservableObject {
         self.init(library: AppLibrary(profileID: store.current.id), profiles: store)
     }
 
-    init(library: AppLibrary, profiles: ProfileStore? = nil, browserPreferences: BrowserPreferences = BrowserPreferences()) {
-        self.browserPreferences = browserPreferences
+    init(library: AppLibrary, profiles: ProfileStore? = nil, browserPreferences: BrowserPreferences? = nil) {
+        self.browserPreferences = browserPreferences ?? BrowserPreferences()
         let store = profiles ?? ProfileStore(folder: library.storageFolder)
         self.profiles = store
         self.profile = store.current
@@ -280,7 +283,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, !pairing, settings == nil, organizer == nil, playbackCheck == nil,
+        if mode == .launcher, iinaSession == nil, !pairing, settings == nil, organizer == nil, playbackCheck == nil,
            topShelfPreferences == nil, adder == nil, movies == nil, setup == nil, profilePicker == nil,
            controlCenter == nil, !screensaver,
            Date().timeIntervalSince(lastActivity) > TimeInterval(ScreenSaverSettings.delayMinutes * 60) {
@@ -531,6 +534,28 @@ final class TVController: NSObject, ObservableObject {
 
     /// The phone remote's app-management requests.
     func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? {
+        if request.method == "POST", request.path == "/browser/open" {
+            guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
+                  let address = body["url"] as? String, let url = WebsiteAddress.url(from: address) else {
+                return .json(["error": "Enter an HTTP or HTTPS website address, such as youtube.com."], status: "400 Bad Request")
+            }
+            guard !externalBrowserOpening else {
+                return .json(["error": "Wait for the website to open, then try again."], status: "409 Conflict")
+            }
+            let service = Service(id: "browser-session", name: url.host ?? "Website", kind: .web(url))
+            if browserPreferences.choice(for: profile.id) == .brave, let browser = externalBrowser {
+                externalBrowserService = service
+                do {
+                    try browser.navigate(to: url)
+                    externalBrowserError = nil
+                    mode = .player(service)
+                } catch {
+                    externalBrowserError = error.localizedDescription
+                    return .json(["error": error.localizedDescription], status: "409 Conflict")
+                }
+            } else { open(service) }
+            return .json(["ok": true])
+        }
         if request.method == "POST", request.path == "/browser/preference" {
             guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
                   let raw = body["player"] as? String, setWebsitePlayer(raw) else {
@@ -773,6 +798,10 @@ final class TVController: NSObject, ObservableObject {
         if externalBrowser != nil {
             state["externalBrowser"] = ["name": "Brave", "service": externalBrowserService?.name ?? "Website", "accessibilityAllowed": AXIsProcessTrusted(), "error": externalBrowserError ?? "", "opening": externalBrowserOpening]
         }
+        if iinaSession != nil {
+            state["mode"] = "player"
+            state["externalPlayer"] = ["name": "IINA", "status": iinaPlaybackStatus, "error": iinaPlaybackError ?? ""]
+        }
         state["iinaInstalled"] = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.colliderli.iina") != nil
         if let movie = currentLocalMovie {
             state["currentLocalMovie"] = ["id": PhoneFiles.id(for: movie.url), "title": movie.displayTitle, "player": localMoviePlayer]
@@ -812,7 +841,10 @@ final class TVController: NSObject, ObservableObject {
         switch command {
         case .home: goHome(); return
         case .activateBrowser:
-            activateExternalBrowser()
+            if let session = iinaSession {
+                do { try session.activate() }
+                catch { iinaPlaybackError = error.localizedDescription; showToast(error.localizedDescription) }
+            } else { activateExternalBrowser() }
             return
         case .retryBrowser:
             retryExternalBrowser()
@@ -820,8 +852,14 @@ final class TVController: NSObject, ObservableObject {
         case .launch(let id):
             if let service = services.first(where: { $0.id == id }) { open(service) }
             return
-        case .volume(let delta): showVolume(SystemControl.changeVolume(by: delta)); return
-        case .mute: showVolume(SystemControl.toggleMute()); return
+        case .volume(let delta):
+            if let session = iinaSession { session.handle(command) }
+            else { showVolume(SystemControl.changeVolume(by: delta)) }
+            return
+        case .mute:
+            if let session = iinaSession { session.handle(command) }
+            else { showVolume(SystemControl.toggleMute()) }
+            return
         case .screenOff: SystemControl.displayOff(); return
         case .sleepTimer(let minutes): setSleepTimer(minutes: minutes); return
         case .setting(let key, let value):
@@ -861,6 +899,11 @@ final class TVController: NSObject, ObservableObject {
             return
         }
 
+        if let session = iinaSession {
+            _ = session.handle(command)
+            return
+        }
+
         // A Mac app, Steam or a Steam game that Mac TV opened is in front: forward the basics to it,
         // as arrow keys, Return, Esc and Space. That drives Steam Big Picture and keyboard-friendly games.
         if !NSApp.isActive, let front = NSWorkspace.shared.frontmostApplication,
@@ -895,6 +938,7 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Opening things
 
     func open(_ service: Service) {
+        closeIINAPlayback()
         closeExternalBrowser()
         Analytics.send(.appOpened, ["app": analyticsAppName(service)])
         playbackRequest = UUID()
@@ -945,6 +989,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func goHome() {
+        closeIINAPlayback()
         closeExternalBrowser()
         playbackRequest = UUID()
         currentLocalMovie = nil
@@ -975,35 +1020,63 @@ final class TVController: NSObject, ObservableObject {
         bringToFront()
     }
 
+    var playbackScreen: NSScreen? {
+        (NSApp.delegate as? AppDelegate)?.tvMode?.playbackScreen
+            ?? window?.screen ?? NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 })
+            ?? NSScreen.main
+    }
+
     @discardableResult
     func playInIINA(_ movie: Movie, subtitle: URL? = nil) -> Bool {
-        playbackRequest = UUID()
-        let identifier = "com.colliderli.iina"
-        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) else {
-            showToast("Install IINA to use this player or load subtitles."); return false
+        if currentLocalMovie?.path == movie.path, let session = iinaSession, session.isRunning {
+            do {
+                if let subtitle { try session.loadSubtitle(subtitle) }
+                try session.activate()
+                return true
+            } catch { iinaPlaybackError = error.localizedDescription; showToast(error.localizedDescription); return false }
         }
-        if subtitle == nil, currentLocalMovie?.path == movie.path, localMoviePlayer == "iina",
-           let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first {
-            running.activate(options: []); return true
-        }
-        let executable = app.appendingPathComponent("Contents/MacOS/iina-cli")
-        guard FileManager.default.isExecutableFile(atPath: executable.path) else { return false }
+        guard let screen = playbackScreen else { showToast("Connect the display for movie playback."); return false }
         let position = moviePlayer?.movie.path == movie.path ? moviePlayer?.time : nil
-        let process = Process()
-        process.executableURL = executable
-        var arguments = ["--no-stdin", "--mpv-fullscreen=yes"]
-        if let position, position > 0 { arguments.append("--mpv-start=\(position)") }
-        if let subtitle { arguments.append("--mpv-sub-file=\(subtitle.path)") }
-        arguments.append(movie.path)
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { showToast("IINA couldn't open that file."); return false }
-        goHome()
-        currentLocalMovie = movie
-        localMoviePlayer = "iina"
-        launchedAppID = identifier
-        return true
+        var launched: IINAPlaybackSession?
+        do {
+            let session = try IINAPlaybackSession()
+            launched = session
+            goHome()
+            iinaSession = session
+            currentLocalMovie = movie
+            localMoviePlayer = "iina"
+            launchedAppID = "com.colliderli.iina"
+            iinaPlaybackStatus = "Opening IINA on \(screen.localizedName)…"
+            session.onError = { [weak self, weak session] error in
+                guard let self, let session, self.iinaSession === session else { return }
+                self.iinaPlaybackError = error.localizedDescription + (session.isRunning ? "" : " Select the movie again in Files.")
+                self.iinaPlaybackStatus = "IINA needs attention"
+                self.showToast(error.localizedDescription)
+            }
+            session.onReady = { [weak self, weak session] in
+                guard let self, let session, self.iinaSession === session else { return }
+                self.iinaPlaybackError = nil
+                self.iinaPlaybackStatus = "IINA on \(screen.localizedName)"
+            }
+            try session.launch(file: movie.url, subtitle: subtitle, position: position, screen: screen)
+            keepAwake.hold(reason: "Watching a movie in IINA")
+            return true
+        } catch {
+            launched?.close()
+            iinaSession = nil
+            currentLocalMovie = nil
+            iinaPlaybackError = error.localizedDescription
+            showToast(error.localizedDescription)
+            return false
+        }
+    }
+
+    func closeIINAPlayback(terminating: Bool = false) {
+        let previous = iinaSession
+        iinaSession = nil
+        iinaPlaybackError = nil
+        iinaPlaybackStatus = ""
+        previous?.close(immediate: terminating)
     }
 
     /// Invoke IINA's own subtitle search after it has opened the selected movie.
@@ -1016,7 +1089,10 @@ final class TVController: NSObject, ObservableObject {
             for _ in 0..<8 {
                 try? await Task.sleep(for: .milliseconds(350))
                 guard let self, self.currentLocalMovie?.path == expected else { return }
-                guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.colliderli.iina").first else { continue }
+                let target: NSRunningApplication?
+                if let session = self.iinaSession { target = session.application }
+                else { target = NSRunningApplication.runningApplications(withBundleIdentifier: "com.colliderli.iina").first }
+                guard let running = target else { continue }
                 running.activate(options: [])
                 let element = AXUIElementCreateApplication(running.processIdentifier)
                 var bar: CFTypeRef?
@@ -1096,7 +1172,7 @@ final class TVController: NSObject, ObservableObject {
                 guard let self, self.playbackRequest == request, self.externalBrowser === session else {
                     try? session.close(); return
                 }
-                if let screen = self.window?.screen ?? NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 }) ?? NSScreen.main {
+                if let screen = self.playbackScreen {
                     try session.fit(to: screen)
                 }
                 try session.activate()
@@ -1131,6 +1207,7 @@ final class TVController: NSObject, ObservableObject {
 
     /// Plays a movie in Mac TV's own player; files it can't play open in IINA or VLC.
     func playMovie(_ movie: Movie, from seconds: Double) {
+        closeIINAPlayback()
         closeExternalBrowser()
         let request = UUID()
         playbackRequest = request

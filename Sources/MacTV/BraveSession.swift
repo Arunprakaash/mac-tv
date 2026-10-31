@@ -88,6 +88,15 @@ final class BraveSession {
         }
     }
 
+    /// Reuse the owned window, retaining its full-screen state and browser history.
+    func navigate(to url: URL) throws {
+        let destination = try Self.streamingURL(url)
+        _ = try runScript("navigate", value: destination.absoluteString)
+        validatedFocusedWindow = nil
+        cachedBounds = nil
+        pointer = nil
+    }
+
     func fit(to screen: NSScreen) throws {
         let area = screen.visibleFrame
         let primaryHeight = NSScreen.screens.first?.frame.height ?? area.maxY
@@ -250,6 +259,11 @@ final class BraveSession {
               if operation is "close" then
                 close w
               else if operation is "activate" then
+                set minimized of w to false
+                set index of w to 1
+                activate
+              else if operation is "navigate" then
+                set URL of active tab of w to valueText
                 set minimized of w to false
                 set index of w to 1
                 activate
