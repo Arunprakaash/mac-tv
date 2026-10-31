@@ -6,7 +6,7 @@ import Carbon
 @MainActor
 final class BraveSession {
     enum SessionError: LocalizedError {
-        case invalidURL, unavailable, noWindow, permission, automationDenied, script(String), eventCreation
+        case invalidURL, unavailable, noWindow, permission, automationDenied, placement, focus, script(String), eventCreation
         var errorDescription: String? {
             switch self {
             case .invalidURL: return "Only HTTP and HTTPS streaming addresses can be opened in Brave."
@@ -14,6 +14,8 @@ final class BraveSession {
             case .noWindow: return "The Mac TV Brave window is no longer available."
             case .permission: return "Allow Mac TV to control your computer in Privacy & Security > Accessibility."
             case .automationDenied: return "Allow Mac TV to control Brave Browser in Privacy & Security > Automation > Mac TV."
+            case .placement: return "Could not place the Mac TV Brave window on the selected display. Check Accessibility access and try again."
+            case .focus: return "Could not focus the Mac TV Brave window. Return to Brave and try again."
             case .script(let message): return "Brave could not be controlled: \(message)"
             case .eventCreation: return "The remote input event could not be created."
             }
@@ -97,13 +99,59 @@ final class BraveSession {
         pointer = nil
     }
 
-    func fit(to screen: NSScreen) throws {
-        let area = screen.visibleFrame
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? area.maxY
-        let bounds = NSRect(x: area.minX, y: primaryHeight - area.maxY, width: area.width, height: area.height)
-        _ = try runScript("position", bounds: bounds)
-        cachedBounds = nil
-        pointer = nil
+    /// Place only the UUID-named owned window, then verify its location before reporting success.
+    func fit(to screen: NSScreen) async throws {
+        guard AXIsProcessTrusted() else { throw SessionError.permission }
+        guard let app = application, !app.isTerminated, let token = ownershipToken else { throw SessionError.unavailable }
+        let screenID = screen.displayID
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var restoreFullscreen = false
+        for _ in 0..<40 {
+            guard !invalidated, !app.isTerminated else { throw CancellationError() }
+            guard let target = NSScreen.screens.first(where: { $0.displayID == screenID }) else { throw SessionError.placement }
+            var list: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &list) == .success,
+               let windows = list as? [AXUIElement] {
+                let matching = windows.filter { windowTitle($0)?.contains(token) == true }
+                if matching.count == 1, let window = matching.first {
+                    let key = "AXFullScreen" as CFString
+                    var fullscreen: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(window, key, &fullscreen) == .success,
+                       (fullscreen as? Bool) == true {
+                        restoreFullscreen = true
+                        _ = AXUIElementSetAttributeValue(window, key, kCFBooleanFalse)
+                    } else {
+                        let area = target.visibleFrame
+                        let primaryHeight = NSScreen.screens.first?.frame.height ?? area.maxY
+                        var origin = CGPoint(x: area.minX, y: primaryHeight - area.maxY)
+                        var size = CGSize(width: area.width, height: area.height)
+                        if let point = AXValueCreate(.cgPoint, &origin), let sizeValue = AXValueCreate(.cgSize, &size),
+                           AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, point) == .success,
+                           AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue) == .success {
+                            try await Task.sleep(for: .milliseconds(150))
+                            guard !invalidated, !app.isTerminated else { throw CancellationError() }
+                            var position: CFTypeRef?
+                            if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
+                               let position, CFGetTypeID(position) == AXValueGetTypeID() {
+                                var actual = CGPoint.zero
+                                if AXValueGetValue(position as! AXValue, .cgPoint, &actual),
+                                   abs(actual.x - origin.x) < 12, abs(actual.y - origin.y) < 12 {
+                                    if restoreFullscreen && AXUIElementSetAttributeValue(window, key, kCFBooleanTrue) != .success {
+                                        throw SessionError.placement
+                                    }
+                                    cachedBounds = nil
+                                    pointer = nil
+                                    validatedFocusedWindow = nil
+                                    return
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            try await Task.sleep(for: .milliseconds(150))
+        }
+        throw SessionError.placement
     }
 
     func activate() throws {
@@ -115,6 +163,7 @@ final class BraveSession {
             validatedFocusedWindow = focused
             lastFocusValidation = ProcessInfo.processInfo.systemUptime
         }
+        guard validatedFocusedWindow != nil else { throw SessionError.focus }
     }
 
     private func focusedWindow(of app: NSRunningApplication) -> AXUIElement? {

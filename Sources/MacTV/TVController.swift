@@ -12,7 +12,7 @@ enum RemoteCommand {
     case text(String), deleteBackward
     case pointer(dx: Double, dy: Double), click, scroll(dy: Double)
     case launch(String), openInBrowser
-    case screenOff, sleepMac
+    case screenOff, screenOn, sleepMac
     case sleepTimer(minutes: Int)
     case controlCenter
     case nextControl, previousControl, activateBrowser, browserFullscreen, retryBrowser
@@ -43,6 +43,7 @@ enum RemoteCommand {
             self = .launch(id)
         case "browser": self = .openInBrowser
         case "screenoff": self = .screenOff
+        case "screenon": self = .screenOn
         case "sleep": self = .sleepMac
         case "sleeptimer": self = .sleepTimer(minutes: json["m"] as? Int ?? 0)
         case "controlcenter": self = .controlCenter
@@ -127,7 +128,20 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var shelfAppIndex = 0
     /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
     @Published var tilt: CGSize = .zero
-    @Published var pairing = false { didSet { if pairing { refreshRemoteURL() } } }
+    @Published var pairing = false {
+        didSet {
+            if pairing {
+                if !oldValue { pairingGuest = false; displayCoordinator?.resetPairingFocus() }
+                refreshRemoteURL()
+            }
+            else { startupPairingVisible = false }
+        }
+    }
+    private var startupPairingPending = false
+    private var startupPairingVisible = false
+    private var phoneConnectedThisLaunch = false
+    @Published private(set) var displaysSleeping = false
+    private var lastDisplayWakeRequest = -Double.infinity
     /// The Settings sheet on the TV, while it's open.
     @Published var settings: SettingsPanel?
     /// Arrange apps with the keyboard, game controller or phone's D-pad.
@@ -173,6 +187,10 @@ final class TVController: NSObject, ObservableObject {
     @Published var controller: ControllerInfo?
     /// A controller connecting or disconnecting, shown for a moment.
     @Published private(set) var controllerNotice: ControllerNotice?
+    @Published var pairingGuest = false
+    @Published private(set) var remoteGuestToken = ""
+    @Published private(set) var remoteGuestLinks: [RemoteLink] = []
+
     /// Addresses a phone can open the remote at, one per network this Mac is on.
     @Published private(set) var remoteLinks: [RemoteLink] = []
 
@@ -183,6 +201,7 @@ final class TVController: NSObject, ObservableObject {
     let columns = 6
     let deviceName = Host.current().localizedName ?? "Mac"
     weak var window: NSWindow?
+    weak var displayCoordinator: TVMode?
     var remoteToken = ""
     var remotePort: UInt16 = 0 {
         didSet {
@@ -228,6 +247,39 @@ final class TVController: NSObject, ObservableObject {
     var phonePaired: Bool {
         get { UserDefaults.standard.bool(forKey: "phonePaired") }
         set { UserDefaults.standard.set(newValue, forKey: "phonePaired") }
+    }
+
+    /// Reoffer pairing on a new launch even if an old device token is still saved.
+    func offerStartupPairing() {
+        startupPairingPending = !phoneConnectedThisLaunch
+        showStartupPairingIfReady()
+    }
+
+    func showStartupPairingIfReady() {
+        guard startupPairingPending, !phoneConnectedThisLaunch,
+              setup == nil, profilePicker == nil, mode == .launcher else { return }
+        startupPairingPending = false
+        startupPairingVisible = true
+        pairing = true
+    }
+
+    private func noteRemoteConnection() {
+        phoneConnectedThisLaunch = true
+        startupPairingPending = false
+        if startupPairingVisible { pairing = false }
+    }
+
+    func noteDisplaySleep(_ sleeping: Bool) {
+        displaysSleeping = sleeping
+        if sleeping { screensaver = false }
+    }
+
+    private func wakeDisplays() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastDisplayWakeRequest >= 0.5 else { return }
+        if SystemControl.displayOn() { lastDisplayWakeRequest = now }
+        else { showToast("The display wake request failed. Try Wake screen again.") }
+        // Only the system's wake notification confirms that display sleep ended.
     }
 
     private var addressTimer: Timer?
@@ -285,7 +337,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, iinaSession == nil, !pairing, settings == nil, organizer == nil, playbackCheck == nil,
+        if mode == .launcher, iinaSession == nil, !displaysSleeping, !pairing, settings == nil, organizer == nil, playbackCheck == nil,
            topShelfPreferences == nil, adder == nil, movies == nil, setup == nil, profilePicker == nil,
            controlCenter == nil, !screensaver,
            Date().timeIntervalSince(lastActivity) > TimeInterval(ScreenSaverSettings.delayMinutes * 60) {
@@ -294,6 +346,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func showScreensaver() {
+        guard !displaysSleeping else { return }
         Analytics.send(.screenSaverStarted, ["wallpaper": ScreenSaverSettings.wallpaper.rawValue])
         ScreenSaverSettings.playing = ScreenSaverSettings.pictures(for: ScreenSaverSettings.wallpaper)
         lastActivity = Date()
@@ -536,6 +589,13 @@ final class TVController: NSObject, ObservableObject {
 
     /// The phone remote's app-management requests.
     func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? {
+        if request.method == "POST", request.path == "/display/select" {
+            guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
+                  let id = body["id"] as? String, selectTVDisplay(id: id) else {
+                return .json(["error": "Choose a connected display."], status: "400 Bad Request")
+            }
+            return .json(["ok": true])
+        }
         if request.method == "POST", request.path == "/browser/open" {
             guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
                   let address = body["url"] as? String, let url = WebsiteAddress.url(from: address) else {
@@ -719,13 +779,7 @@ final class TVController: NSObject, ObservableObject {
         if playbackCheck != nil { switch command { case .back, .select: playbackCheck = nil; default: break }; return }
         if topShelfPreferences != nil { handleTopShelfPreferences(command); return }
         if adder != nil { handleAdder(command); return }
-        if pairing {
-            switch command {
-            case .select, .back: pairing = false
-            default: break
-            }
-            return
-        }
+        if pairing { handlePairing(command); return }
         if organizer != nil { handleOrganizer(command); return }
         if settings != nil { handleSettings(command); return }
         if controlCenter != nil { handleControlCenter(command); return }
@@ -758,19 +812,25 @@ final class TVController: NSObject, ObservableObject {
     func refreshRemoteURL() {
         guard remotePort != 0 else { return }
         let code = RemoteServer.pairingCode()
-        let codeChanged = code != remoteToken
+        let guestCode = RemoteServer.guestPairingCode()
+        let codeChanged = code != remoteToken || guestCode != remoteGuestToken
         remoteToken = code
+        remoteGuestToken = guestCode
         let found: [(label: String, ip: String?)] = [("Same Wi-Fi", LAN.ipv4()), ("Tailscale", LAN.tailscaleIPv4())]
         let addresses = found.compactMap { entry in entry.ip.map { (entry.label, "http://\($0):\(remotePort)") } }
         guard codeChanged || addresses.map(\.1) != remoteLinks.map(\.address) else { return }
         remoteLinks = addresses.map { label, address in
             RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteToken)"))
         }
+        remoteGuestLinks = addresses.map { label, address in
+            RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteGuestToken)"))
+        }
     }
 
     /// What the phone remote shows. Only called for a phone that knows the pairing code.
     func remoteState() -> [String: Any] {
         phonePaired = true
+        noteRemoteConnection()
         notePhoneDuringSetup()
         var state: [String: Any] = [
             "device": deviceName,
@@ -795,6 +855,8 @@ final class TVController: NSObject, ObservableObject {
             // Minutes left on the sleep timer; 0 when it's off.
             "sleepMinutes": sleepMinutesLeft,
         ]
+        state["displaySetup"] = ["displays": displaySetup, "fullscreen": window?.styleMask.contains(.fullScreen) ?? false]
+        state["displaysSleeping"] = displaysSleeping
         state["websitePlayer"] = browserPreferences.choice(for: profile.id).rawValue
         state["braveInstalled"] = braveInstalled
         if externalBrowser != nil {
@@ -829,9 +891,33 @@ final class TVController: NSObject, ObservableObject {
         services.first { $0.id == id }.flatMap { Icons.png(for: $0) }
     }
 
+    /// Guest credentials grant playback controls, not typing or access to setup/settings.
+    @discardableResult
+    func handleGuestCommand(_ command: RemoteCommand) -> Bool {
+        switch command {
+        case .home, .playPause, .seek, .volume, .mute, .activateBrowser, .browserFullscreen:
+            handle(command, from: .remote)
+            return true
+        default: return false
+        }
+    }
+
     func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
-        // The first press only wakes the screensaver.
-        if noteActivity() { return }
+        if source == .remote {
+            noteRemoteConnection()
+            if displaysSleeping {
+                switch command {
+                case .screenOff, .screenOn, .sleepMac: break
+                default: wakeDisplays()
+                }
+            }
+        }
+        // Explicit power actions must still run when the screensaver was visible.
+        let dismissedScreensaver = noteActivity()
+        switch command {
+        case .screenOff, .screenOn, .sleepMac: break
+        default: if dismissedScreensaver { return }
+        }
         Analytics.noteInput(source)
 
         switch command {
@@ -862,7 +948,11 @@ final class TVController: NSObject, ObservableObject {
             if let session = iinaSession { session.handle(command) }
             else { showVolume(SystemControl.toggleMute()) }
             return
-        case .screenOff: SystemControl.displayOff(); return
+        case .screenOff:
+            displaysSleeping = true
+            SystemControl.displayOff()
+            return
+        case .screenOn: wakeDisplays(); return
         case .sleepTimer(let minutes): setSleepTimer(minutes: minutes); return
         case .setting(let key, let value):
             if key == "autoSkip" { autoSkip = value }
@@ -897,7 +987,12 @@ final class TVController: NSObject, ObservableObject {
 
         if let browser = externalBrowser {
             // Mac TV is in front of its Brave window (opening, an error, or brought back): drive its own screen.
-            if NSApp.isActive { handleBrowserScreen(command); return }
+            if NSApp.isActive {
+                switch command {
+                case .move, .select, .back: handleBrowserScreen(command); return
+                default: break
+                }
+            }
             do { _ = try browser.handle(command) }
             catch { externalBrowserError = error.localizedDescription; showToast(error.localizedDescription) }
             return
@@ -1027,7 +1122,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     var playbackScreen: NSScreen? {
-        (NSApp.delegate as? AppDelegate)?.tvMode?.playbackScreen
+        displayCoordinator?.playbackScreen
             ?? window?.screen ?? NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 })
             ?? NSScreen.main
     }
@@ -1057,6 +1152,7 @@ final class TVController: NSObject, ObservableObject {
                 guard let self, let session, self.iinaSession === session else { return }
                 self.iinaPlaybackError = error.localizedDescription + (session.isRunning ? "" : " Select the movie again in Files.")
                 self.iinaPlaybackStatus = "IINA needs attention"
+                if !session.isRunning { self.keepAwake.release() }
                 self.showToast(error.localizedDescription)
             }
             session.onReady = { [weak self, weak session] in
@@ -1180,13 +1276,17 @@ final class TVController: NSObject, ObservableObject {
                     try? session.close(); return
                 }
                 if let screen = self.playbackScreen {
-                    try session.fit(to: screen)
+                    try await session.fit(to: screen)
+                }
+                guard self.playbackRequest == request, self.externalBrowser === session else {
+                    try? session.close(); return
                 }
                 try session.activate()
                 self.externalBrowserOpening = false
             } catch {
                 guard let self, self.playbackRequest == request, self.externalBrowser === session else { return }
                 self.externalBrowserOpening = false
+                self.keepAwake.release()
                 self.externalBrowserError = error.localizedDescription
                 self.bringToFront()
             }

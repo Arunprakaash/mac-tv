@@ -225,6 +225,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tv.startPowerManagement()
         tv.startControllers()
         TopShelfFeed.shared.start()
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysSlept),
+            name: NSWorkspace.screensDidSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysWoke),
+            name: NSWorkspace.screensDidWakeNotification, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -234,17 +238,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Analytics.start(context: tv.analyticsContext)
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
+            return
         } else if Analytics.available, Analytics.consent == .unasked {
             // An install from before the question: ask it once.
             tv.askAboutAnalytics()
         } else if tv.profiles.all.count > 1 {
             tv.openProfiles()
-        } else if !tv.phonePaired {
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(1.5))
-                self?.tv.showToast("Pair your phone as a remote: open Settings below")
-            }
         }
+        tv.offerStartupPairing()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -252,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        server?.stop()
         tv.closeExternalBrowser()
         tv.closeIINAPlayback(terminating: true)
         tv.stopPowerManagement()
@@ -268,6 +270,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                width: size.width, height: size.height), display: true)
     }
 
+    @objc private func displaysSlept() { tv.noteDisplaySleep(true) }
+    @objc private func displaysWoke() { tv.noteDisplaySleep(false) }
+
     @objc private func screensChanged() {
         tvMode?.screensChanged()
         tv.refreshRemoteURL()
@@ -282,7 +287,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onCommand: { [weak self] in self?.tv.handle($0, from: .remote) },
             state: { [weak self] in self?.tv.remoteState() ?? [:] },
             icon: { [weak self] in self?.tv.iconPNG(for: $0) },
-            routes: { [weak self] in self?.tv.handleAppsRequest($0) })
+            routes: { [weak self] in self?.tv.handleAppsRequest($0) },
+            onGuestCommand: { [weak self] in self?.tv.handleGuestCommand($0) ?? false })
         server.start(ports: Array(8765...8775)) { [weak self] port in self?.tv.remotePort = port }
         self.server = server
     }

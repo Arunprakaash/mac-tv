@@ -89,7 +89,7 @@ struct RootView: View {
                         .transition(Motion.sheet(reduceMotion: reduceMotion))
                 }
                 if tv.pairing {
-                    TVCanvas { PairSheet(links: tv.remoteLinks, code: tv.remoteToken) { tv.pairing = false } }
+                    TVCanvas { PairSheet(tv: tv) }
                         .ignoresSafeArea()
                         .allowsHitTesting(tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
                         .accessibilityHidden(tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
@@ -737,13 +737,12 @@ struct Artwork: View {
 
 struct PairSheet: View {
     @Environment(\.canvasSize) private var canvas
-    let links: [RemoteLink]
-    let code: String
-    let done: () -> Void
+    @ObservedObject var tv: TVController
 
     var body: some View {
-        HStack(alignment: .center, spacing: 56) {
-            HStack(spacing: 28) {
+        let links = tv.pairingGuest ? tv.remoteGuestLinks : tv.remoteLinks
+        HStack(alignment: .center, spacing: 52) {
+            HStack(spacing: 24) {
                 if links.isEmpty {
                     RoundedRectangle(cornerRadius: 28).fill(.white.opacity(0.1))
                         .frame(width: 300, height: 300)
@@ -764,20 +763,51 @@ struct PairSheet: View {
             }
             VStack(alignment: .leading, spacing: 18) {
                 Text("MAC TV REMOTE").font(.tv(.caption2, emphasized: true)).tracking(2.4).opacity(0.6)
-                Text("Use your phone as a remote")
-                    .font(.tv(.title3, emphasized: true))
-                Text("Scan with your phone's camera, then add the page to your home screen. Use the Tailscale code when you're away from home or your Wi-Fi keeps devices apart.")
+                Text("Use your phone as a remote").font(.tv(.title3, emphasized: true))
+                Text("Scan with your phone's camera, then add the page to your home screen.")
                     .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.75))
-                    .lineSpacing(4)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     ForEach(links) { link in Text("\(link.label): \(link.address)") }
-                    Text("Pairing code \(code)")
+                    Text("Pairing code \(tv.pairingGuest ? tv.remoteGuestToken : tv.remoteToken)")
+                }.font(.system(size: 38, weight: .medium)).monospacedDigit().foregroundStyle(.white.opacity(0.9))
+                Button { tv.pairingGuest.toggle() } label: {
+                    HStack {
+                        Text("Phone access")
+                        Spacer()
+                        Text(tv.pairingGuest ? "Guest (24 hours)" : "Trusted phone")
+                        Image(systemName: "chevron.left.forwardslash.chevron.right").opacity(0.7)
+                    }
+                    .font(.system(size: 30, weight: .medium))
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .background(.white.opacity(tv.pairingFocusedIndex == 0 ? 0.25 : 0.1), in: RoundedRectangle(cornerRadius: 12))
+                }.buttonStyle(.plain)
+                Text(tv.pairingGuest ? "Playback controls only. Access expires after 24 hours." : "Full remote controls and settings.")
+                    .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.7))
+                Text("Choose a display").font(.tv(.caption2, emphasized: true))
+                ScrollViewReader { proxy in
+                  ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(tv.availableTVDisplays.enumerated()), id: \.element.id) { index, display in
+                            Button { _ = tv.selectTVDisplay(id: display.id) } label: {
+                                HStack {
+                                    Text(display.name).lineLimit(1)
+                                    Spacer()
+                                    if display.current { Text("Current").opacity(0.75) }
+                                    if display.preferred { Image(systemName: "checkmark") }
+                                }
+                                .font(.system(size: 36, weight: .medium))
+                                .padding(.horizontal, 18).padding(.vertical, 10)
+                                .background(.white.opacity(tv.pairingFocusedIndex == index + 1 ? 0.25 : 0.1), in: RoundedRectangle(cornerRadius: 12))
+                            }.buttonStyle(.plain).id(index)
+                        }
+                    }
+                  }.frame(maxHeight: 210)
+                  .onChange(of: tv.pairingFocusedIndex) { _, index in
+                      if index > 0 && index <= tv.availableTVDisplays.count { proxy.scrollTo(index - 1, anchor: .center) }
+                  }
                 }
-                .font(.tv(.caption2))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.7))
-                ShelfButton(title: "Done", focused: true, glass: false, action: done)
-                    .padding(.top, 8)
+                ShelfButton(title: "Done", focused: tv.pairingFocusedIndex == tv.availableTVDisplays.count + 1,
+                            glass: false) { tv.pairing = false }
             }
             .frame(maxWidth: 760, alignment: .leading)
         }

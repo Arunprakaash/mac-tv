@@ -42,9 +42,22 @@ Open **Settings** on the TV, choose **Phone remote** and scan the QR code with y
 
 - **Clickpad:** swipe anywhere, or tap an arrow on the ring; hold to repeat; tap the middle for OK.
 - **Touchpad:** drag the pointer, tap to click, two fingers to scroll.
-- **Keys:** media keys, volume, and typing on the TV.
+- **Keys:** media keys and volume. **Website & keyboard** opens address entry and typing without squeezing the clickpad.
 - **Haptics:** light haptic feedback on every press.
 - **Tailscale:** the Tailscale QR code works away from home, or when your Wi-Fi keeps devices apart.
+
+On launch, Mac TV shows the pairing QR when no phone has connected this session, after any
+setup/profile screen. A paired phone reconnecting dismisses that startup QR automatically.
+Open **Settings › Remotes and Devices › Phone remote** any time to pair another phone; that
+QR stays open while your existing remote polls.
+
+The QR screen lists every connected display. Select one to move Mac TV there, even outside
+Dedicated TV mode. The same selector is in the phone’s **TV controls**. Fullscreen is retained
+when moving between displays, and the selected display is remembered.
+
+**TV controls › Wake screen** requests that macOS turn the displays back on after **Turn screen
+off**. Other remote controls also request a wake while the displays are asleep. The Mac itself
+must remain awake and reachable; this is not a wake-from-system-sleep or TV hardware power control.
 
 ## Game controllers
 
@@ -104,6 +117,20 @@ external monitor by default, before entering full screen. Allow Mac TV under mac
 need Accessibility. The phone reports startup, display or player errors instead of silently
 routing commands to the foreground app. Subtitles added to the same IINA movie load without
 restarting it. IINA’s online subtitle-search menu still requires Accessibility.
+
+### Remote security and background work
+
+The remote uses one TCP listener while Mac TV is open and closes it and its connections on quit.
+Only loopback/private-network peers are accepted, including Tailscale addresses. Connections,
+headers, bodies and idle time are bounded; the phone polls only while visible, with one state
+request at a time and deadlines instead of unbounded queues. Guest tokens grant playback
+controls only; file browsing, typing and configuration require a trusted remote.
+
+The direct LAN remote is **HTTP, not encrypted HTTPS**. Use a trusted home network, or the
+Tailscale QR for encrypted network transport; do not expose the listener through port forwarding.
+Random device tokens and network limits do not replace transport encryption. Normal streaming
+providers and optional catalogue artwork still make their own network requests. Usage analytics
+remains opt-in.
 
 ## Power and the lid
 
@@ -193,7 +220,9 @@ MIT. See [LICENSE](LICENSE). App icons and service names belong to their owners 
 ## Paired phones
 
 The TV shows a pairing PIN that refreshes every five minutes. Scanning its QR code exchanges the PIN
-for an individual device credential. Name each phone when pairing, or choose guest access (24 hours).
+for an individual device credential. Name each phone when pairing. On the Mac's pairing screen,
+choose **Guest (24 hours)** before sharing its QR/code to grant playback-only access. Guest and
+trusted phones use separate rotating codes; the phone cannot choose or upgrade its own role.
 The phone's **TV controls › Paired devices** screen can revoke one device or all devices. Guests
 cannot manage paired devices. Credentials are stored as hashes on the Mac. The built-in LAN remote
 uses HTTP; use a trusted network or the existing Tailscale option, and do not expose its port publicly.
@@ -201,8 +230,7 @@ Legacy phone codes may migrate during the first five minutes after upgrading; ot
 
 ## Release verification
 
-Pull requests run Swift tests and build the universal app in GitHub Actions. This local branch's
-workflow has not run on GitHub until it is pushed.
+Pull requests run Swift tests, remote browser checks and a universal app build in GitHub Actions.
 
 `./scripts/notarize.sh` builds, signs, notarizes and staples an app and installer using
 `MACTV_DEVELOPER_ID` (Developer ID Application identity) and `MACTV_NOTARY_PROFILE` (an existing

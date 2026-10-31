@@ -103,6 +103,7 @@ extension TVController {
 
     func switchProfile(to id: String) {
         profilePicker = nil
+        defer { showStartupPairingIfReady() }
         guard id != profile.id else { return }
         goHome()
         profiles.select(id)
@@ -146,6 +147,7 @@ extension TVController {
         case .back:
             // At launch there's nowhere to go back to: stay with whoever was watching last.
             profilePicker = nil
+            showStartupPairingIfReady()
             return
         case .move(.left) where !picker.onRemove:
             picker.index = max(0, picker.index - 1)

@@ -77,9 +77,12 @@ import Testing
     @Test func pairingCodeRotatesAfterFiveMinutes() {
         let start = Date(timeIntervalSince1970: 2_000_000_000)
         let first = RemoteServer.pairingCode(now: start)
-        #expect(first.count == 6)
+        let firstGuest = RemoteServer.guestPairingCode(now: start)
+        #expect(first.count == 6 && firstGuest.count == 6 && first != firstGuest)
         #expect(RemoteServer.pairingCode(now: start.addingTimeInterval(299)) == first)
-        #expect(RemoteServer.pairingCode(now: start.addingTimeInterval(300)) != first)
+        let next = RemoteServer.pairingCode(now: start.addingTimeInterval(300))
+        let nextGuest = RemoteServer.guestPairingCode(now: start.addingTimeInterval(300))
+        #expect(next != first && next != firstGuest && nextGuest != firstGuest && nextGuest != first && nextGuest != next)
     }
     @Test func guestsCannotBrowseFilesOrReadSelectedMovie() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

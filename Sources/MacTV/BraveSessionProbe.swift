@@ -11,7 +11,7 @@ import AppKit
             do {
                 try await session.open(url)
                 report("Brave window opened")
-                if let screen = NSScreen.main { try session.fit(to: screen) }
+                try await session.fit(to: NSScreen.tvScreen)
                 try session.activate()
                 try await Task.sleep(for: .seconds(1))
                 if AXIsProcessTrusted() {

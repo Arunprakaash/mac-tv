@@ -7,12 +7,17 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Test
         run: |
           swift test --disable-xctest
           node Tests/WebPlayback/bridge.test.cjs
           node Tests/WebPlayback/touchpad.test.cjs
           node Tests/WebPlayback/address.test.cjs
+          node Tests/WebPlayback/layout.test.cjs
+          node Tests/WebPlayback/transport.test.cjs
       - name: Build universal app
         run: ./build.sh
       - name: Check signature and architectures
