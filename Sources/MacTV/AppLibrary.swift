@@ -90,7 +90,7 @@ final class AppLibrary {
     }
 
     func services() -> [Service] {
-        let visible = orderedApps.filter { !saved.hidden.contains($0.id) && $0.isInstalled }
+        let visible = orderedApps.filter { !saved.hidden.contains($0.id) && $0.isAvailable }
         let tail = Catalog.services.filter { !Self.canArrange($0) }
         return visible.filter { isPinned($0.id) } + visible.filter { !isPinned($0.id) } + tail
     }

@@ -34,7 +34,7 @@ extension TVController {
 
     /// The built-in apps setup offers, in home-screen order.
     var setupChoices: [Service] {
-        Catalog.services.filter { $0.kind != .addApp && $0.kind != .settings && $0.isInstalled }
+        Catalog.services.filter { $0.kind != .addApp && $0.kind != .settings && $0.isAvailable }
     }
 
     func startSetup() {

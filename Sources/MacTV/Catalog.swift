@@ -25,6 +25,16 @@ struct Service: Identifiable, Hashable {
     var userAgent: String = UserAgent.safari
     /// Inject D-pad focus navigation for sites that were built for a mouse.
     var dpadNavigation = true
+    /// Countries (ISO codes) where a built-in service streams; nil for everywhere. Elsewhere it isn't
+    /// built in, since it would only open on a "not available in your region" page; it can still be added.
+    var regions: Set<String>? = nil
+
+    /// Installed, and streams in this Mac's region.
+    var isAvailable: Bool {
+        guard isInstalled else { return false }
+        guard let regions else { return true }
+        return Locale.current.region.map { regions.contains($0.identifier) } ?? false
+    }
 
     var isInstalled: Bool {
         switch kind {
@@ -76,9 +86,9 @@ enum Catalog {
         Service(id: "ytmusic", name: "YouTube Music", kind: .web(URL(string: "https://music.youtube.com")!),
                 icon: "ytmusic.png", accent: "#FF2D2D", deep: "#2B0606"),
         Service(id: "itvx", name: "ITVX", kind: .web(URL(string: "https://www.itv.com/watch")!),
-                accent: "#16C6B0", deep: "#06312D"),
+                accent: "#16C6B0", deep: "#06312D", regions: ["GB"]),
         Service(id: "channel4", name: "Channel 4", kind: .web(URL(string: "https://www.channel4.com/")!),
-                accent: "#ED1664", deep: "#320B1A"),
+                accent: "#ED1664", deep: "#320B1A", regions: ["GB"]),
         Service(id: "movies", name: "Movies", kind: .movies, accent: "#5E5CE6", deep: "#14133A"),
         Service(id: "iina", name: "IINA", kind: .app(bundleID: "com.colliderli.iina"),
                 icon: "iina.png"),
