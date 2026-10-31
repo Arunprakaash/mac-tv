@@ -101,6 +101,9 @@ enum RemotePage {
       .app.add .art { background:transparent; border:2px dashed rgba(255,255,255,.25); box-shadow:none; color:var(--dim); font-weight:400; font-size:34px; }
       .editing .app.add { display:none; }
       .row-btn { height:52px; border:0; border-radius:16px; background:rgba(255,255,255,.1); font-size:16px; font-weight:600; text-align:left; padding:0 18px; }
+      .browser-controls { display:flex; gap:8px; flex-wrap:wrap; }
+      .browser-controls[hidden] { display:none; }
+      .browser-controls button { flex:1; min-width:100px; min-height:44px; padding:8px; border:1px solid var(--line); border-radius:14px; background:var(--glass); font-size:13px; font-weight:600; }
       .row-btn.danger { background:rgba(255,107,107,.22); color:#ffd0d0; }
       .note { font-size:13px; color:var(--dim); line-height:1.4; margin:0; padding:0 4px; }
       .note.ok { color:var(--ok); } .note.err { color:var(--warn); }
@@ -175,6 +178,13 @@ enum RemotePage {
         <button class="key" data-a="voldown" aria-label="Volume down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 12h5"/></svg></button>
         <button class="key" data-a="volup" aria-label="Volume up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 12h5M18.5 9.5v5"/></svg></button>
         <button class="key" data-a="forward" aria-label="Forward 10 seconds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6v12l8-6z"/><path d="M3 6v12l8-6z"/></svg></button>
+      </div>
+
+      <div id="browser-controls" class="browser-controls" hidden aria-label="Brave controls">
+        <button type="button" data-a="previouscontrol">Previous control</button>
+        <button type="button" data-a="nextcontrol">Next control</button>
+        <button type="button" data-a="activatebrowser">Return to Brave</button>
+        <p class="note" id="browser-control-note" role="status"></p>
       </div>
 
       <form class="type" id="type" autocomplete="off">
@@ -258,6 +268,9 @@ enum RemotePage {
         <label class="toggle"><span>Skip intros and recaps</span><input type="checkbox" id="auto-skip"></label>
         <label class="toggle"><span>Play next episode automatically</span><input type="checkbox" id="auto-next"></label>
         <p class="note">Applies the next time you open an app.</p>
+        <label class="toggle" for="website-player"><span>Website player</span><select class="field" id="website-player" style="width:auto;max-width:58%"><option value="embedded">Built-in WebKit</option><option value="brave">Brave</option></select></label>
+        <p class="note">Brave chooses the browser profile; its sign-ins and Shields apply across Mac TV profiles. Web controls differ. Applies the next time you open a website.</p>
+        <p class="note" id="browser-msg" role="status" aria-live="polite" hidden></p>
         <div class="group-label">Power</div>
         <p class="note" id="lid-status"></p>
         <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
@@ -381,6 +394,11 @@ enum RemotePage {
         $('#keep-awake').checked = s.keepMacAwake;
         $('#lid-override').checked = s.lidOverride;
         $('#lid-status').textContent = s.lidStatus || '';
+        $('#website-player').value = s.websitePlayer === 'brave' ? 'brave' : 'embedded';
+        const browser = s.externalBrowser;
+        $('#browser-controls').hidden = !browser;
+        $('#browser-control-note').textContent = browser && browser.accessibilityAllowed === false
+          ? 'Allow Accessibility access for Mac TV to send input to Brave. Automation access is also needed to open and control its window.' : ''; 
         const sig = JSON.stringify([s.apps, s.canRestore]);
         if (sig !== appsShown) {
           appsShown = sig;
@@ -812,6 +830,22 @@ enum RemotePage {
       send('sleeptimer', { m }, 'tap').then(refresh);
       showSleep(m);
     });
+    $('#website-player').onchange = async e => {
+      const note = $('#browser-msg');
+      note.hidden = true;
+      try {
+        await api('/browser/preference', { player: e.target.value });
+        haptic('tap');
+      } catch (error) {
+        if (error.message !== 'unpaired') {
+          note.textContent = error.message || 'Could not change website player.';
+          note.className = 'note err';
+          note.hidden = false;
+          haptic('error');
+        }
+      }
+      await refresh();
+    };
     $('#auto-skip').onchange = e => send('setting', { k: 'autoSkip', v: e.target.checked });
     $('#auto-next').onchange = e => send('setting', { k: 'autoNext', v: e.target.checked });
     $('#keep-awake').onchange = e => send('setting', { k: 'keepMacAwake', v: e.target.checked });

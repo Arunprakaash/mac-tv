@@ -20,9 +20,9 @@ cp Assets/AppIcon.icns Assets/AppIcon.png "$APP/Contents/Resources/"
 # permissions like Accessibility across builds; otherwise sign ad hoc.
 IDENTITY="${MACTV_SIGN_IDENTITY:-Mac TV Local Signing}"
 if security find-identity -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
-    codesign --force --sign "$IDENTITY" "$APP" >/dev/null
+    codesign --force --entitlements Assets/MacTV.entitlements --sign "$IDENTITY" "$APP" >/dev/null
 else
-    codesign --force --sign - "$APP" >/dev/null
+    codesign --force --entitlements Assets/MacTV.entitlements --sign - "$APP" >/dev/null
 fi
 
 echo "Built $(pwd)/$APP"
