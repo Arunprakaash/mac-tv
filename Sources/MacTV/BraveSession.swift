@@ -32,6 +32,8 @@ final class BraveSession {
     private var lastBoundsRead = Date.distantPast
     private var pointer: CGPoint?
     private var compiledScript: NSAppleScript?
+    private var validatedFocusedWindow: AXUIElement?
+    private var lastFocusValidation: TimeInterval = 0
     private var invalidated = false
 
     /// YouTube's TV page expects a TV user agent; Brave should use its normal desktop page.
@@ -96,11 +98,41 @@ final class BraveSession {
     }
 
     func activate() throws {
+        validatedFocusedWindow = nil
+        lastFocusValidation = 0
         _ = try runScript("activate")
+        if let app = application, app.isActive, let token = ownershipToken,
+           let focused = focusedWindow(of: app), windowTitle(focused)?.contains(token) == true {
+            validatedFocusedWindow = focused
+            lastFocusValidation = ProcessInfo.processInfo.systemUptime
+        }
+    }
+
+    private func focusedWindow(of app: NSRunningApplication) -> AXUIElement? {
+        var value: CFTypeRef?
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private func windowTitle(_ window: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private func activateForPointer(_ app: NSRunningApplication) throws {
+        let age = ProcessInfo.processInfo.systemUptime - lastFocusValidation
+        if age >= 0, age < 0.25, app.isActive, let owned = validatedFocusedWindow,
+           let focused = focusedWindow(of: app), CFEqual(owned, focused) { return }
+        try activate()
     }
 
     func close() throws {
         invalidated = true
+        validatedFocusedWindow = nil
+        lastFocusValidation = 0
         guard windowID != nil else { return }
         _ = try runScript("close")
         application = nil
@@ -134,7 +166,7 @@ final class BraveSession {
             return true
         case .pointer(let dx, let dy):
             guard dx.isFinite, dy.isFinite else { return true }
-            try activate()
+            try activateForPointer(app)
             let bounds = try windowBounds()
             let current = pointer ?? CGPoint(x: bounds.midX, y: bounds.midY)
             let next = CGPoint(x: min(max(current.x + dx, bounds.minX + 1), bounds.maxX - 1),
