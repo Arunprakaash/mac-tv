@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ece0c6">
 <title>Privacy Policy · Mac TV</title>
-<meta name="description" content="Mac TV's privacy policy: no account, no analytics, no Mac TV servers.">
+<meta name="description" content="Mac TV's privacy policy: no account, no Mac TV servers, and anonymous usage analytics only if you agree.">
 <link rel="icon" type="image/png" href="screenshots/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,10 +28,10 @@
 </nav>
 <main class="wrap"><div class="doc">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated October 31, 2026</p>
+    <p class="updated">Last updated November 1, 2026</p>
 
     <div class="summary">
-      <p><strong>In short:</strong> Mac TV has no account, no analytics and no servers of its own. It doesn't collect, sell or share your data. What it stores stays on your Mac. The streaming services you use in it have their own privacy policies.</p>
+      <p><strong>In short:</strong> Mac TV has no account and no servers of its own, and it never records what you watch. If you agree, it shares anonymous usage (which features you use) to help improve it; if you don't, it sends nothing. It doesn't sell or share your data. What it stores stays on your Mac. The streaming services you use in it have their own privacy policies.</p>
     </div>
 
     <h2>Who this covers</h2>
@@ -40,8 +40,8 @@
     <h2>What Mac TV doesn't do</h2>
     <ul>
       <li>It has no sign-up and no Mac TV account.</li>
-      <li>It sends no analytics, crash reports, usage data or advertising identifiers.</li>
-      <li>It has no servers. Nothing you do in Mac TV is sent to me.</li>
+      <li>It sends no usage data unless you agree (see below), and never advertising identifiers.</li>
+      <li>It has no servers of its own.</li>
       <li>It doesn't record what you watch or listen to in streaming apps. For your own movie files, it remembers where you stopped, on your Mac only.</li>
     </ul>
 
@@ -50,7 +50,7 @@
       <li><strong>Sign-ins and website data.</strong> Streaming services run in Apple's WebKit engine. Their cookies and sign-ins are stored by WebKit in your Mac user account's Library, like Safari's, and only those services can read them.</li>
       <li><strong>Your apps.</strong> The apps you add and their icons are kept in <code>~/Library/Application Support/Mac TV</code>.</li>
       <li><strong>Movies.</strong> The Movies app reads the video files in the folders you choose. Their list, posters, and where you stopped each one are kept in <code>~/Library/Application Support/Mac TV/Movies</code>.</li>
-      <li><strong>Settings.</strong> Options such as the sleep timer, playback and power settings, and the remote's pairing code are kept in Mac TV's preferences on your Mac.</li>
+      <li><strong>Settings.</strong> Options such as the sleep timer, playback and power settings, the remote's pairing code, and your answer about anonymous usage are kept in Mac TV's preferences on your Mac.</li>
     </ul>
     <p>Deleting Mac TV and those folders removes all of it.</p>
 
@@ -62,6 +62,19 @@
       <li><strong>Steam games you add.</strong> Mac TV reads which games are installed from Steam's files on your Mac, and downloads the game's artwork from Steam's servers to make its tile. Games open through the Steam app.</li>
       <li><strong>Top Shelf shows.</strong> The home screen shows the latest shows on each streaming app. Once a day Mac TV asks TVmaze's public schedule which shows have new episodes, and Apple's public music charts which albums are most played in your country. It downloads their pictures and keeps them on your Mac. These are the same for everyone and have nothing to do with what you watch. Nothing else is sent.</li>
     </ul>
+
+    <h2>Anonymous usage, only if you agree</h2>
+    <p>Mac TV asks once, during setup or after an update: <em>Help improve Mac TV?</em> Nothing is sent unless you choose <strong>Share</strong>, and you can turn it off any time in <strong>Settings › About</strong>. Turning it off stops sending at once.</p>
+    <p>If you share, Mac TV sends anonymous events to <a href="https://telemetrydeck.com">TelemetryDeck</a>, a privacy-focused analytics service based in the EU:</p>
+    <ul>
+      <li><strong>Features you use:</strong> opening Control Center and which controls you use, which Settings sections you open, the screen saver's wallpaper type, creating a profile, finishing setup.</li>
+      <li><strong>Which built-in apps you open</strong>, such as Netflix or YouTube. Apps you added are counted only by kind (a website, a Mac app or a Steam game), never by name or address.</li>
+      <li><strong>How you control Mac TV:</strong> phone remote, game controller, keyboard, trackpad or mouse.</li>
+      <li><strong>Your settings and counts:</strong> how many profiles and added apps you have, and whether options like sounds, keep awake or skip intros are on.</li>
+      <li><strong>Movies:</strong> the kind of file (for example MKV) and whether it played in Mac TV or another app, never its name.</li>
+      <li><strong>Basics:</strong> Mac TV and macOS versions, Mac model, and your language and region settings.</li>
+    </ul>
+    <p>It never sends what you watch or listen to, titles, web addresses, file or folder names, profile names, or anything from inside the apps you open. You're identified only by a random ID that Mac TV creates and keeps in its own settings, hashed before it's sent, so the data can't be tied to you. TelemetryDeck doesn't store IP addresses. Every event Mac TV can send is listed in one file in its source code, <a href="https://github.com/Arunprakaash/mac-tv/blob/main/Sources/MacTV/Analytics.swift"><code>Analytics.swift</code></a>.</p>
 
     <h2>The phone remote</h2>
     <p>The remote is a web page served by Mac TV from your Mac, on your own network or your Tailscale network. It doesn't pass through the internet or any server of mine. Only phones that enter the 6-digit pairing code shown on your TV can control Mac TV. The phone remembers that code in its browser so you don't have to enter it again.</p>
@@ -78,7 +91,7 @@
     <p>This site is hosted by GitHub Pages. It uses no cookies, analytics or trackers of its own. GitHub may keep standard server logs, such as IP addresses, under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>.</p>
 
     <h2>Children</h2>
-    <p>Mac TV doesn't collect personal information from anyone, including children.</p>
+    <p>Mac TV doesn't collect personal information from anyone, including children. Anonymous usage, if shared, can't identify anyone.</p>
 
     <h2>Changes</h2>
     <p>If this policy changes, the new version will be posted here with a new date. Earlier versions stay visible in the project's history on GitHub.</p>

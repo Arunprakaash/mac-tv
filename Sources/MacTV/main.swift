@@ -222,8 +222,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         // `--setup` shows first-run setup again.
+        // Usage analytics sends nothing unless the user has said yes (Analytics.swift).
+        Analytics.start(context: tv.analyticsContext)
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
+        } else if Analytics.available, Analytics.consent == .unasked {
+            // An install from before the question: ask it once.
+            tv.askAboutAnalytics()
         } else if tv.profiles.all.count > 1 {
             tv.openProfiles()
         } else if !tv.phonePaired {

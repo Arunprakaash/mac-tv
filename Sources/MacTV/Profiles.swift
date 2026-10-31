@@ -190,6 +190,7 @@ extension TVController {
     private func createProfile() {
         guard let name = profilePicker?.naming?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return }
         let added = profiles.add(named: name)
+        Analytics.send(.profileAdded, ["profiles": String(profiles.all.count)])
         switchProfile(to: added.id)
     }
 }

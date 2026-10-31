@@ -1,17 +1,27 @@
 import SwiftUI
 
-/// The first-run setup: a welcome, choosing the home screen's apps, pairing the phone remote,
-/// and a few tips. Shown once on a new install, driven by the D-pad, the keyboard or the mouse.
+/// The first-run setup: a welcome, choosing the home screen's apps, pairing the phone remote, the
+/// anonymous-usage question, and a few tips. Shown once on a new install, driven by the D-pad, the
+/// keyboard or the mouse. An existing install sees only the usage question, once, after updating.
 struct SetupFlow: Equatable {
     enum Step: Int, CaseIterable {
-        case welcome, apps, remote, done
+        case welcome, apps, remote, privacy, done
     }
 
     var step: Step = .welcome
     /// In the apps step: the focused app, or the Continue button when it's past the last app.
+    /// In the privacy step: 0 is Share, 1 is Not Now.
     var index = 0
     /// A phone opened the remote while the remote step was showing.
     var phoneConnected = false
+    /// Just the usage question, for an install that finished setup before it existed.
+    var onlyPrivacy = false
+
+    /// The steps this run shows, in order.
+    @MainActor var steps: [Step] {
+        if onlyPrivacy { return [.privacy] }
+        return Step.allCases.filter { $0 != .privacy || Analytics.available }
+    }
 
     static let columns = 5
 }
@@ -31,8 +41,18 @@ extension TVController {
         setup = SetupFlow()
     }
 
+    /// An install from before the usage question: ask it once, on its own.
+    func askAboutAnalytics() {
+        setup = SetupFlow(step: .privacy, onlyPrivacy: true)
+    }
+
     func finishSetup() {
-        UserDefaults.standard.set(true, forKey: "setupDone")
+        guard let flow = setup else { return }
+        if !flow.onlyPrivacy {
+            UserDefaults.standard.set(true, forKey: "setupDone")
+            let hidden = setupChoices.filter { library.isHidden($0.id) }.count
+            Analytics.send(.setupFinished, ["phoneConnected": String(flow.phoneConnected), "appsHidden": String(hidden)])
+        }
         setup = nil
         setFocus(.app(0))
     }
@@ -41,13 +61,18 @@ extension TVController {
         guard var flow = setup else { return }
         switch command {
         case .back:
-            if let previous = SetupFlow.Step(rawValue: flow.step.rawValue - 1) { flow.step = previous }
+            let steps = flow.steps
+            if let at = steps.firstIndex(of: flow.step), at > 0 { flow.step = steps[at - 1]; flow.index = 0 }
         case .select:
             setup = flow
-            activateSetup(flow.step == .apps ? flow.index : 0)
+            activateSetup(flow.step == .apps || flow.step == .privacy ? flow.index : 0)
             return
         case .move(let direction) where flow.step == .apps:
             flow.index = movedSetupFocus(from: flow.index, direction)
+        case .move(.left) where flow.step == .privacy:
+            flow.index = 0
+        case .move(.right) where flow.step == .privacy:
+            flow.index = 1
         default:
             break
         }
@@ -66,15 +91,21 @@ extension TVController {
             reloadServices()
             return
         }
+        if flow.step == .privacy {
+            // Share (0) or Not Now (1). Nothing has been sent before this answer.
+            Analytics.setConsent(index == 0, context: analyticsContext)
+        }
         advanceSetup()
     }
 
     func advanceSetup() {
         guard var flow = setup else { return }
-        guard let next = SetupFlow.Step(rawValue: flow.step.rawValue + 1) else {
+        let steps = flow.steps
+        guard let at = steps.firstIndex(of: flow.step), at + 1 < steps.count else {
             finishSetup()
             return
         }
+        let next = steps[at + 1]
         flow.step = next
         flow.index = 0
         setup = flow
@@ -121,14 +152,17 @@ struct SetupScreen: View {
                 case .welcome: welcome
                 case .apps: apps(flow)
                 case .remote: remote(flow)
+                case .privacy: privacy(flow)
                 case .done: done
                 }
             }
             .id(flow.step)
             .transition(.opacity.combined(with: .offset(y: 24)))
             Spacer(minLength: 0)
-            dots(flow.step)
-                .padding(.bottom, 64)
+            if !flow.onlyPrivacy {
+                dots(flow)
+                    .padding(.bottom, 64)
+            }
         }
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
@@ -220,6 +254,21 @@ struct SetupScreen: View {
         }
     }
 
+    private func privacy(_ flow: SetupFlow) -> some View {
+        // One line and two buttons, like Apple TV's own analytics question; the details are on the privacy page.
+        VStack(spacing: 28) {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 92, weight: .regular))
+            title("Help improve Mac TV?")
+            subtitle("Share which features you use, anonymously. Never what you watch.")
+            HStack(spacing: 24) {
+                ShelfButton(title: "Share", focused: flow.index == 0, glass: false) { tv.activateSetup(0) }
+                ShelfButton(title: "Don't Share", focused: flow.index == 1, glass: false) { tv.activateSetup(1) }
+            }
+            .padding(.top, 20)
+        }
+    }
+
     private var done: some View {
         VStack(spacing: 28) {
             Image(systemName: "checkmark.circle.fill")
@@ -298,14 +347,14 @@ struct SetupScreen: View {
         .onTapGesture { tv.activateSetup(index) }
     }
 
-    private func dots(_ step: SetupFlow.Step) -> some View {
+    private func dots(_ flow: SetupFlow) -> some View {
         HStack(spacing: 12) {
-            ForEach(SetupFlow.Step.allCases, id: \.self) { each in
+            ForEach(flow.steps, id: \.self) { each in
                 Capsule()
-                    .fill(.white.opacity(each == step ? 0.9 : 0.25))
-                    .frame(width: each == step ? 28 : 10, height: 10)
+                    .fill(.white.opacity(each == flow.step ? 0.9 : 0.25))
+                    .frame(width: each == flow.step ? 28 : 10, height: 10)
             }
         }
-        .animation(Motion.focus, value: step)
+        .animation(Motion.focus, value: flow.step)
     }
 }

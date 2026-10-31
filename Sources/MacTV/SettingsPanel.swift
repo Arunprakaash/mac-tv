@@ -14,7 +14,7 @@ struct SettingsPanel: Equatable {
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
         case feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
-        case version, source
+        case version, source, analytics
     }
 
     var section: Section = .profiles
@@ -78,7 +78,7 @@ extension SettingsPanel.Section {
             : [.wallpaper, .saverDelay, .saverClock, .saverPreview]
         case .sounds: [.feedback]
         case .power: [.keepMacAwake, .lidOverride, .screenOff, .sleepMac]
-        case .about: [.version, .source]
+        case .about: Analytics.available ? [.version, .source, .analytics] : [.version, .source]
         case .profiles, .apps, .movies: []
         }
     }
@@ -126,9 +126,12 @@ extension TVController {
         let rows = panel.section.rows
         // Left steps or switches off a row that has a value; on any other row it goes back.
         let adjustable: Set<String> = ["sleepTimer", "wallpaper", "aerialCategory", "saverDelay", "saverClock", "feedback",
-                                       "autoSkip", "autoNext", "keepMacAwake", "lidOverride"]
+                                       "autoSkip", "autoNext", "keepMacAwake", "lidOverride", "analytics"]
         switch command {
-        case .back, .move(.left) where !adjustable.contains(String(describing: rows[panel.row])):
+        case .back:
+            panel.open = false
+            panel.row = 0
+        case .move(.left) where !adjustable.contains(String(describing: rows[panel.row])):
             panel.open = false
             panel.row = 0
         case .move(.up):
@@ -151,6 +154,7 @@ extension TVController {
 
     /// Opens a section's page, or goes where the section lives.
     func openSection(_ section: SettingsPanel.Section) {
+        Analytics.send(.settingsOpened, ["section": String(describing: section)])
         switch section {
         case .profiles:
             openProfiles()
@@ -180,6 +184,7 @@ extension TVController {
         case .autoNext: autoNext = forward
         case .keepMacAwake: keepMacAwake = forward
         case .lidOverride: lidOverride = forward
+        case .analytics: Analytics.setConsent(forward, context: analyticsContext)
         default: return
         }
         objectWillChange.send()
@@ -215,6 +220,7 @@ extension TVController {
                 settings?.confirmingSleep = true
             }
         case .version, .source: break
+        case .analytics: Analytics.setConsent(!Analytics.enabled, context: analyticsContext)
         }
         objectWillChange.send()
     }
@@ -398,6 +404,9 @@ struct SettingsSheet: View {
         case .source:
             title("Source code")
             value("github.com/Arunprakaash/mac-tv")
+        case .analytics:
+            title("Share anonymous usage", "Which features you use, never what you watch")
+            SettingSwitch(on: Analytics.enabled)
         case .wallpaper, .aerialCategory:
             EmptyView()
         }

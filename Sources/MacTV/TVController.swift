@@ -262,6 +262,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func showScreensaver() {
+        Analytics.send(.screenSaverStarted, ["wallpaper": ScreenSaverSettings.wallpaper.rawValue])
         ScreenSaverSettings.playing = ScreenSaverSettings.pictures(for: ScreenSaverSettings.wallpaper)
         lastActivity = Date()
         screensaver = true
@@ -698,6 +699,7 @@ final class TVController: NSObject, ObservableObject {
     func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
         // The first press only wakes the screensaver.
         if noteActivity() { return }
+        Analytics.noteInput(source)
 
         switch command {
         case .pointer, .click, .scroll: break
@@ -771,6 +773,7 @@ final class TVController: NSObject, ObservableObject {
     // MARK: Opening things
 
     func open(_ service: Service) {
+        Analytics.send(.appOpened, ["app": analyticsAppName(service)])
         switch service.kind {
         case .web(let url):
             play(service, url: url)
@@ -840,9 +843,16 @@ final class TVController: NSObject, ObservableObject {
             } else {
                 opened = await AVPlayback.open(movie.url).map { $0 as PlaybackEngine }
             }
+            // The kind of file and how it played, never its name.
+            let format = movie.url.pathExtension.lowercased()
             switch opened {
-            case .success(let engine): startMovie(movie, engine: engine, from: seconds)
-            case .failure: openElsewhere(movie)
+            case .success(let engine):
+                Analytics.send(.moviePlayed, ["format": format, "player": engine is AVPlayback ? "system" : "matroska",
+                                              "resumed": String(seconds > 0)])
+                startMovie(movie, engine: engine, from: seconds)
+            case .failure:
+                Analytics.send(.moviePlayed, ["format": format, "player": "external"])
+                openElsewhere(movie)
             }
         }
     }
