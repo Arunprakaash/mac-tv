@@ -54,7 +54,7 @@ Pair a PlayStation, Xbox, Switch Pro or other MFi controller with the Mac in Sys
 - **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **Settings** on the TV or **TV controls** on the remote.
 - **Sleep timer:** 15, 30, 60 or 90 minutes. When it ends, playback stops, Mac TV goes home and the screen turns off.
 - **Screensaver:** after 5 idle minutes, a lock-screen-style clock appears over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour.
-- **Top Shelf:** each streaming app's Top Shelf rotates through artwork from the latest shows on that app, like Apple TV: series with new episodes in the past two weeks, most popular first. Mac TV refreshes the list once a day from [TVmaze](https://www.tvmaze.com) (CC BY-SA).
+- **Top Shelf:** each streaming app's Top Shelf rotates through artwork from the latest shows on that app, like Apple TV: series with new episodes in the past two weeks, most popular first. That includes YouTube. Spotify and YouTube Music show this week's most-played albums, the cover over its own colours. Any other app you put in the top row (a website, a Mac app, a game) rotates through the top shows from every app. Mac TV refreshes the lists once a day from [TVmaze](https://www.tvmaze.com) (CC BY-SA) and Apple's public music charts. Art with writing in a script other than Latin is skipped; that check runs on your Mac.
 - **Privacy:** Mac TV doesn't keep a list of what you watch, and the home screen never shows it.
 
 ## Power and the lid

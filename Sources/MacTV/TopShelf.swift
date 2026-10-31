@@ -1,8 +1,10 @@
 import SwiftUI
+import Vision
 
 /// Each streaming app's latest shows for the Top Shelf, like Apple TV's: series with new episodes
 /// on that app in the past two weeks, most popular first, from TVmaze's public streaming schedule
-/// (tvmaze.com, CC BY-SA, no key). Refreshed once a day in the background; the list and the images
+/// (tvmaze.com, CC BY-SA, no key). Music apps get this week's most-played albums in your country, from
+/// Apple's public charts (no key). Refreshed once a day in the background; the list and the images
 /// are kept in ~/Library/Application Support/Mac TV/Top Shelf. Nothing here comes from what you watch.
 @MainActor
 final class TopShelfFeed: ObservableObject {
@@ -10,6 +12,8 @@ final class TopShelfFeed: ObservableObject {
         let id: Int
         let name: String
         let image: URL
+        /// A square album cover rather than wide show art.
+        var square = false
     }
 
     private struct Saved: Codable {
@@ -22,9 +26,15 @@ final class TopShelfFeed: ObservableObject {
     /// TVmaze's names for each app's streaming service.
     private static let channels = ["Netflix": "netflix", "Prime Video": "prime", "Amazon Prime Video": "prime",
                                    "Apple TV": "appletv", "Apple TV+": "appletv",
-                                   "JioHotstar": "hotstar", "Disney+ Hotstar": "hotstar", "Hotstar": "hotstar"]
+                                   "JioHotstar": "hotstar", "Disney+ Hotstar": "hotstar", "Hotstar": "hotstar",
+                                   "YouTube": "youtube"]
+    /// Music apps show the week's top albums.
+    private static let musicApps = ["spotify", "ytmusic"]
     /// Series only: sports, talk shows, news and reality TV make poor Top Shelf art.
     private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary"]
+    /// Some shows' art carries their title in their own script; keep to languages people here watch.
+    private static let languages: Set<String> = ["English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada",
+                                                 "Bengali", "Marathi", "Japanese", "Korean", "Spanish"]
     private static let perApp = 8
 
     /// Shows whose image is ready, by app id.
@@ -42,7 +52,20 @@ final class TopShelfFeed: ObservableObject {
 
     private init() {}
 
-    func shows(for serviceID: String) -> [Show] { ready[serviceID] ?? [] }
+    /// An app's own shows; apps with none (websites, Mac apps, games) get the top of every app's.
+    func shows(for serviceID: String) -> [Show] {
+        if let own = ready[serviceID], !own.isEmpty { return own }
+        return mix
+    }
+
+    /// Every app's most popular shows taken in turn: the first of each, then the second of each…
+    private var mix: [Show] {
+        let lists = ready.keys.sorted().compactMap { ready[$0]?.filter { !$0.square } }.filter { !$0.isEmpty }
+        let longest = lists.map(\.count).max() ?? 0
+        var seen = Set<Int>()
+        return (0..<longest).flatMap { rank in lists.compactMap { rank < $0.count ? $0[rank] : nil } }
+            .filter { seen.insert($0.id).inserted }
+    }
 
     /// Shows the last list straight away, then fetches a fresh one if it's a day old.
     func start() {
@@ -80,6 +103,7 @@ final class TopShelfFeed: ObservableObject {
                     guard let show = (episode["_embedded"] as? [String: Any])?["show"] as? [String: Any],
                           let channel = (show["webChannel"] as? [String: Any])?["name"] as? String,
                           let app = Self.channels[channel], let kind = show["type"] as? String, Self.kinds.contains(kind),
+                          let language = show["language"] as? String, Self.languages.contains(language),
                           let id = show["id"] as? Int, let name = show["name"] as? String else { continue }
                     found[app, default: [:]][id] = (name, show["weight"] as? Int ?? 0)
                 }
@@ -90,16 +114,40 @@ final class TopShelfFeed: ObservableObject {
         for (app, shows) in found {
             var picked: [Show] = []
             for (id, show) in shows.sorted(by: { $0.value.weight > $1.value.weight }) {
-                guard let image = await Self.background(for: id) else { continue }
+                guard let image = await Self.background(for: id),
+                      await Self.download(image, to: folder.appendingPathComponent("\(id).jpg")) else { continue }
                 picked.append(Show(id: id, name: show.name, image: image))
                 if picked.count == Self.perApp { break }
             }
             services[app] = picked
         }
+        let albums = await Self.topAlbums()
+        if !albums.isEmpty {
+            // Both music apps show the chart, starting at different places.
+            services["spotify"] = albums
+            services["ytmusic"] = Array(albums.dropFirst(albums.count / 2) + albums.prefix(albums.count / 2))
+        }
         if let data = try? JSONEncoder().encode(Saved(fetched: Date(), services: services)) {
             try? data.write(to: listFile, options: .atomic)
         }
         use(services)
+    }
+
+    /// This week's most-played albums in this Mac's country, from Apple's public charts.
+    private static func topAlbums() async -> [Show] {
+        let region = Locale.current.region?.identifier.lowercased() ?? "us"
+        for country in [region, "us"] {
+            guard let feed = (await json("https://rss.applemarketingtools.com/api/v2/\(country)/music/most-played/12/albums.json")
+                                as? [String: Any])?["feed"] as? [String: Any],
+                  let results = feed["results"] as? [[String: Any]], !results.isEmpty else { continue }
+            return results.compactMap { album in
+                guard let id = (album["id"] as? String).flatMap(Int.init), let name = album["name"] as? String,
+                      let art = album["artworkUrl100"] as? String,
+                      let url = URL(string: art.replacingOccurrences(of: "100x100bb", with: "1200x1200bb")) else { return nil }
+                return Show(id: id, name: name, image: url, square: true)
+            }
+        }
+        return []
     }
 
     /// A show's widest landscape background picture, at least 1280 wide.
@@ -113,6 +161,29 @@ final class TopShelfFeed: ObservableObject {
             return (width, url)
         }
         return wide.max { $0.width < $1.width }.flatMap { URL(string: $0.url) }
+    }
+
+    /// Saves a show's picture to the cache, unless it carries writing in a script other than Latin:
+    /// a title in a language most people here can't read looks like a mistake.
+    private nonisolated static func download(_ url: URL, to file: URL) async -> Bool {
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
+        guard await !Task.detached(operation: { hasForeignText(data) }).value else { return false }
+        try? data.write(to: file, options: .atomic)
+        return true
+    }
+
+    private nonisolated static func hasForeignText(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+        let request = VNRecognizeTextRequest()
+        request.automaticallyDetectsLanguage = true
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).contains { observation in
+            guard let text = observation.topCandidates(1).first, text.confidence >= 0.5 else { return false }
+            let latin = { (letter: Unicode.Scalar) in letter.value < 0x250 || (0x1E00...0x1EFF).contains(letter.value) }
+            return text.string.unicodeScalars.filter { $0.properties.isAlphabetic && !latin($0) }.count >= 3
+        }
     }
 
     /// TVmaze allows about 20 requests every 10 seconds, so requests are paced.
@@ -178,5 +249,48 @@ struct ShowBackdrop: View {
             .scaleEffect(1 + 0.06 * progress)
             .offset(x: -18 * progress)
             .clipped()
+    }
+}
+
+/// An album, the way Apple Music shows one on Apple TV: the cover large on the right, over its own
+/// colours blurred across the screen.
+struct AlbumBackdrop: View {
+    let image: NSImage
+    let since: Date
+    @Environment(\.canvasSize) private var canvas
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: canvas.width, height: canvas.height)
+                .blur(radius: 80)
+                .saturation(1.3)
+                .overlay(Color.black.opacity(0.35))
+                .clipped()
+            if reduceMotion {
+                cover(progress: 0)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                    cover(progress: min(1, context.date.timeIntervalSince(since) / 10))
+                }
+            }
+        }
+        .frame(width: canvas.width, height: canvas.height)
+    }
+
+    private func cover(progress: Double) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(1, contentMode: .fit)
+            .frame(width: 560, height: 560)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: .black.opacity(0.5), radius: 40, y: 24)
+            .scaleEffect(1 + 0.03 * progress)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 150)
+            .padding(.trailing, 150)
     }
 }

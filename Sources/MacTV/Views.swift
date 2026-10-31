@@ -511,9 +511,15 @@ struct AppBanner: View {
                 .clipped()
             // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
             if let show, let image = feed.images[show.id] {
-                ShowBackdrop(image: image, since: feed.turnStarted)
-                    .id(show.id)
-                    .transition(.opacity)
+                Group {
+                    if show.square {
+                        AlbumBackdrop(image: image, since: feed.turnStarted)
+                    } else {
+                        ShowBackdrop(image: image, since: feed.turnStarted)
+                    }
+                }
+                .id(show.id)
+                .transition(.opacity)
             }
             // Legibility: a soft top-left wash for the name, a bottom wash for the dock or button.
             LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil ? 0.55 : 0.18)), location: 0),
