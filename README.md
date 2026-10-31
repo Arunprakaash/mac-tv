@@ -84,6 +84,7 @@ Tiles are generated automatically from any square app icon (`TileArt.swift`). Ma
 ./build.sh                  # builds "build/Mac TV.app"
 open "build/Mac TV.app"
 ./scripts/make-dmg.sh       # builds build/MacTV-<version>.dmg
+./scripts/make-signing-cert.sh   # once: a local signing certificate, so macOS keeps permissions across builds
 swift scripts/make-icon.swift   # redraws Assets/AppIcon.png and .icns
 ```
 
