@@ -6,9 +6,14 @@ import Testing
 struct TopShelfPreferencesTests {
     @Test
     func languageSelectionIncludesAllOrSelectedOnly() {
-        var preferences = ShelfPreferences(languages: [])
-        #expect(preferences.includes(language: nil))
+        // Out of the box: the languages people here watch, not every language.
+        var preferences = ShelfPreferences()
         #expect(preferences.includes(language: "Tamil"))
+        #expect(!preferences.includes(language: "Russian"))
+        // An empty list means all languages.
+        preferences.languages = []
+        #expect(preferences.includes(language: nil))
+        #expect(preferences.includes(language: "Russian"))
         preferences.languages = ["Tamil", "Japanese"]
         #expect(preferences.includes(language: "Tamil"))
         #expect(!preferences.includes(language: "English"))
