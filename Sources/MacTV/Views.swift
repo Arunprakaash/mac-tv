@@ -132,7 +132,7 @@ struct Screensaver: View {
                         .font(.system(size: 34, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.85))
                     Text(context.date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()))
-                        .font(.system(size: 230, weight: .bold, design: .rounded))
+                        .font(.system(size: 230, weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(.white.opacity(0.92))
                         .tracking(-4)
@@ -501,9 +501,10 @@ struct AppBanner: View {
                            startPoint: .top, endPoint: .bottom)
 
             VStack(alignment: .leading, spacing: 18) {
+                // SF Pro at standard width, in the app's own capitalization, as Apple TV sets titles.
                 Text(service.name)
-                    .font(.system(size: 112, weight: .black).width(.compressed))
-                    .textCase(.uppercase)
+                    .font(.system(size: 92, weight: .bold))
+                    .tracking(-1.5)
                     .lineLimit(2)
                     .minimumScaleFactor(0.5)
                     .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
@@ -607,7 +608,8 @@ struct PairSheet: View {
                     ForEach(links) { link in Text("\(link.label): \(link.address)") }
                     Text("Pairing code \(code)")
                 }
-                .font(.system(size: 20, weight: .medium, design: .monospaced))
+                .font(.system(size: 20, weight: .medium))
+                .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
                 ShelfButton(title: "Done", focused: true, action: done)
                     .padding(.top, 8)

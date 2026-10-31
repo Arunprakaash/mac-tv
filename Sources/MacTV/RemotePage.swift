@@ -113,7 +113,7 @@ enum RemotePage {
       #pair.show { display:flex; }
       #pair h1 { margin:0; font-size:26px; }
       #pair p { margin:0; color:var(--dim); }
-      #pair input { font:600 30px ui-monospace, monospace; letter-spacing:.3em; text-align:center; background:var(--glass); color:#fff; border:1px solid rgba(255,255,255,.2); border-radius:14px; height:64px; -webkit-user-select:text; user-select:text; }
+      #pair input { font:600 30px -apple-system, system-ui, Roboto, sans-serif; font-variant-numeric:tabular-nums; letter-spacing:.3em; text-align:center; background:var(--glass); color:#fff; border:1px solid rgba(255,255,255,.2); border-radius:14px; height:64px; -webkit-user-select:text; user-select:text; }
       #pair button { height:52px; border:0; border-radius:999px; background:#fff; color:#000; font-weight:700; }
     </style>
     </head>
