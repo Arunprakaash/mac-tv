@@ -110,7 +110,8 @@ final class TopShelfFeed: ObservableObject {
             }
         }
         guard !found.isEmpty else { return }  // Offline: keep what we have.
-        var services: [String: [Show]] = [:]
+        // An app whose fetch comes back empty keeps yesterday's list.
+        var services = lists
         for (app, shows) in found {
             var picked: [Show] = []
             for (id, show) in shows.sorted(by: { $0.value.weight > $1.value.weight }) {
@@ -119,7 +120,7 @@ final class TopShelfFeed: ObservableObject {
                 picked.append(Show(id: id, name: show.name, image: image))
                 if picked.count == Self.perApp { break }
             }
-            services[app] = picked
+            if !picked.isEmpty { services[app] = picked }
         }
         let albums = await Self.topAlbums()
         if !albums.isEmpty {
@@ -137,7 +138,7 @@ final class TopShelfFeed: ObservableObject {
     private static func topAlbums() async -> [Show] {
         let region = Locale.current.region?.identifier.lowercased() ?? "us"
         for country in [region, "us"] {
-            guard let feed = (await json("https://rss.applemarketingtools.com/api/v2/\(country)/music/most-played/12/albums.json")
+            guard let feed = (await json("https://rss.marketingtools.apple.com/api/v2/\(country)/music/most-played/12/albums.json")
                                 as? [String: Any])?["feed"] as? [String: Any],
                   let results = feed["results"] as? [[String: Any]], !results.isEmpty else { continue }
             return results.compactMap { album in
