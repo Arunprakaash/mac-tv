@@ -163,6 +163,8 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var externalBrowserService: Service?
     @Published private(set) var externalBrowserError: String?
     @Published private(set) var externalBrowserOpening = false
+    /// The focused button on Mac TV's own Brave screen.
+    @Published var browserFocus = 0
     let browserPreferences: BrowserPreferences
     @Published private(set) var toast: String?
     /// The volume indicator, shown for a moment after the remote changes the volume.
@@ -559,7 +561,7 @@ final class TVController: NSObject, ObservableObject {
         if request.method == "POST", request.path == "/browser/preference" {
             guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
                   let raw = body["player"] as? String, setWebsitePlayer(raw) else {
-                return .json(["error": "Choose Built-in WebKit or install Brave before selecting it."], status: "400 Bad Request")
+                return .json(["error": "Install Brave to choose it."], status: "400 Bad Request")
             }
             return .json(["ok": true])
         }
@@ -894,6 +896,8 @@ final class TVController: NSObject, ObservableObject {
         }
 
         if let browser = externalBrowser {
+            // Mac TV is in front of its Brave window (opening, an error, or brought back): drive its own screen.
+            if NSApp.isActive { handleBrowserScreen(command); return }
             do { _ = try browser.handle(command) }
             catch { externalBrowserError = error.localizedDescription; showToast(error.localizedDescription) }
             return
@@ -940,7 +944,9 @@ final class TVController: NSObject, ObservableObject {
     func open(_ service: Service) {
         closeIINAPlayback()
         closeExternalBrowser()
-        Analytics.send(.appOpened, ["app": analyticsAppName(service)])
+        var opened = ["app": analyticsAppName(service)]
+        if case .web = service.kind { opened["player"] = browserPreferences.choice(for: profile.id).rawValue }
+        Analytics.send(.appOpened, opened)
         playbackRequest = UUID()
         settings = nil
         pairing = false
@@ -1122,7 +1128,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     var braveInstalled: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") != nil }
-    var websitePlayerName: String { browserPreferences.choice(for: profile.id) == .brave ? "Brave" : "Built-in WebKit" }
+    var websitePlayerName: String { browserPreferences.choice(for: profile.id) == .brave ? "Brave" : "Built-in" }
 
     @discardableResult
     func setWebsitePlayer(_ raw: String) -> Bool {
@@ -1149,6 +1155,7 @@ final class TVController: NSObject, ObservableObject {
         launchedAppID = nil
         let session = BraveSession()
         externalBrowser = session
+        browserFocus = 0
         externalBrowserService = service
         mode = .player(service)
         keepAwake.hold(reason: "Watching \(service.name) in Brave")

@@ -413,7 +413,7 @@ struct SettingsSheet: View {
             let minutes = tv.sleepMinutesLeft
             stepper(minutes == 0 ? "Off" : "\(minutes) min left", active: panel.row == 0)
         case .websitePlayer:
-            title("Website player", "Brave chooses the profile; sign-ins and Shields apply across Mac TV profiles")
+            title("Website player")
             stepper(tv.websitePlayerName, active: panel.section.rows[panel.row] == .websitePlayer)
         case .autoSkip:
             title("Skip intros and recaps")
