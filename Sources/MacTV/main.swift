@@ -21,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var tvMode: TVMode?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let flag = CommandLine.arguments.firstIndex(of: "--selftest-brave"), flag + 1 < CommandLine.arguments.count,
+           let url = URL(string: CommandLine.arguments[flag + 1]) {
+            BraveSessionProbe.start(url)
+            return
+        }
         if CommandLine.arguments.contains("--selftest-drm") {
             DRMSelfTest.start()
             return
@@ -242,9 +247,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !CommandLine.arguments.contains("--selftest-brave")
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
+        tv.closeExternalBrowser()
         tv.stopPowerManagement()
     }
 

@@ -10,7 +10,7 @@ struct SettingsPanel: Equatable {
     /// One row on a section's page.
     enum Row: Equatable {
         case phoneRemote, pairingCode, controller
-        case sleepTimer, autoSkip, autoNext, playbackCheck
+        case sleepTimer, autoSkip, autoNext, playbackCheck, websitePlayer
         case addApp, arrangeApps, topShelfPreferences
         case dedicatedTV, preferredDisplay, launchAtLogin
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
@@ -77,7 +77,7 @@ extension SettingsPanel.Section {
     @MainActor var rows: [SettingsPanel.Row] {
         switch self {
         case .remotes: [.phoneRemote, .pairingCode, .controller]
-        case .watching: [.sleepTimer, .autoSkip, .autoNext, .playbackCheck]
+        case .watching: [.sleepTimer, .autoSkip, .autoNext, .playbackCheck, .websitePlayer]
         case .screenSaver: ScreenSaverSettings.wallpaper == .aerials && !Aerials.categories.isEmpty
             ? [.wallpaper, .aerialCategory, .saverDelay, .saverClock, .saverPreview]
             : [.wallpaper, .saverDelay, .saverClock, .saverPreview]
@@ -133,7 +133,7 @@ extension TVController {
         let rows = panel.section.rows
         // Left steps or switches off a row that has a value; on any other row it goes back.
         let adjustable: Set<String> = ["sleepTimer", "wallpaper", "aerialCategory", "saverDelay", "saverClock", "feedback",
-                                       "autoSkip", "autoNext", "dedicatedTV", "preferredDisplay", "launchAtLogin",
+                                       "autoSkip", "autoNext", "websitePlayer", "dedicatedTV", "preferredDisplay", "launchAtLogin",
                                        "keepMacAwake", "lidOverride", "analytics"]
         switch command {
         case .back:
@@ -183,6 +183,7 @@ extension TVController {
         case .preferredDisplay: stepTVDisplay(forward ? 1 : -1)
         case .launchAtLogin: setLaunchAtLogin(forward)
         case .sleepTimer: stepSleepTimer(by: forward ? 1 : -1, wrap: false)
+        case .websitePlayer: stepWebsitePlayer()
         case .wallpaper: ScreenSaverSettings.step(forward ? 1 : -1)
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(forward ? 1 : -1)
         case .saverDelay: ScreenSaverSettings.stepDelay(forward ? 1 : -1)
@@ -215,6 +216,7 @@ extension TVController {
         case .preferredDisplay: stepTVDisplay(1, wrap: true)
         case .launchAtLogin: setLaunchAtLogin(!launchAtLogin)
         case .sleepTimer: stepSleepTimer(by: 1, wrap: true)
+        case .websitePlayer: stepWebsitePlayer()
         case .autoSkip: autoSkip.toggle()
         case .autoNext: autoNext.toggle()
         case .wallpaper:
@@ -410,6 +412,9 @@ struct SettingsSheet: View {
             title("Sleep timer")
             let minutes = tv.sleepMinutesLeft
             stepper(minutes == 0 ? "Off" : "\(minutes) min left", active: panel.row == 0)
+        case .websitePlayer:
+            title("Website player", "Brave chooses the profile; sign-ins and Shields apply across Mac TV profiles")
+            stepper(tv.websitePlayerName, active: panel.section.rows[panel.row] == .websitePlayer)
         case .autoSkip:
             title("Skip intros and recaps")
             SettingSwitch(on: tv.autoSkip)

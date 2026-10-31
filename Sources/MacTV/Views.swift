@@ -40,7 +40,9 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            if case .player = tv.mode, let web = tv.webView {
+            if tv.externalBrowser != nil {
+                TVCanvas { BravePlaybackView(tv: tv) }.ignoresSafeArea()
+            } else if case .player = tv.mode, let web = tv.webView {
                 WebViewHost(webView: web).id(ObjectIdentifier(web))
                     .allowsHitTesting(tv.playerFailure == nil)
                     .accessibilityHidden(tv.playerFailure != nil)
