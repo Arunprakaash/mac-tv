@@ -551,13 +551,11 @@ struct MoviePlayerView: View {
                 .padding(.leading, 96)
                 .padding(.top, 64)
 
-            GlassGroup(spacing: 40) {
-                HStack(spacing: 56) {
-                    PlayerButton(symbol: "gobackward.10", size: 100, pressed: player.pressed == "back") { player.skip(-10) }
-                    PlayerButton(symbol: player.playing ? "pause.fill" : "play.fill", size: 136,
+            HStack(spacing: 120) {
+                TransportButton(symbol: "gobackward.10", size: 64, pressed: player.pressed == "back") { player.skip(-10) }
+                TransportButton(symbol: player.playing ? "pause.fill" : "play.fill", size: 96,
                                  pressed: player.pressed == "playpause") { player.togglePlayback() }
-                    PlayerButton(symbol: "goforward.10", size: 100, pressed: player.pressed == "forward") { player.skip(10) }
-                }
+                TransportButton(symbol: "goforward.10", size: 64, pressed: player.pressed == "forward") { player.skip(10) }
             }
 
             VStack(alignment: .leading, spacing: 18) {
@@ -669,13 +667,12 @@ struct MoviePlayerView: View {
     }
 }
 
-/// A round glass control in the player. `lit` shows it white while its menu is open; `pressed`
-/// dips it briefly when the remote uses it, the same as a click.
+/// A small round glass control at the player's edges (back, subtitles, audio). `lit` shows it
+/// white while its menu is open.
 struct PlayerButton: View {
     let symbol: String
     let size: CGFloat
     var lit = false
-    var pressed = false
     let action: () -> Void
 
     var body: some View {
@@ -684,26 +681,51 @@ struct PlayerButton: View {
                 if lit { Circle().fill(.white) }
                 Image(systemName: symbol)
                     .font(.system(size: size * 0.38, weight: .semibold))
-                    .contentTransition(.symbolEffect(.replace))
             }
             .frame(width: size, height: size)
             .foregroundStyle(lit ? .black : .white)
             .tvGlass(in: Circle())
             .contentShape(Circle())
-            .scaleEffect(pressed ? 0.9 : 1)
-            .animation(Motion.focus, value: pressed)
-            .animation(Motion.focus, value: lit)
+            .animation(Motion.press, value: lit)
         }
-        .buttonStyle(PressStyle())
+        .buttonStyle(PressStyle(pressed: false))
     }
 }
 
-/// Clicked controls dip and spring back, without a highlight.
+/// The middle controls, as in Apple's own video player: plain white symbols over the picture,
+/// no circles. A press, from the remote (`pressed`) or a click, dips the symbol with a faint
+/// highlight behind it.
+struct TransportButton: View {
+    let symbol: String
+    let size: CGFloat
+    var pressed = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace.downUp))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.45), radius: 12, y: 2)
+                .frame(width: size * 1.7, height: size * 1.7)
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressStyle(pressed: pressed))
+    }
+}
+
+/// A press: the control dips a little and a soft highlight shows behind it, then both settle,
+/// with no bounce.
 private struct PressStyle: ButtonStyle {
+    let pressed: Bool
+
     func makeBody(configuration: Configuration) -> some View {
+        let down = pressed || configuration.isPressed
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.9 : 1)
-            .animation(Motion.focus, value: configuration.isPressed)
+            .background(Circle().fill(.white.opacity(down ? 0.14 : 0)))
+            .scaleEffect(down ? 0.92 : 1)
+            .animation(Motion.press, value: down)
     }
 }
 

@@ -711,6 +711,8 @@ enum Motion {
     static let navigate = Animation.smooth(duration: 0.5)
     /// Sheets, toasts and pills arriving and leaving.
     static let appear = Animation.smooth(duration: 0.35)
+    /// A control pressed: quick, settling without a bounce.
+    static let press = Animation.smooth(duration: 0.18)
     /// Tiles following the pointer.
     static let tilt = Animation.interactiveSpring(response: 0.25, dampingFraction: 0.85)
 
