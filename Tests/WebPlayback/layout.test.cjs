@@ -25,7 +25,7 @@ const server = http.createServer((req, res) => {
   if (req.url === '/appicon.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(fs.readFileSync('Assets/AppIcon.png')); return; }
   res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(html);
 });
-let child, socket;
+let child, socket, closeBrowser;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function run() {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -49,6 +49,7 @@ async function run() {
     pending.set(id, m => { clearTimeout(timer); m.error ? reject(new Error(m.error.message)) : resolve(m.result); });
     socket.send(JSON.stringify({ id, method, params }));
   });
+  closeBrowser = () => call('Browser.close');
   const screenshot = async name => {
     if (!screenshotDir) return;
     const result = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
@@ -113,6 +114,14 @@ async function run() {
   try { await run(); }
   catch (error) { console.error(error); process.exitCode = 1; }
   finally {
+    // Graceful browser shutdown lets its helpers flush and close the profile too.
+    // Killing only the parent can leave a helper recreating files during removal.
+    if (closeBrowser && child?.exitCode === null && child?.signalCode === null) {
+      try { await closeBrowser(); } catch { /* The browser can close CDP before replying. */ }
+      if (child.exitCode === null && child.signalCode === null) {
+        await Promise.race([new Promise(resolve => child.once('exit', resolve)), delay(3000)]);
+      }
+    }
     if (socket) socket.close();
     if (child && child.exitCode === null && child.signalCode === null) {
       child.kill('SIGTERM');
@@ -120,6 +129,6 @@ async function run() {
       if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await new Promise(resolve => child.once('exit', resolve)); }
     }
     await new Promise(resolve => server.close(resolve));
-    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await fs.promises.rm(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
   }
 })();
