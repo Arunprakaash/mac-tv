@@ -23,6 +23,7 @@
 1. Download `MacTV-<version>.dmg` from [Releases](../../releases), open it, and drag **Mac TV** to Applications.
 2. The first time you open it, macOS says it can't check the app, because it isn't notarized by Apple. Open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
 3. When macOS asks whether Mac TV may accept incoming network connections, choose **Allow**. Without it, phones can't reach the remote.
+4. A short setup follows: choose your apps, scan a QR code to use your phone as the remote, and you're done.
 
 Requires macOS 14 or later, on an Apple silicon or Intel Mac. One download runs on both.
 
@@ -53,7 +54,7 @@ Pair a PlayStation, Xbox, Switch Pro or other MFi controller with the Mac in Sys
 
 - **Skip intros and recaps, play next episode:** Mac TV presses the players' own Skip Intro, Skip Recap and Next Episode buttons. It never presses an ad's "Skip" button. Turn these off in **Settings** on the TV or **TV controls** on the remote.
 - **Sleep timer:** 15, 30, 60 or 90 minutes. When it ends, playback stops, Mac TV goes home and the screen turns off.
-- **Screensaver:** after 5 idle minutes, a lock-screen-style clock appears over Apple's aerial films, if the Mac has downloaded them in System Settings › Wallpaper or Screen Saver. Otherwise it shows drifting colour.
+- **Screensaver:** after a few idle minutes (2 to 30, your choice), a lock-screen-style clock appears over the wallpaper you pick in **Settings › Screen Saver**: Apple's live wallpapers (the same aerials as System Settings › Wallpaper, shuffled or by category: Landscapes, Cities, Underwater, Space and more; downloaded ones play from the Mac, the rest stream from Apple), the Top Shelf's show art, a folder of your photos, or drifting colour. The clock can be turned off.
 - **Top Shelf:** each streaming app's Top Shelf rotates through artwork from the latest shows on that app, like Apple TV: series with new episodes in the past two weeks, most popular first. That includes YouTube. Spotify and YouTube Music show this week's most-played albums, the cover over its own colours. Any other app you put in the top row (a website, a Mac app, a game) rotates through the top shows from every app. Mac TV refreshes the lists once a day from [TVmaze](https://www.tvmaze.com) (CC BY-SA) and Apple's public music charts. Art with writing in a script other than Latin is skipped; that check runs on your Mac.
 - **Movies:** plays the video files in your Movies folder, and any other folders or drives you turn on. MKV files with H.264 or HEVC video and AAC, Dolby Digital, Dolby Digital Plus, Opus or MP3 audio play in Mac TV's own player using macOS's decoders, with nothing converted; so do MP4, MOV and M4V. The player has Apple TV's controls in Liquid Glass: left and right skip 10 seconds, select plays or pauses, down opens subtitles and audio, and they all work with the mouse too. Subtitles inside the file and `.srt` files next to it both work. Movies you've started appear in Continue Watching, with Resume or Start from the Beginning. Posters come from Apple's movie catalogue when the title matches exactly, otherwise from a frame of the film. Anything else (AVI, 10-bit H.264, VP9) opens in IINA or VLC if you have one.
 - **Privacy:** Mac TV doesn't keep a list of what you watch in streaming apps, and the home screen never shows one. The Movies app remembers where you stopped in your own files, on your Mac, for Continue Watching.
@@ -80,7 +81,7 @@ Pin your favourites to keep them first on the home screen and phone remote. The 
 appear in the home-screen dock; additional favourites continue in the grid. Apps can be moved
 earlier or later within their favourite or non-favourite group. Add App and Settings stay at the end.
 
-- **On the TV:** open **Settings › Arrange Apps**. Up and down select an app; left and right choose
+- **On the TV:** open **Settings › Apps › Arrange Apps**. Up and down select an app; left and right choose
   Pin/Unpin, Move earlier or Move later; press OK to apply. Back returns to Settings. The keyboard,
   game controller and phone's D-pad all work.
 - **On your phone:** open **Apps › Edit**, then use each app's pin and movement buttons. Tap Finish
@@ -136,10 +137,10 @@ MIT. See [LICENSE](LICENSE). App icons and service names belong to their owners 
 - **Settings › Dedicated TV mode:** choose a preferred display and start fullscreen. Display changes
   trigger recovery to the preferred display when available. **Exit TV mode** restores a normal window.
 - **Launch at login** is optional and may require approval in macOS Login Items settings.
-- **Settings › Top Shelf:** choose a household country and languages. Featured titles include
+- **Settings › Apps › Top Shelf:** choose a household country and languages. Featured titles include
   service search actions where a search route is known. A title in the feed does not establish local availability.
 - Streaming load failures offer **Retry**, **Open in Safari**, and **Home**, using the D-pad or mouse.
-- **Settings › Playback check:** inspect WebKit DRM capabilities and display configuration. Actual
+- **Settings › Watching › Playback check:** inspect WebKit DRM capabilities and display configuration. Actual
   playback resolution, HDR and HDCP remain unverified by this diagnostic.
 
 ## Paired phones
@@ -166,3 +167,22 @@ For isolated UI checks, `MACTV_DATA_DIR` can point at an absolute test data dire
 For a checkout on a cloud-synchronised drive, set `MACTV_BUILD_DIR` to an established local scratch
 directory to keep the compiler's SQLite build database off the cloud drive. The finished app still
 appears in the checkout's `build` folder.
+
+## Files from your iPhone and subtitle fallback
+
+Open **Apps › Files on Mac** on the paired phone. Browse Home, Downloads, Movies, Desktop,
+external drives or selected library folders; filter the displayed filenames, then choose a video.
+Use **Play on Mac TV** for the built-in player or **Play in IINA** for IINA. Only video and subtitle
+files are shown alongside folders. File browsing does not require a keyboard on the Mac. macOS
+may ask for access to a protected folder. Guest remotes cannot use the file browser.
+
+For a selected movie, the phone can request IINA's online subtitle search, pick a local subtitle
+file, or open a subtitle website on the phone. If online lookup fails, download a UTF-8 `.srt`
+on the phone and upload it (up to 256 KiB). It is saved in Mac TV's own application data folder;
+applying it opens the movie in IINA. Loading an external subtitle may reopen the video; verify
+its playback position. IINA search and external-app control require macOS Accessibility permission.
+Provider login, subtitle availability, and successful downloads remain IINA/provider-dependent.
+
+ITVX and Channel 4 are included as website tiles. Use **Add App › Website** for other sites,
+such as netmirror.app. The remote can target an HTML video inside a visible embedded frame,
+but provider restrictions, sign-in, protected players and site compatibility still apply.

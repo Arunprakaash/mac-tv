@@ -152,6 +152,9 @@ final class RemoteServer {
         guard let device = pairing.authenticate(request.headers["x-couch-key"]) else {
             return .json(["error": "Pair with the TV first"], status: "401 Unauthorized")
         }
+        if device.isGuest && (request.path == "/files" || request.path.hasPrefix("/files/")) {
+            return .json(["error": "Guest remotes cannot browse Mac files. Pair a trusted device to use Files."], status: "403 Forbidden")
+        }
         if request.path == "/devices" || request.path.hasPrefix("/devices/") {
             guard !device.isGuest else { return .json(["error": "Guests cannot manage devices"], status: "403 Forbidden") }
             switch (request.method, request.path) {
@@ -174,7 +177,9 @@ final class RemoteServer {
 
         switch (request.method, request.path) {
         case ("GET", "/state"):
-            return .json(state())
+            var snapshot = state()
+            if device.isGuest { snapshot.removeValue(forKey: "currentLocalMovie") }
+            return .json(snapshot)
         case ("POST", "/cmd"):
             guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
                   let command = RemoteCommand(json: object)

@@ -81,4 +81,24 @@ import Testing
         #expect(RemoteServer.pairingCode(now: start.addingTimeInterval(299)) == first)
         #expect(RemoteServer.pairingCode(now: start.addingTimeInterval(300)) != first)
     }
+    @Test func guestsCannotBrowseFilesOrReadSelectedMovie() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let folder = root.appendingPathComponent("work/tests/\(UUID().uuidString)")
+        let suite = "MacTVTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
+        let store = PairingStore(folder: folder)
+        let token = try store.issue(name: "Guest", guest: true)
+        var routed = false
+        let server = RemoteServer(token: "unused", onCommand: { _ in }, state: { ["currentLocalMovie": ["title": "Private"], "mode": "launcher"] }, icon: { _ in nil }, routes: { _ in routed = true; return nil }, pairing: store, defaults: defaults)
+        for path in ["/files", "/files/roots", "/files/play", "/files/subtitle-upload"] {
+            let response = server.respond(to: HTTPRequest(method: "GET", path: path, query: [:], headers: ["x-couch-key": token], body: Data()))
+            #expect(response.status == "403 Forbidden")
+        }
+        #expect(!routed)
+        let response = server.respond(to: HTTPRequest(method: "GET", path: "/state", query: [:], headers: ["x-couch-key": token], body: Data()))
+        let state = try #require(try JSONSerialization.jsonObject(with: response.body) as? [String: Any])
+        #expect(state["currentLocalMovie"] == nil)
+    }
+
 }

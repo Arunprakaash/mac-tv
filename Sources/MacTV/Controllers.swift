@@ -118,7 +118,7 @@ final class ControllerInput {
     }
 
     private func send(_ command: RemoteCommand) {
-        tv?.handle(command)
+        tv?.handle(command, from: .controller)
     }
 
     static func info(for controller: GCController) -> ControllerInfo {
@@ -153,8 +153,8 @@ struct ControllerBanner: View {
         HStack(spacing: 14) {
             Image(systemName: "gamecontroller.fill").font(.system(size: 26, weight: .semibold))
             VStack(alignment: .leading, spacing: 2) {
-                Text(notice.info.name).font(.system(size: 21, weight: .semibold)).lineLimit(1)
-                Text(notice.connected ? "Connected" : "Disconnected").font(.system(size: 17)).foregroundStyle(.white.opacity(0.65))
+                Text(notice.info.name).font(.tv(.caption2)).lineLimit(1)
+                Text(notice.connected ? "Connected" : "Disconnected").font(.tv(.caption2)).foregroundStyle(.white.opacity(0.65))
             }
             if notice.connected, notice.info.battery != nil || notice.info.charging {
                 Image(systemName: notice.info.batterySymbol).font(.system(size: 22)).foregroundStyle(.white.opacity(0.8))
@@ -178,7 +178,7 @@ struct ControllerHints: View {
             hint(info.backSymbol, "Back")
             hint(info.menuSymbol, "Home")
         }
-        .font(.system(size: 19, weight: .semibold))
+        .font(.tv(.caption2))
         .padding(.horizontal, 20)
         .frame(height: 50)
         .tvGlass(in: Capsule())

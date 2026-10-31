@@ -34,7 +34,8 @@ struct AddedApp: Codable, Hashable {
 }
 
 /// The home screen's apps: the built-in catalog minus any the user removed, plus the apps they
-/// added, then Settings. Kept in ~/Library/Application Support/Mac TV/apps.json.
+/// added, then Settings. Kept in ~/Library/Application Support/Mac TV/apps.json, or
+/// apps-<profile>.json for profiles after the first.
 @MainActor
 final class AppLibrary {
     private struct Saved: Codable {
@@ -58,18 +59,35 @@ final class AppLibrary {
 
     private var saved = Saved()
     private let file: URL
+    /// Added apps' ids start with this, so two profiles adding the same site keep separate icons.
+    private let idPrefix: String
     let iconsFolder: URL
 
-    init(folder: URL = AppFolder.url) {
+    let storageFolder: URL
+
+    init(profileID: String = Profile.mainID, folder: URL = AppFolder.url) {
+        storageFolder = folder
         iconsFolder = folder.appendingPathComponent("Icons", isDirectory: true)
         try? FileManager.default.createDirectory(at: iconsFolder, withIntermediateDirectories: true)
-        file = folder.appendingPathComponent("apps.json")
+        let main = profileID == Profile.mainID
+        file = folder.appendingPathComponent(main ? "apps.json" : "apps-\(profileID).json")
+        idPrefix = main ? "user-" : "user-\(profileID)-"
         if let data = try? Data(contentsOf: file), let decoded = try? JSONDecoder().decode(Saved.self, from: data) {
             saved = decoded
         }
     }
 
     var hasHiddenBuiltIns: Bool { !saved.hidden.isEmpty }
+    /// The user has added or removed an app at some point.
+    var hasSavedApps: Bool { FileManager.default.fileExists(atPath: file.path) }
+
+    func isHidden(_ id: String) -> Bool { saved.hidden.contains(id) }
+
+    /// Shows or hides a built-in app, for first-run setup.
+    func setHidden(_ id: String, _ hidden: Bool) {
+        if hidden { saved.hidden.insert(id) } else { saved.hidden.remove(id) }
+        save()
+    }
 
     func services() -> [Service] {
         let visible = orderedApps.filter { !saved.hidden.contains($0.id) && $0.isInstalled }
@@ -139,7 +157,7 @@ final class AppLibrary {
     @discardableResult
     func add(name: String, url: URL?, bundleID: String?, steamID: String? = nil) -> AddedApp {
         let base = name.lowercased().filter { $0.isLetter || $0.isNumber }
-        var id = "user-" + (base.isEmpty ? "app" : base)
+        var id = idPrefix + (base.isEmpty ? "app" : base)
         let taken = Set(Catalog.services.map(\.id) + saved.added.map(\.id))
         if taken.contains(id) { id += "-\(Int.random(in: 1000...9999))" }
         let app = AddedApp(id: id, name: name, url: url, bundleID: bundleID, steamID: steamID)
@@ -151,7 +169,10 @@ final class AppLibrary {
         return app
     }
 
+    func containsAddedApp(_ id: String) -> Bool { saved.added.contains { $0.id == id } }
+
     func setIcon(_ png: Data, accent: String?, for id: String) {
+        guard containsAddedApp(id) else { return }
         try? png.write(to: iconFile(for: id), options: .atomic)
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added[index].accent = accent

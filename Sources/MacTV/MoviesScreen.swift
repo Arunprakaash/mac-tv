@@ -205,7 +205,7 @@ struct MoviesScreen: View {
                     // Room for a focused poster to grow without covering its row's name.
                     VStack(alignment: .leading, spacing: 42) {
                         Text(row.title ?? " ")
-                            .font(.system(size: 26, weight: .bold))
+                            .font(.tv(.body, emphasized: true))
                             .foregroundStyle(.white.opacity(0.7))
                             .frame(height: 34)
                         HStack(spacing: PosterLayout.spacing) {
@@ -252,18 +252,18 @@ struct MoviesScreen: View {
             switch item {
             case .folders:
                 Text(library.movies.isEmpty ? "No movies yet" : "Folders")
-                    .font(.system(size: 64, weight: .bold)).tracking(-1)
+                    .font(.tv(.title2, emphasized: true))
                 Text(library.scanning ? "Looking for movies…" : foldersLine)
-                    .font(.system(size: 26, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                    .font(.tv(.body)).foregroundStyle(.white.opacity(0.7))
                     .frame(maxWidth: 1100, alignment: .leading)
             case .movie:
                 if let movie {
                     Text(movie.displayTitle)
-                        .font(.system(size: 64, weight: .bold)).tracking(-1)
+                        .font(.tv(.title2, emphasized: true))
                         .lineLimit(2)
                         .frame(maxWidth: 1300, alignment: .leading)
                     Text(details(of: movie))
-                        .font(.system(size: 26, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        .font(.tv(.body)).foregroundStyle(.white.opacity(0.7))
                 }
             }
         }
@@ -403,9 +403,9 @@ struct FoldersSheet: View {
     var body: some View {
         let folders = library.suggestedFolders
         VStack(alignment: .leading, spacing: 10) {
-            Text("Folders").font(.system(size: 52, weight: .heavy)).tracking(-1)
+            Text("Folders").font(.tv(.title3, emphasized: true))
             Text("Mac TV shows the movies in the folders you turn on, including folders inside them.")
-                .font(.system(size: 22)).foregroundStyle(.white.opacity(0.65))
+                .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.65))
                 .padding(.bottom, 14)
             ForEach(Array(folders.enumerated()), id: \.element) { index, folder in
                 row(index, systemImage: folder.path.hasPrefix("/Volumes/") ? "externaldrive.fill" : "folder.fill",
@@ -419,7 +419,8 @@ struct FoldersSheet: View {
         }
         .padding(56)
         .frame(width: 980, alignment: .leading)
-        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .frame(width: canvas.width, height: canvas.height)
         .background(Color.black.opacity(0.35))
         .animation(Motion.focus, value: focusedRow)
@@ -430,7 +431,7 @@ struct FoldersSheet: View {
         let focused = index == focusedRow
         return HStack(spacing: 18) {
             Image(systemName: systemImage).font(.system(size: 24)).frame(width: 34)
-            Text(title).font(.system(size: 27, weight: .semibold)).lineLimit(1)
+            Text(title).font(.tv(.body)).lineLimit(1)
             Spacer(minLength: 0)
             trailing()
         }
@@ -462,7 +463,7 @@ struct ResumeSheet: View {
     var body: some View {
         let position = movie.position ?? 0
         VStack(spacing: 18) {
-            Text(movie.displayTitle).font(.system(size: 34, weight: .bold)).lineLimit(2).multilineTextAlignment(.center)
+            Text(movie.displayTitle).font(.tv(.callout, emphasized: true)).lineLimit(2).multilineTextAlignment(.center)
                 .padding(.bottom, 10)
             button("Resume from \(MoviePlayerView.clock(position))", systemImage: "play.fill", focused: row == 0) {
                 choose(max(0, position - 5))
@@ -471,7 +472,8 @@ struct ResumeSheet: View {
         }
         .padding(48)
         .frame(width: 720)
-        .tvGlass(in: RoundedRectangle(cornerRadius: 40, style: .continuous))
+        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 40, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 40, style: .continuous))
         .frame(width: canvas.width, height: canvas.height)
         .background(Color.black.opacity(0.35))
     }
@@ -512,7 +514,7 @@ struct MoviePlayerView: View {
                 ZStack(alignment: .bottom) {
                     if let text = player.subtitleText {
                         Text(text)
-                            .font(.system(size: 46, weight: .semibold))
+                            .font(.tv(.title3))
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.white)
                             .shadow(color: .black.opacity(0.9), radius: 3)
@@ -551,7 +553,7 @@ struct MoviePlayerView: View {
                 .padding(.leading, 96)
                 .padding(.top, 64)
 
-            GlassGroup(spacing: 40) {
+            GlassGroup(spacing: 0) {
                 HStack(spacing: 56) {
                     TransportButton(symbol: "gobackward.10", size: 100, pressed: player.pressed == "back") { player.skip(-10) }
                     TransportButton(symbol: player.playing ? "pause.fill" : "play.fill", size: 136,
@@ -567,10 +569,10 @@ struct MoviePlayerView: View {
                 HStack(alignment: .bottom, spacing: 24) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(player.movie.displayTitle)
-                            .font(.system(size: 40, weight: .bold))
+                            .font(.tv(.headline, emphasized: true))
                             .lineLimit(1)
                         if !details.isEmpty {
-                            Text(details).font(.system(size: 22, weight: .medium)).opacity(0.7)
+                            Text(details).font(.tv(.caption2)).opacity(0.7)
                         }
                     }
                     .shadow(color: .black.opacity(0.5), radius: 8)
@@ -637,7 +639,7 @@ struct MoviePlayerView: View {
         return HStack(alignment: .top, spacing: 40) {
             ForEach(Array(columns.enumerated()), id: \.offset) { column, options in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(titles[column]).font(.system(size: 20, weight: .bold)).textCase(.uppercase).tracking(1).opacity(0.6)
+                    Text(titles[column]).font(.tv(.caption2, emphasized: true)).textCase(.uppercase).tracking(1).opacity(0.6)
                         .padding(.leading, 16)
                     ForEach(Array(options.enumerated()), id: \.offset) { row, title in
                         let focused = menu.column == column && menu.row == row

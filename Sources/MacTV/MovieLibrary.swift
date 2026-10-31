@@ -31,14 +31,48 @@ struct Movie: Codable, Identifiable, Hashable {
     }
 }
 
-/// The movies in the folders you choose (your Movies folder to begin with), with posters and
+/// Persists the watched folders and adds Downloads once for existing installations.
+struct MovieFolderPreferences {
+    private let defaults: UserDefaults
+    private let movies: URL
+    private let downloads: URL
+    private let foldersKey = "movieFolders"
+    private let migrationKey = "movieFoldersDownloadsAdded"
+
+    init(defaults: UserDefaults = .standard, movies: URL, downloads: URL) {
+        self.defaults = defaults
+        self.movies = movies.standardizedFileURL
+        self.downloads = downloads.standardizedFileURL
+    }
+
+    var folders: [URL] {
+        get {
+            var paths = defaults.stringArray(forKey: foldersKey)
+                ?? [movies.path]
+            if !defaults.bool(forKey: migrationKey) {
+                if !paths.contains(where: { URL(fileURLWithPath: $0).standardizedFileURL.path == downloads.path }) {
+                    paths.append(downloads.path)
+                }
+                defaults.set(paths, forKey: foldersKey)
+                defaults.set(true, forKey: migrationKey)
+            }
+            return paths.map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }
+        }
+        nonmutating set {
+            defaults.set(newValue.map { $0.standardizedFileURL.path }, forKey: foldersKey)
+            defaults.set(true, forKey: migrationKey)
+        }
+    }
+}
+
+/// The movies in the folders you choose (Movies and Downloads to begin with), with posters and
 /// where you stopped. Kept in ~/Library/Application Support/Mac TV/Movies. Posters come from
 /// Apple's public movie search when the title matches exactly, otherwise from a frame of the film.
 @MainActor
 final class MovieLibrary: ObservableObject {
     static let shared = MovieLibrary()
 
-    static let extensions: Set<String> = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "ts", "m2ts", "mts", "mpg", "mpeg", "3gp"]
+    nonisolated static let extensions: Set<String> = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "ts", "m2ts", "mts", "mpg", "mpeg", "3gp"]
 
     @Published private(set) var movies: [Movie] = []
     @Published private(set) var scanning = false
@@ -59,21 +93,25 @@ final class MovieLibrary: ObservableObject {
 
     // MARK: Folders
 
+    private var folderPreferences: MovieFolderPreferences {
+        MovieFolderPreferences(movies: Self.systemFolder(.moviesDirectory, fallback: "Movies"),
+                               downloads: Self.systemFolder(.downloadsDirectory, fallback: "Downloads"))
+    }
+
     /// The folders Mac TV looks in.
     var folders: [URL] {
-        get {
-            let saved = UserDefaults.standard.stringArray(forKey: "movieFolders")
-            return (saved ?? [Self.home("Movies").path]).map { URL(fileURLWithPath: $0, isDirectory: true) }
-        }
+        get { folderPreferences.folders }
         set {
-            UserDefaults.standard.set(newValue.map(\.path), forKey: "movieFolders")
+            folderPreferences.folders = newValue
             objectWillChange.send()
         }
     }
 
     /// Folders worth offering: the usual places, drives, and any you chose yourself.
     var suggestedFolders: [URL] {
-        var list = ["Movies", "Downloads", "Desktop", "Documents"].map(Self.home)
+        var list = [Self.systemFolder(.moviesDirectory, fallback: "Movies"),
+                    Self.systemFolder(.downloadsDirectory, fallback: "Downloads"),
+                    Self.home("Desktop"), Self.home("Documents")].map(\.standardizedFileURL)
         let volumes = (try? FileManager.default.contentsOfDirectory(
             at: URL(fileURLWithPath: "/Volumes"), includingPropertiesForKeys: [.volumeIsInternalKey],
             options: .skipsHiddenFiles)) ?? []
@@ -82,19 +120,25 @@ final class MovieLibrary: ObservableObject {
         return list
     }
 
-    func isWatched(_ folder: URL) -> Bool { folders.contains(folder) }
+    func isWatched(_ folder: URL) -> Bool { folders.contains(folder.standardizedFileURL) }
 
     func toggle(_ folder: URL) {
         var list = folders
+        let folder = folder.standardizedFileURL
         if let index = list.firstIndex(of: folder) { list.remove(at: index) } else { list.append(folder) }
         folders = list
         refresh()
     }
 
     func add(_ folder: URL) {
+        let folder = folder.standardizedFileURL
         guard !folders.contains(folder) else { return }
         folders = folders + [folder]
         refresh()
+    }
+
+    private static func systemFolder(_ directory: FileManager.SearchPathDirectory, fallback: String) -> URL {
+        FileManager.default.urls(for: directory, in: .userDomainMask).first ?? home(fallback)
     }
 
     private static func home(_ name: String) -> URL {

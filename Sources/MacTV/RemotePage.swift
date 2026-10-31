@@ -121,6 +121,12 @@ enum RemotePage {
       .list button { display:flex; align-items:center; justify-content:space-between; gap:10px; height:50px; border:0; border-radius:14px; background:rgba(255,255,255,.07); padding:0 16px; font-size:15px; font-weight:600; text-align:left; }
       .list button span:last-child { font-size:12px; color:var(--dim); font-weight:600; }
       .list button[disabled] { opacity:.5; }
+      .file-path { color:var(--dim); font-size:13px; overflow-wrap:anywhere; }
+      .file-list button { min-height:50px; height:auto; padding:12px 16px; }
+      .file-list button span:first-child { overflow-wrap:anywhere; min-width:0; }
+      .file-actions { display:grid; gap:8px; }
+      .file-actions button { min-height:48px; }
+      #files-sheet button:focus-visible { outline:3px solid #8ec7ff; outline-offset:3px; }
       #pair { position:fixed; inset:0; background:var(--ambient); display:none; flex-direction:column; justify-content:center; gap:14px; padding:24px; text-align:center; z-index:9; }
       #pair.show { display:flex; }
       #pair h1 { margin:0; font-size:26px; }
@@ -181,10 +187,41 @@ enum RemotePage {
     <div class="scrim" id="apps-sheet">
       <div class="sheet" role="dialog" aria-label="Apps">
         <div class="sheet-head"><span id="apps-title">Open on TV</span><div><button class="pill" id="edit-apps">Edit</button><button class="pill" data-close>Done</button></div></div>
+        <button class="row-btn" id="open-files">📁  Files on Mac</button>
         <div class="apps" id="apps"></div>
         <p class="note" id="edit-note" hidden>Pinned favourites appear first. Move apps within favourites or other apps. Removed built-in apps can be restored.</p>
         <p class="note" id="apps-msg" role="status" aria-live="polite" hidden></p>
         <button class="row-btn" id="restore" hidden>Restore built-in apps</button>
+      </div>
+    </div>
+
+    <div class="scrim" id="files-sheet">
+      <div class="sheet" role="dialog" aria-label="Files on Mac">
+        <div class="sheet-head"><span>Files on Mac</span><div><button class="pill" id="files-back">Back</button><button class="pill" data-close>Done</button></div></div>
+        <div class="file-path" id="files-path"></div>
+        <input class="field" id="files-filter" placeholder="Filter filenames" aria-label="Filter filenames" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <p class="note" id="files-msg" role="status" aria-live="polite"></p>
+        <div class="list file-list" id="files-list"></div>
+        <button class="row-btn" id="files-more" hidden>Load more</button>
+        <div id="movie-options" hidden>
+          <div class="group-label">Selected video</div>
+          <p id="movie-name"></p>
+          <div class="file-actions">
+            <button class="row-btn" id="play-native">Play on Mac TV</button>
+            <button class="row-btn" id="play-iina">Play in IINA</button>
+            <button class="row-btn" id="subtitle-options">Subtitle options</button>
+          </div>
+        </div>
+        <div id="subtitle-panel" hidden>
+          <div class="group-label">Subtitles</div>
+          <p class="note">Choose a subtitle from this folder or upload a UTF-8 .srt file from your phone (up to 256 KB). Applying a subtitle opens the video in IINA.</p>
+          <div class="list file-list" id="subtitle-list"></div>
+          <input id="subtitle-upload" type="file" accept=".srt,text/plain" aria-label="Upload subtitle file">
+          <div class="file-actions">
+            <button class="row-btn" id="subtitle-search-iina">Search in IINA</button>
+            <button class="row-btn" id="subtitle-search-web">Search subtitles on phone</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -321,7 +358,7 @@ enum RemotePage {
     }
 
     // State: connection, the app list, settings.
-    let appsShown = '', apps = [], canRestore = false;
+    let appsShown = '', apps = [], canRestore = false, currentLocalMovie = null, iinaInstalled = false;
     let stateGeneration = 0, appMutationPending = false;
     async function refresh(duringMutation = false) {
       if (appMutationPending && !duringMutation) return false;
@@ -335,6 +372,9 @@ enum RemotePage {
         const focused = appFocus();
         apps = s.apps;
         canRestore = s.canRestore;
+        currentLocalMovie = s.currentLocalMovie || null;
+        iinaInstalled = !!s.iinaInstalled;
+        updateMovieOptions();
         showSleep(s.sleepMinutes || 0);
         $('#auto-skip').checked = s.autoSkip;
         $('#auto-next').checked = s.autoNext;
@@ -501,6 +541,134 @@ enum RemotePage {
     }
     $('#edit-apps').onclick = () => { haptic('tick'); editing = !editing; appMessage(''); renderApps(); };
     $('#restore').onclick = () => changeApp('/apps/restore', {}, 'Restored built-in apps.');
+
+    // File IDs come from the server and remain opaque; names are always rendered as text.
+    let fileTrail = [], fileEntries = [], fileNext = null, selectedMovie = null, fileGeneration = 0;
+    function fileMessage(message, error = false) {
+      $('#files-msg').textContent = message;
+      $('#files-msg').className = error ? 'note err' : 'note';
+    }
+    function updateMovieOptions() {
+      $('#play-iina').disabled = !iinaInstalled;
+      $('#play-iina').textContent = iinaInstalled ? 'Play in IINA' : 'IINA not installed';
+      $('#subtitle-search-iina').disabled = !iinaInstalled;
+    }
+    async function loadFiles(more = false) {
+      const generation = ++fileGeneration;
+      const folder = fileTrail[fileTrail.length - 1];
+      const offset = more ? fileNext : 0;
+      fileMessage('Loading…');
+      try {
+        const data = await api(folder ? `/files?folder=${encodeURIComponent(folder.id)}&offset=${encodeURIComponent(offset)}&limit=100` : '/files/roots');
+        if (generation !== fileGeneration) return;
+        const items = folder ? (data.entries || []) : (data.roots || []);
+        fileEntries = more ? fileEntries.concat(items) : items;
+        fileNext = folder && data.nextOffset != null ? data.nextOffset : null;
+        fileMessage('');
+        renderFiles();
+      } catch (e) {
+        if (generation !== fileGeneration) return;
+        fileMessage(e.message === 'unpaired' ? 'Pair with the TV first.' : e.message, true);
+      }
+    }
+    function renderFiles() {
+      $('#files-path').textContent = ['Locations', ...fileTrail.map(item => item.name)].join(' › ');
+      $('#files-back').disabled = !fileTrail.length;
+      $('#files-more').hidden = fileNext == null;
+      const list = $('#files-list'); list.textContent = '';
+      const filter = $('#files-filter').value.trim().toLocaleLowerCase();
+      const matches = fileEntries.filter(item => item.name.toLocaleLowerCase().includes(filter));
+      for (const item of matches) {
+        const button = document.createElement('button');
+        const name = document.createElement('span'); name.textContent = item.name;
+        const tag = document.createElement('span');
+        tag.textContent = item.kind === 'directory' ? 'Folder ›' : item.kind === 'subtitle' ? 'Subtitle' : 'Video';
+        button.append(name, tag);
+        button.onclick = () => {
+          if (item.kind === 'directory') {
+            fileTrail.push({ id:item.id, name:item.name });
+            $('#files-filter').value = ''; loadFiles();
+          } else if (item.kind === 'video') {
+            selectedMovie = { id:item.id, title:item.name };
+            $('#movie-name').textContent = item.name;
+            $('#movie-options').hidden = false;
+            $('#subtitle-panel').hidden = true;
+            fileMessage('Choose a player or subtitle option.');
+          } else if (item.kind === 'subtitle' && selectedMovie) {
+            applySubtitle(item.id);
+          } else {
+            fileMessage('Select a video first, then choose a subtitle.');
+          }
+        };
+        list.appendChild(button);
+      }
+      if (!matches.length) {
+        const empty = document.createElement('p'); empty.className = 'note';
+        empty.textContent = filter ? 'No loaded filenames match.' : 'No playable files or folders here.';
+        list.appendChild(empty);
+      }
+    }
+    $('#open-files').onclick = () => {
+      haptic('tick'); $('#apps-sheet').classList.remove('show'); $('#files-sheet').classList.add('show');
+      fileTrail = []; fileEntries = []; fileNext = null; $('#files-filter').value = '';
+      selectedMovie = currentLocalMovie;
+      $('#movie-options').hidden = !selectedMovie; $('#subtitle-panel').hidden = true;
+      if (selectedMovie) $('#movie-name').textContent = selectedMovie.title;
+      updateMovieOptions(); loadFiles();
+    };
+    $('#files-back').onclick = () => { if (fileTrail.length) { fileTrail.pop(); $('#files-filter').value = ''; loadFiles(); } };
+    $('#files-filter').addEventListener('input', renderFiles);
+    $('#files-more').onclick = () => { if (fileNext != null) loadFiles(true); };
+    async function playFile(player) {
+      if (!selectedMovie) return;
+      try {
+        fileMessage('Opening video…');
+        await api('/files/play', { id:selectedMovie.id, player });
+        fileMessage(player === 'iina' ? 'Playback requested in IINA on the Mac.' : 'Playback requested on Mac TV.');
+        refresh();
+      } catch (e) { fileMessage(e.message === 'unpaired' ? 'Pair with the TV first.' : e.message, true); }
+    }
+    $('#play-native').onclick = () => playFile('native');
+    $('#play-iina').onclick = () => playFile('iina');
+    async function applySubtitle(id) {
+      if (!selectedMovie) return;
+      try { await api('/files/subtitle', { movie:selectedMovie.id, subtitle:id }); fileMessage('Opening the video with subtitles in IINA.'); }
+      catch (e) { fileMessage(e.message === 'unpaired' ? 'Pair with the TV first.' : e.message, true); }
+    }
+    $('#subtitle-options').onclick = async () => {
+      if (!selectedMovie) return;
+      $('#subtitle-panel').hidden = false;
+      const list = $('#subtitle-list'); list.textContent = '';
+      try {
+        const data = await api(`/files/subtitles?movie=${encodeURIComponent(selectedMovie.id)}`);
+        for (const item of data.entries || []) {
+          const button = document.createElement('button'); button.textContent = item.name;
+          button.onclick = () => applySubtitle(item.id); list.appendChild(button);
+        }
+        if (!list.childElementCount) { const note = document.createElement('p'); note.className = 'note'; note.textContent = 'No subtitles found beside this video.'; list.appendChild(note); }
+      } catch (e) { fileMessage(e.message === 'unpaired' ? 'Pair with the TV first.' : e.message, true); }
+    };
+    $('#subtitle-upload').onchange = async e => {
+      const input = e.target, file = input.files[0];
+      if (!file || !selectedMovie) return;
+      try {
+        if (!/\.srt$/i.test(file.name) || !file.size || file.size > 256 * 1024) throw new Error('Choose a non-empty .srt file up to 256 KB.');
+        const content = new TextDecoder('utf-8', { fatal:true }).decode(await file.arrayBuffer());
+        await api('/files/subtitle-upload', { movie:selectedMovie.id, name:file.name, content });
+        fileMessage('Subtitle uploaded; opening the video in IINA.');
+      } catch (err) { fileMessage(err.message === 'unpaired' ? 'Pair with the TV first.' : err.message, true); }
+      finally { input.value = ''; }
+    };
+    $('#subtitle-search-iina').onclick = async () => {
+      if (!selectedMovie) return;
+      try { await api('/files/subtitle-search', { movie:selectedMovie.id }); fileMessage('Requested subtitle search in IINA.'); }
+      catch (e) { fileMessage(e.message === 'unpaired' ? 'Pair with the TV first.' : e.message, true); }
+    };
+    $('#subtitle-search-web').onclick = () => {
+      if (!selectedMovie) return;
+      window.open('https://www.opensubtitles.org/en/search/sublanguageid-all/moviename-' + encodeURIComponent(selectedMovie.title.replace(/\.[^.]+$/, '')), '_blank', 'noopener,noreferrer');
+      fileMessage('Download a subtitle on your phone, then upload the .srt here.');
+    };
 
     function openAdd() {
       $('#apps-sheet').classList.remove('show');
