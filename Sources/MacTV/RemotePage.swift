@@ -38,7 +38,9 @@ enum RemotePage {
       /* tvOS focus: a press lights the control up as a white platter. */
       .round.pressed, .key.pressed, .pill.pressed, .row-btn.pressed { background:#fff; color:#000; }
       header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-      header h1 { margin:0; font-size:20px; font-weight:800; letter-spacing:-.02em; }
+      header h1 { margin:0; font-size:20px; font-weight:800; letter-spacing:-.02em; line-height:0; }
+      /* The app icon stands in for the name at the top of the remote. */
+      header h1 img { width:44px; height:44px; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,.35)); }
       .status[hidden] { display:none; }
       .status { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none; }
@@ -122,7 +124,7 @@ enum RemotePage {
     <main>
       <header>
         <div style="min-width:0">
-          <h1>Mac TV</h1>
+          <h1><img src="/appicon.png" alt="Mac TV"></h1>
           <div class="status" hidden><span class="dot" id="dot"></span><span id="status"></span></div>
         </div>
         <div class="actions">
