@@ -450,7 +450,10 @@ struct AudioVolumeSlider: View {
 
                 Text(volume.muted ? "Muted" : "\(level)%")
                     .font(.tv(.caption1, emphasized: true))
-                    .frame(width: 54, alignment: .trailing)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 80, alignment: .trailing)
                     .foregroundStyle(focused ? .white : .white.opacity(0.75))
             } else {
                 Text("Volume is set on the TV")
