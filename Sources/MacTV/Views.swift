@@ -118,6 +118,7 @@ struct RootView: View {
         .environment(\.colorScheme, .dark)
         .background(Color.black.ignoresSafeArea())
         .animation(Motion.appear, value: tv.toast)
+        .animation(Motion.appear, value: tv.audioPicker != nil)
         .animation(Motion.appear, value: tv.pairing)
         .animation(Motion.appear, value: tv.settings != nil)
         .animation(Motion.appear, value: tv.organizer != nil)
@@ -191,6 +192,14 @@ struct ModalSheetRouter: View {
                     .ignoresSafeArea()
                     .allowsHitTesting(tv.isTopSheet(.playbackCheck))
                     .accessibilityHidden(!tv.isTopSheet(.playbackCheck))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.audioPicker != nil {
+                TVCanvas { AudioPickerSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.audioPicker))
+                    .accessibilityHidden(!tv.isTopSheet(.audioPicker))
                     .background { SheetBackdrop() }
                     .transition(Motion.sheet(reduceMotion: reduceMotion))
             }

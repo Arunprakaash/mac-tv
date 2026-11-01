@@ -133,6 +133,7 @@ final class TVController: NSObject, ObservableObject {
         case playbackCheck
         case profilePicker
         case setup
+        case audioPicker
 
         var id: Int { rawValue }
 
@@ -146,6 +147,7 @@ final class TVController: NSObject, ObservableObject {
     let playbackCoordinator: PlaybackCoordinator
     let remoteCoordinator: RemoteCoordinator
     let displayCoordinator: DisplayCoordinator
+    let audioCoordinator: AudioCoordinator
     private var coordinatorChanges: [AnyCancellable] = []
 
     // MARK: - State
@@ -189,6 +191,8 @@ final class TVController: NSObject, ObservableObject {
     @Published var controlCenter: ControlCenterPanel?
     /// The "Who's watching?" screen, while it's showing.
     @Published var profilePicker: ProfilePicker?
+    /// Audio output picker sheet, while it's open.
+    @Published var audioPicker: AudioPickerPanel?
     /// Who's watching: their apps and their sign-ins.
     @Published var profile: Profile
 
@@ -276,6 +280,10 @@ final class TVController: NSObject, ObservableObject {
     var lidStatus: String { displayCoordinator.lidStatus }
     var playbackScreen: NSScreen? { displayCoordinator.playbackScreen }
 
+    // Audio Output
+    var audioDevices: [AudioOutputDevice] { audioCoordinator.devices }
+    var currentAudioDevice: AudioOutputDevice? { audioCoordinator.currentDevice }
+
     // MARK: - Forwarded Methods
 
     func offerStartupPairing() { remoteCoordinator.offerStartupPairing() }
@@ -309,6 +317,7 @@ final class TVController: NSObject, ObservableObject {
     var activeSheet: SheetDestination? {
         if setup != nil { return .setup }
         if profilePicker != nil { return .profilePicker }
+        if audioPicker != nil { return .audioPicker }
         if playbackCheck != nil { return .playbackCheck }
         if topShelfPreferences != nil { return .topShelfPreferences }
         if adder != nil { return .addApp }
@@ -357,17 +366,21 @@ final class TVController: NSObject, ObservableObject {
         let pc = PlaybackCoordinator()
         let rc = RemoteCoordinator()
         let dc = DisplayCoordinator()
+        let ac = AudioCoordinator()
         self.playbackCoordinator = pc
         self.remoteCoordinator = rc
         self.displayCoordinator = dc
+        self.audioCoordinator = ac
         super.init()
         pc.tv = self
         rc.tv = self
         dc.tv = self
+        ac.tv = self
         // Views watch this controller, so any change a coordinator publishes redraws them.
         coordinatorChanges = [pc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
                               rc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
-                              dc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }]
+                              dc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
+                              ac.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }]
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
@@ -652,6 +665,7 @@ final class TVController: NSObject, ObservableObject {
     private func handleInLauncher(_ command: RemoteCommand) {
         if setup != nil { handleSetup(command); return }
         if profilePicker != nil { handleProfiles(command); return }
+        if audioPicker != nil { handleAudioPicker(command); return }
         if playbackCheck != nil { switch command { case .back, .select: playbackCheck = nil; default: break }; return }
         if topShelfPreferences != nil { handleTopShelfPreferences(command); return }
         if adder != nil { handleAdder(command); return }
@@ -684,7 +698,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private var feedbackState: String {
-        String(describing: (focus, setup, profilePicker, controlCenter, settings, organizer, playbackCheck, topShelfPreferences, adder, movies, pairing, mode == .launcher))
+        String(describing: (focus, setup, profilePicker, audioPicker, controlCenter, settings, organizer, playbackCheck, topShelfPreferences, adder, movies, pairing, mode == .launcher))
     }
 
     func iconPNG(for id: String) -> Data? {
@@ -762,6 +776,7 @@ final class TVController: NSObject, ObservableObject {
             } else {
                 if mode != .launcher || movies != nil { goHome() }
                 settings = nil
+                audioPicker = nil
                 organizer = nil
                 playbackCheck = nil
                 topShelfPreferences = nil
@@ -826,6 +841,7 @@ final class TVController: NSObject, ObservableObject {
         Analytics.send(.appOpened, opened)
         playbackCoordinator.resetPlaybackRequest()
         settings = nil
+        audioPicker = nil
         pairing = false
         adder = nil
         organizer = nil
