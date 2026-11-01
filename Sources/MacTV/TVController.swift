@@ -994,7 +994,7 @@ final class TVController: NSObject, ObservableObject {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    private func showVolume(_ level: VolumeLevel) {
+    func showVolume(_ level: VolumeLevel) {
         withAnimation(.smooth(duration: 0.3)) { volume = level }
         volumeTask?.cancel()
         volumeTask = Task { [weak self] in
