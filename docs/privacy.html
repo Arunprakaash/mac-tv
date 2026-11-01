@@ -61,6 +61,7 @@
       <li><strong>Movie posters.</strong> For each movie file, Mac TV searches Apple's public catalogue (iTunes Search API) for the title it reads from the file name, with your country, and downloads the poster when one matches. Nothing else about the file is sent. When there's no match, the poster is a frame from the film, made on your Mac.</li>
       <li><strong>Steam games you add.</strong> Mac TV reads which games are installed from Steam's files on your Mac, and downloads the game's artwork from Steam's servers to make its tile. Games open through the Steam app.</li>
       <li><strong>Top Shelf shows.</strong> The home screen shows the latest shows on each streaming app. Once a day Mac TV asks TVmaze's public schedule which shows have new episodes, and Apple's public music charts which albums are most played in your country. It downloads their pictures and keeps them on your Mac. These are the same for everyone and have nothing to do with what you watch. Nothing else is sent.</li>
+      <li><strong>Updates.</strong> At launch and once a day, Mac TV asks GitHub for the latest Mac TV release. If you choose to install it, it downloads the update from GitHub. Nothing about you or your Mac is sent beyond what any web request carries, such as your IP address, under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>.</li>
     </ul>
 
     <h2>Anonymous usage, only if you agree</h2>
@@ -77,7 +78,7 @@
     <p>It never sends what you watch or listen to, titles, web addresses, file or folder names, profile names, or anything from inside the apps you open. You're identified only by a random ID that Mac TV creates and keeps in its own settings, hashed before it's sent, so the data can't be tied to you. TelemetryDeck doesn't store IP addresses. Every event Mac TV can send is listed in one file in its source code, <a href="https://github.com/Arunprakaash/mac-tv/blob/main/Sources/MacTV/Analytics.swift"><code>Analytics.swift</code></a>.</p>
 
     <h2>The phone remote</h2>
-    <p>The remote is a web page served by Mac TV from your Mac, on your own network or your Tailscale network. It doesn't pass through the internet or any server of mine. Only phones that enter the 6-digit pairing code shown on your TV can control Mac TV. The phone remembers that code in its browser so you don't have to enter it again.</p>
+    <p>The remote is a web page served by Mac TV from your Mac, on your own network or your Tailscale network. It doesn't pass through the internet or any server of mine. Only phones that scan the QR code or enter the pairing code shown on your TV can control Mac TV. Each phone then gets its own key, kept in its browser and stored only as a hash on your Mac, and you can remove any phone in TV controls.</p>
     <p>On your home network the remote uses plain HTTP, so it's meant for networks you trust. Tailscale encrypts the connection itself.</p>
 
     <h2>Permissions on your Mac</h2>

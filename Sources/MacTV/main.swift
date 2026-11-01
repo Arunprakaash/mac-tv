@@ -236,6 +236,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--setup` shows first-run setup again.
         // Usage analytics sends nothing unless the user has said yes (Analytics.swift).
         Analytics.start(context: tv.analyticsContext)
+        Updater.shared.onAvailable = { [weak self] version in
+            self?.tv.showToast("Mac TV \(version) is available in Settings › About")
+        }
+        Updater.shared.start()
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
             return

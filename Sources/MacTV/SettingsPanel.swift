@@ -16,7 +16,7 @@ struct SettingsPanel: Equatable {
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
         case feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
-        case version, source, analytics
+        case version, update, source, analytics
     }
 
     var section: Section = .profiles
@@ -85,7 +85,7 @@ extension SettingsPanel.Section {
         case .apps: [.addApp, .arrangeApps, .topShelfPreferences]
         case .dedicatedTV: [.dedicatedTV, .preferredDisplay, .launchAtLogin]
         case .power: [.keepMacAwake, .lidOverride, .screenOff, .sleepMac]
-        case .about: Analytics.available ? [.version, .source, .analytics] : [.version, .source]
+        case .about: Analytics.available ? [.version, .update, .source, .analytics] : [.version, .update, .source]
         case .profiles, .movies: []
         }
     }
@@ -239,6 +239,7 @@ extension TVController {
                 settings?.confirmingSleep = true
             }
         case .version, .source: break
+        case .update: Updater.shared.activate()
         case .analytics: Analytics.setConsent(!Analytics.enabled, context: analyticsContext)
         }
         objectWillChange.send()
@@ -270,7 +271,9 @@ extension TVController {
             return "\(count) folder\(count == 1 ? "" : "s")"
         case .dedicatedTV: return dedicatedTVMode ? "On · \(preferredTVDisplayName)" : "Off"
         case .power: return keepMacAwake ? "Keeps Mac awake" : "Sleeps as usual"
-        case .about: return "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")"
+        case .about:
+            if let version = Updater.shared.availableVersion { return "Update to \(version)" }
+            return "Version \(Updater.currentVersion)"
         }
     }
 }
@@ -279,6 +282,7 @@ extension TVController {
 
 struct SettingsSheet: View {
     @ObservedObject var tv: TVController
+    @ObservedObject private var updater = Updater.shared
     @Environment(\.canvasSize) private var canvas
     @Namespace private var focusSpace
 
@@ -446,6 +450,30 @@ struct SettingsSheet: View {
         case .version:
             title("Version")
             value(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+        case .update:
+            switch updater.state {
+            case .failed(let message):
+                title("Software update", message)
+                value("Try again")
+            case .available(let version, _):
+                title("Software update", "Mac TV restarts to finish")
+                value("Install \(version)")
+            case .downloading(let fraction):
+                title("Software update")
+                value("Downloading \(Int(fraction * 100))%")
+            case .installing:
+                title("Software update")
+                value("Installing…")
+            case .checking:
+                title("Software update")
+                value("Checking…")
+            case .upToDate:
+                title("Software update")
+                value("Up to date")
+            case .idle:
+                title("Software update")
+                value("Check now")
+            }
         case .source:
             title("Source code")
             value("github.com/Arunprakaash/mac-tv")
