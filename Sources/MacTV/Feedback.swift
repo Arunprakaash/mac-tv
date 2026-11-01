@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import Combine
 import CoreHaptics
 import GameController
 
@@ -7,7 +8,7 @@ import GameController
 /// going back, with a matching tap on the trackpad or a game controller. The sounds are made here
 /// rather than loaded from files, and only play on Mac TV's own screens, never over a show.
 @MainActor
-final class Feedback {
+final class Feedback: ObservableObject {
     enum Cue: CaseIterable {
         case move, select, back
     }
@@ -23,8 +24,55 @@ final class Feedback {
     /// Sounds and haptics, on unless turned off in Settings.
     var enabled: Bool {
         get { UserDefaults.standard.object(forKey: "uiFeedback") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "uiFeedback") }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: "uiFeedback")
+        }
     }
+
+    /// Volume for navigation sounds (0.0 to 1.0, defaults to 0.70).
+    var volume: Float {
+        get { (UserDefaults.standard.object(forKey: "uiFeedbackVolume") as? Float) ?? 0.7 }
+        set {
+            objectWillChange.send()
+            let clamped = max(0, min(1, newValue))
+            UserDefaults.standard.set(clamped, forKey: "uiFeedbackVolume")
+            engine.mainMixerNode.outputVolume = clamped
+        }
+    }
+
+    var isMuted: Bool {
+        !enabled
+    }
+
+    func toggleMute() {
+        enabled.toggle()
+        if enabled { play(.select, from: .keyboard) }
+    }
+
+    func stepVolume(by delta: Float) {
+        let current = Int((volume * 100).rounded())
+        let step = Int((delta * 100).rounded())
+        let newPercent = max(0, min(100, current + step))
+        volume = Float(newPercent) / 100.0
+        if !enabled && delta > 0 { enabled = true }
+        play(.move, from: .keyboard)
+    }
+
+    func setVolumePercent(_ percent: Int) {
+        let clamped = max(0, min(100, percent))
+        let current = Int((volume * 100).rounded())
+        guard clamped != current || !enabled else { return }
+        volume = Float(clamped) / 100.0
+        if !enabled && clamped > 0 { enabled = true }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastAuditionTime >= 0.08 {
+            lastAuditionTime = now
+            play(.move, from: .keyboard)
+        }
+    }
+
+    private var lastAuditionTime: TimeInterval = 0
 
     private let engine = AVAudioEngine()
     private var players: [AVAudioPlayerNode] = []
@@ -37,6 +85,7 @@ final class Feedback {
     private init() {
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
         for cue in Cue.allCases { buffers[cue] = Self.synthesize(cue, format: format) }
+        engine.mainMixerNode.outputVolume = volume
         // A few voices, so quick repeats overlap instead of cutting each other off.
         for _ in 0..<3 {
             let player = AVAudioPlayerNode()

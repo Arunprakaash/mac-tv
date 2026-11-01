@@ -265,9 +265,9 @@ extension TVController {
 
     func handleAudioPicker(_ command: RemoteCommand) {
         guard var panel = audioPicker else { return }
-        let sliderRow = audioDevices.count
-        let hasSlider = (audioCoordinator.currentVolume.level != nil)
-        let maxRow = hasSlider ? sliderRow : max(0, audioDevices.count - 1)
+        let masterSliderRow = audioDevices.count
+        let soundSliderRow = audioDevices.count + 1
+        let maxRow = soundSliderRow
 
         switch command {
         case .back:
@@ -278,18 +278,27 @@ extension TVController {
         case .move(.down):
             panel.row = min(maxRow, panel.row + 1)
         case .move(.left):
-            if panel.row == sliderRow {
+            if panel.row == masterSliderRow {
                 audioCoordinator.stepVolume(by: -5)
+                return
+            } else if panel.row == soundSliderRow {
+                Feedback.shared.stepVolume(by: -0.05)
                 return
             }
         case .move(.right):
-            if panel.row == sliderRow {
+            if panel.row == masterSliderRow {
                 audioCoordinator.stepVolume(by: 5)
+                return
+            } else if panel.row == soundSliderRow {
+                Feedback.shared.stepVolume(by: 0.05)
                 return
             }
         case .select:
-            if panel.row == sliderRow {
+            if panel.row == masterSliderRow {
                 audioCoordinator.toggleMute()
+                return
+            } else if panel.row == soundSliderRow {
+                Feedback.shared.toggleMute()
                 return
             } else if audioDevices.indices.contains(panel.row) {
                 audioCoordinator.selectDevice(audioDevices[panel.row])
@@ -316,8 +325,10 @@ struct AudioPickerSheet: View {
 
     var body: some View {
         let panel = tv.audioPicker ?? AudioPickerPanel()
-        let sliderRow = tv.audioDevices.count
-        VStack(alignment: .leading, spacing: 26) {
+        let masterSliderRow = tv.audioDevices.count
+        let soundSliderRow = tv.audioDevices.count + 1
+
+        VStack(alignment: .leading, spacing: 22) {
             HStack {
                 Text("Audio Output").font(.tv(.title3, emphasized: true))
                 Spacer()
@@ -374,21 +385,41 @@ struct AudioPickerSheet: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Volume")
                     .font(.tv(.caption1, emphasized: true))
                     .foregroundStyle(.white.opacity(0.75))
 
-                AudioVolumeSlider(tv: tv, focused: panel.row == sliderRow)
+                AudioVolumeSlider(tv: tv, focused: panel.row == masterSliderRow) {
+                    tv.audioPicker?.row = masterSliderRow
+                }
             }
 
-            Text(panel.row == sliderRow
-                 ? "Use ◀ ▶ to change volume, Select to mute, Esc or Back closes."
-                 : "Press Select to switch audio output. Esc or Back closes.")
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Navigation Sounds")
+                    .font(.tv(.caption1, emphasized: true))
+                    .foregroundStyle(.white.opacity(0.75))
+
+                NavigationSoundSlider(focused: panel.row == soundSliderRow) {
+                    tv.audioPicker?.row = soundSliderRow
+                }
+            }
+
+            let hint: String = {
+                if panel.row == masterSliderRow {
+                    return "Use ◀ ▶ to change volume, Select to mute, Esc or Back closes."
+                } else if panel.row == soundSliderRow {
+                    return "Use ◀ ▶ to change sound effects volume, Select to mute, Esc or Back closes."
+                } else {
+                    return "Press Select to switch audio output. Esc or Back closes."
+                }
+            }()
+
+            Text(hint)
                 .font(.tv(.caption2))
                 .foregroundStyle(.white.opacity(0.55))
         }
-        .padding(56)
+        .padding(52)
         .frame(width: 820, alignment: .leading)
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
@@ -400,6 +431,7 @@ struct AudioPickerSheet: View {
 struct AudioVolumeSlider: View {
     @ObservedObject var tv: TVController
     let focused: Bool
+    var onSelect: () -> Void = {}
 
     private var volume: VolumeLevel {
         tv.audioCoordinator.currentVolume
@@ -476,7 +508,84 @@ struct AudioVolumeSlider: View {
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .scaleEffect(focused ? 1.02 : 1)
         .onTapGesture {
-            tv.audioPicker?.row = tv.audioDevices.count
+            onSelect()
+        }
+    }
+}
+
+struct NavigationSoundSlider: View {
+    @ObservedObject private var feedback = Feedback.shared
+    let focused: Bool
+    var onSelect: () -> Void = {}
+
+    private var percent: Int {
+        Int((feedback.volume * 100).rounded())
+    }
+
+    private var symbol: String {
+        if feedback.isMuted || percent == 0 { return "speaker.slash.fill" }
+        if percent < 33 { return "speaker.wave.1.fill" }
+        if percent < 66 { return "speaker.wave.2.fill" }
+        return "speaker.wave.3.fill"
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Button {
+                feedback.toggleMute()
+            } label: {
+                Image(systemName: symbol)
+                    .font(.system(size: 24, weight: .medium))
+                    .frame(width: 36)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(.plain)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(focused ? Color.white.opacity(0.35) : Color.white.opacity(0.18))
+
+                    Capsule()
+                        .fill(focused ? Color.white : Color.white.opacity(0.85))
+                        .frame(width: geo.size.width * CGFloat(feedback.isMuted ? 0 : percent) / 100)
+                }
+                .frame(height: 12)
+                .frame(maxHeight: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let fraction = max(0, min(1, value.location.x / geo.size.width))
+                            feedback.setVolumePercent(Int((fraction * 100).rounded()))
+                        }
+                )
+            }
+            .frame(height: 36)
+
+            Text(feedback.isMuted ? "Muted" : "\(percent)%")
+                .font(.tv(.caption1, emphasized: true))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 80, alignment: .trailing)
+                .foregroundStyle(focused ? .white : .white.opacity(0.75))
+        }
+        .padding(.horizontal, 22)
+        .frame(height: 64)
+        .background(
+            focused ? Color.white.opacity(0.16) : Color.white.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(focused ? Color.white.opacity(0.6) : Color.clear, lineWidth: 2)
+        )
+        .foregroundStyle(.white)
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .scaleEffect(focused ? 1.02 : 1)
+        .onTapGesture {
+            onSelect()
         }
     }
 }
