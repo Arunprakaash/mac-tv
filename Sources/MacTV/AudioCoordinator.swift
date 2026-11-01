@@ -76,7 +76,8 @@ final class AudioCoordinator: ObservableObject {
 
         for id in allAudioDeviceIDs() {
             guard hasOutputStreams(id), !isHidden(id) else { continue }
-            guard let name = deviceName(id) else { continue }
+            // Apps get a private "CADefaultDeviceAggregate-<pid>" device that isn't a real output.
+            guard let name = deviceName(id), !name.hasPrefix("CADefaultDeviceAggregate") else { continue }
             let transport = transportType(id)
             let isCurrent = (id == defaultID)
 
