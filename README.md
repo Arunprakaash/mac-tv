@@ -38,7 +38,7 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac.
 - **Screen saver:** Apple's live aerial wallpapers, show art, your photos, or drifting colour, with a clock.
 - **Profiles:** each person gets their own apps and sign-ins.
 - **Power:** keeps the Mac awake for the remote, and can stay awake with the lid closed.
-- **Updates:** checks for new versions and installs one when you choose, from Settings › About.
+- **Updates:** installs new versions by itself while nothing is playing, or when you choose in Settings › About.
 - **Brave (optional):** open websites in Brave instead of the built-in player, with Brave's sign-ins and Shields.
 
 ## Privacy

@@ -1,8 +1,9 @@
 import AppKit
 import Security
 
-/// Keeps Mac TV up to date from its GitHub releases. It checks at launch and once a day; installing
-/// waits for the person to choose it in Settings › About, so an update never interrupts watching.
+/// Keeps Mac TV up to date from its GitHub releases. It checks at launch and once a day. With
+/// automatic updates on (the default), a new version downloads straight away and installs only while
+/// nothing is in use, so the restart never interrupts watching. Otherwise it waits for Settings › About.
 ///
 /// A downloaded update is installed only if it's signed by the same certificate as the running app
 /// (its designated requirement), so nothing but a real Mac TV release can replace it.
@@ -14,6 +15,8 @@ final class Updater: ObservableObject {
         case idle, checking, upToDate
         case available(version: String, download: URL)
         case downloading(Double)
+        /// Downloaded and waiting for Mac TV to be idle.
+        case ready(version: String, image: URL)
         case installing
         case failed(String)
     }
@@ -21,10 +24,29 @@ final class Updater: ObservableObject {
     @Published private(set) var state: State = .idle
     /// Called once per new version, for the notice on the home screen.
     var onAvailable: ((String) -> Void)?
+    /// Whether nothing is being watched or used right now, so restarting Mac TV is fine.
+    var isIdle: () -> Bool = { false }
+
+    /// Install new versions on their own while Mac TV is idle. On unless turned off.
+    var automatic: Bool {
+        get { UserDefaults.standard.object(forKey: "automaticUpdates") as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "automaticUpdates")
+            objectWillChange.send()
+            if newValue, case .available(_, let url) = state { install(from: url, now: false) }
+        }
+    }
+
+    /// Set just before an automatic update restarts Mac TV, so the new copy can pick up where it was.
+    static func takeAutomaticRestart() -> Bool {
+        defer { UserDefaults.standard.removeObject(forKey: "restartedForUpdate") }
+        return UserDefaults.standard.bool(forKey: "restartedForUpdate")
+    }
 
     private static let latestRelease = URL(string: "https://api.github.com/repos/Arunprakaash/mac-tv/releases/latest")!
     private static let checkInterval: TimeInterval = 24 * 60 * 60
     private var timer: Timer?
+    private var idleTimer: Timer?
     private var download: URLSessionDownloadTask?
     private var progress: NSKeyValueObservation?
 
@@ -33,8 +55,10 @@ final class Updater: ObservableObject {
     }
 
     var availableVersion: String? {
-        if case .available(let version, _) = state { return version }
-        return nil
+        switch state {
+        case .available(let version, _), .ready(let version, _): return version
+        default: return nil
+        }
     }
 
     func start() {
@@ -45,12 +69,26 @@ final class Updater: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { _ in
             MainActor.assumeIsolated { Updater.shared.check() }
         }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            MainActor.assumeIsolated { Updater.shared.installIfIdle() }
+        }
+    }
+
+    /// A downloaded update goes in once nothing is in use.
+    private func installIfIdle() {
+        guard automatic, case .ready(_, let image) = state, isIdle() else { return }
+        UserDefaults.standard.set(true, forKey: "restartedForUpdate")
+        state = .installing
+        installDiskImage(image)
     }
 
     /// The Software update row: installs an available update, otherwise checks now.
     func activate() {
         switch state {
-        case .available(_, let url): install(from: url)
+        case .available(_, let url): install(from: url, now: true)
+        case .ready(_, let image):
+            state = .installing
+            installDiskImage(image)
         case .checking, .downloading, .installing: break
         default: check()
         }
@@ -58,7 +96,7 @@ final class Updater: ObservableObject {
 
     func check() {
         switch state {
-        case .checking, .downloading, .installing: return
+        case .checking, .downloading, .ready, .installing: return
         default: break
         }
         state = .checking
@@ -82,6 +120,7 @@ final class Updater: ObservableObject {
                     return
                 }
                 shared.state = .available(version: version, download: url)
+                if shared.automatic { shared.install(from: url, now: false) }
                 let noticed = UserDefaults.standard.string(forKey: "updateNoticeShown")
                 if noticed != version {
                     UserDefaults.standard.set(version, forKey: "updateNoticeShown")
@@ -104,7 +143,9 @@ final class Updater: ObservableObject {
 
     // MARK: Installing
 
-    private func install(from url: URL) {
+    /// Downloads the update; `now` installs it straight after, otherwise it waits until Mac TV is idle.
+    private func install(from url: URL, now: Bool) {
+        let version = availableVersion ?? ""
         let bundle = Bundle.main.bundleURL
         guard !bundle.path.contains("/AppTranslocation/"), !bundle.path.hasPrefix("/Volumes/") else {
             state = .failed("Move Mac TV to Applications first.")
@@ -115,10 +156,11 @@ final class Updater: ObservableObject {
             return
         }
         state = .downloading(0)
-        let task = URLSession.shared.downloadTask(with: url) { file, _, error in
+        let task = URLSession.shared.downloadTask(with: url) { file, response, error in
+            let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
             // The downloaded file is removed when this returns, so move it somewhere of our own first.
             var kept: URL?
-            if let file {
+            if let file, ok {
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent("MacTV-update-\(UUID().uuidString)")
                 try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let target = folder.appendingPathComponent("update.dmg")
@@ -130,8 +172,13 @@ final class Updater: ObservableObject {
                     Updater.shared.state = .failed(error == nil ? "The download didn't finish." : "Couldn't download the update.")
                     return
                 }
-                Updater.shared.state = .installing
-                Updater.shared.installDiskImage(kept)
+                if now {
+                    Updater.shared.state = .installing
+                    Updater.shared.installDiskImage(kept)
+                } else {
+                    Updater.shared.state = .ready(version: version, image: kept)
+                    Updater.shared.installIfIdle()
+                }
             }
         }
         progress = task.progress.observe(\.fractionCompleted) { progress, _ in
@@ -157,6 +204,7 @@ final class Updater: ObservableObject {
                 case .success:
                     Self.relaunch(bundle)
                 case .failure(let error):
+                    UserDefaults.standard.removeObject(forKey: "restartedForUpdate")
                     Updater.shared.state = .failed(error.message)
                 }
             }

@@ -1126,6 +1126,12 @@ final class TVController: NSObject, ObservableObject {
         bringToFront()
     }
 
+    /// Nothing is being watched or used: the screen saver is up, or the screen is off at home.
+    var idleForUpdate: Bool {
+        (screensaver || displaysSleeping) && mode == .launcher && setup == nil && iinaSession == nil
+            && externalBrowser == nil && moviePlayer == nil
+    }
+
     var playbackScreen: NSScreen? {
         displayCoordinator?.playbackScreen
             ?? window?.screen ?? NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 })

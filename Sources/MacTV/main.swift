@@ -239,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.onAvailable = { [weak self] version in
             self?.tv.showToast("Mac TV \(version) is available in Settings › About")
         }
+        Updater.shared.isIdle = { [weak self] in self?.tv.idleForUpdate ?? false }
         Updater.shared.start()
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
@@ -249,7 +250,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if tv.profiles.all.count > 1 {
             tv.openProfiles()
         }
-        tv.offerStartupPairing()
+        if Updater.takeAutomaticRestart() {
+            // Updated while nobody was watching: go back to the screen saver, not the pairing code.
+            tv.showScreensaver()
+        } else {
+            tv.offerStartupPairing()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

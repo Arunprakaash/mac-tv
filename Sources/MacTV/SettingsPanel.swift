@@ -16,7 +16,7 @@ struct SettingsPanel: Equatable {
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
         case feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
-        case version, update, source, analytics
+        case version, update, autoUpdate, source, analytics
     }
 
     var section: Section = .profiles
@@ -85,7 +85,7 @@ extension SettingsPanel.Section {
         case .apps: [.addApp, .arrangeApps, .topShelfPreferences]
         case .dedicatedTV: [.dedicatedTV, .preferredDisplay, .launchAtLogin]
         case .power: [.keepMacAwake, .lidOverride, .screenOff, .sleepMac]
-        case .about: Analytics.available ? [.version, .update, .source, .analytics] : [.version, .update, .source]
+        case .about: Analytics.available ? [.version, .update, .autoUpdate, .source, .analytics] : [.version, .update, .autoUpdate, .source]
         case .profiles, .movies: []
         }
     }
@@ -134,7 +134,7 @@ extension TVController {
         // Left steps or switches off a row that has a value; on any other row it goes back.
         let adjustable: Set<String> = ["sleepTimer", "wallpaper", "aerialCategory", "saverDelay", "saverClock", "feedback",
                                        "autoSkip", "autoNext", "websitePlayer", "dedicatedTV", "preferredDisplay", "launchAtLogin",
-                                       "keepMacAwake", "lidOverride", "analytics"]
+                                       "keepMacAwake", "lidOverride", "analytics", "autoUpdate"]
         switch command {
         case .back:
             panel.open = false
@@ -194,6 +194,7 @@ extension TVController {
         case .keepMacAwake: keepMacAwake = forward
         case .lidOverride: lidOverride = forward
         case .analytics: Analytics.setConsent(forward, context: analyticsContext)
+        case .autoUpdate: Updater.shared.automatic = forward
         default: return
         }
         objectWillChange.send()
@@ -240,6 +241,7 @@ extension TVController {
             }
         case .version, .source: break
         case .update: Updater.shared.activate()
+        case .autoUpdate: Updater.shared.automatic.toggle()
         case .analytics: Analytics.setConsent(!Analytics.enabled, context: analyticsContext)
         }
         objectWillChange.send()
@@ -458,6 +460,9 @@ struct SettingsSheet: View {
             case .available(let version, _):
                 title("Software update", "Mac TV restarts to finish")
                 value("Install \(version)")
+            case .ready(let version, _):
+                title("Software update", updater.automatic ? "Installs when Mac TV isn't in use" : "Mac TV restarts to finish")
+                value("Install \(version)")
             case .downloading(let fraction):
                 title("Software update")
                 value("Downloading \(Int(fraction * 100))%")
@@ -474,6 +479,9 @@ struct SettingsSheet: View {
                 title("Software update")
                 value("Check now")
             }
+        case .autoUpdate:
+            title("Automatic updates")
+            SettingSwitch(on: updater.automatic)
         case .source:
             title("Source code")
             value("github.com/Arunprakaash/mac-tv")
