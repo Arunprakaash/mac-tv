@@ -143,7 +143,7 @@ final class DisplayCoordinator: ObservableObject {
 
     var playbackScreen: NSScreen? {
         tvMode?.playbackScreen
-            ?? NSScreen.screens.first { CGDisplayIsBuiltin($0.displayID) == 0 }
+            ?? tv?.window?.screen ?? NSScreen.screens.first { CGDisplayIsBuiltin($0.displayID) == 0 }
             ?? NSScreen.main
     }
 

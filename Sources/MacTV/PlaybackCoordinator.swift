@@ -38,8 +38,9 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         iinaSession != nil || externalBrowser != nil || moviePlayer != nil || webView != nil
     }
 
-    var iinaRunning: Bool {
-        iinaSession?.isRunning == true
+    /// An IINA session is open, running or not: remote commands go to it.
+    var iinaOpen: Bool {
+        iinaSession != nil
     }
 
     func resetPlaybackRequest() {
@@ -85,7 +86,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         if let web = webView {
             web.pauseAllMediaPlayback(completionHandler: nil)
             web.stopLoading()
-            web.loadHTMLString("about:blank", baseURL: nil)
         }
         webView = nil
         closePopups()
@@ -100,6 +100,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
 
     func makeWebView(for service: Service) -> WKWebView {
         let config = WKWebViewConfiguration()
+        // Each profile's own store keeps its sign-ins between launches.
         if let profile = tv?.profile {
             config.websiteDataStore = profile.websiteDataStore
         }
@@ -110,15 +111,17 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             WKUserScript(source: WebPlayback.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(
             WKUserScript(source: AutoPlay.script(skip: tv?.autoSkip ?? true, next: tv?.autoNext ?? true),
-                         injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+                         injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         if service.dpadNavigation {
             config.userContentController.addUserScript(
-                WKUserScript(source: SpatialNav.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+                WKUserScript(source: SpatialNav.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         let web = WKWebView(frame: .zero, configuration: config)
         web.customUserAgent = service.userAgent
         web.uiDelegate = self
         web.navigationDelegate = self
+        web.underPageBackgroundColor = .black
+        web.isInspectable = true
         return web
     }
 
@@ -138,7 +141,8 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     }
 
     func sendKey(_ key: Key, to web: WKWebView) {
-        guard let window = web.window else { return }
+        guard let window = tv?.window else { return }
+        if window.firstResponder !== web { window.makeFirstResponder(web) }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: key.flags,
@@ -297,7 +301,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         }
         let iina = "com.colliderli.iina", vlc = "org.videolan.vlc"
         if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iina) != nil,
-           let screen = tv?.playbackScreen, playInIINA(movie, screen: screen) { return }
+           playInIINA(movie, screen: tv?.playbackScreen) { return }
         if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: vlc) {
             NSWorkspace.shared.open([movie.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
             tv?.setLaunchedAppID(vlc)
@@ -335,7 +339,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     // MARK: - IINA Playback
 
     @discardableResult
-    func playInIINA(_ movie: Movie, subtitle: URL? = nil, position: Double? = nil, screen: NSScreen) -> Bool {
+    func playInIINA(_ movie: Movie, subtitle: URL? = nil, position: Double? = nil, screen: NSScreen?) -> Bool {
         if currentLocalMovie?.path == movie.path, let session = iinaSession, session.isRunning {
             do {
                 if let subtitle { try session.loadSubtitle(subtitle) }
@@ -348,6 +352,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 return false
             }
         }
+        guard let screen else { tv?.showToast("Connect the display for movie playback."); return false }
         let pos = position ?? (moviePlayer?.movie.path == movie.path ? moviePlayer?.time : nil)
         var launched: IINAPlaybackSession?
         do {
@@ -399,6 +404,16 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
 
     func handleIINACommand(_ command: RemoteCommand) {
         _ = iinaSession?.handle(command)
+    }
+
+    func activateIINA() {
+        guard let session = iinaSession else { return }
+        do { try session.activate() }
+        catch {
+            iinaPlaybackError = error.localizedDescription
+            tv?.showToast(error.localizedDescription)
+            tv?.objectWillChange.send()
+        }
     }
 
     func searchIINASubtitles() -> Bool {
@@ -473,7 +488,8 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     func navigateExternalBrowser(service: Service, url: URL) throws {
         guard let browser = externalBrowser else { return }
         externalBrowserService = service
-        try browser.navigate(to: url)
+        do { try browser.navigate(to: url) }
+        catch { externalBrowserError = error.localizedDescription; throw error }
         externalBrowserError = nil
         tv?.setMode(.player(service))
         tv?.objectWillChange.send()

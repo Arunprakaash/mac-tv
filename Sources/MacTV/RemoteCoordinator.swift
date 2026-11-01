@@ -141,7 +141,7 @@ final class RemoteCoordinator: ObservableObject {
                 "opening": tv.externalBrowserOpening
             ]
         }
-        if tv.playbackCoordinator.iinaRunning {
+        if tv.playbackCoordinator.iinaOpen {
             state["mode"] = "player"
             state["externalPlayer"] = ["name": "IINA", "status": tv.iinaPlaybackStatus, "error": tv.iinaPlaybackError ?? ""]
         }

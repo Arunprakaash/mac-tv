@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import IOKit.pwr_mgt
 import WebKit
@@ -145,6 +146,7 @@ final class TVController: NSObject, ObservableObject {
     let playbackCoordinator: PlaybackCoordinator
     let remoteCoordinator: RemoteCoordinator
     let displayCoordinator: DisplayCoordinator
+    private var coordinatorChanges: [AnyCancellable] = []
 
     // MARK: - State
 
@@ -292,8 +294,7 @@ final class TVController: NSObject, ObservableObject {
 
     @discardableResult
     func playInIINA(_ movie: Movie, subtitle: URL? = nil) -> Bool {
-        guard let screen = playbackScreen else { showToast("Connect the display for movie playback."); return false }
-        return playbackCoordinator.playInIINA(movie, subtitle: subtitle, position: nil, screen: screen)
+        playbackCoordinator.playInIINA(movie, subtitle: subtitle, screen: playbackScreen)
     }
     func closeIINAPlayback(terminating: Bool = false) { playbackCoordinator.closeIINAPlayback(terminating: terminating) }
     func searchIINASubtitles() -> Bool { playbackCoordinator.searchIINASubtitles() }
@@ -363,6 +364,10 @@ final class TVController: NSObject, ObservableObject {
         pc.tv = self
         rc.tv = self
         dc.tv = self
+        // Views watch this controller, so any change a coordinator publishes redraws them.
+        coordinatorChanges = [pc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
+                              rc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
+                              dc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }]
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
@@ -411,7 +416,6 @@ final class TVController: NSObject, ObservableObject {
                 guard let self else { return }
                 self.sleepAt = nil
                 self.goHome()
-                self.displayCoordinator.noteDisplaySleep(true)
                 SystemControl.displayOff()
             }
         }
@@ -579,13 +583,10 @@ final class TVController: NSObject, ObservableObject {
         case .shelf, .status: return
         case .app: break
         }
-        let inTopShelfNow = !inGrid
-        let targetInTopShelf = index < columns
-        guard inTopShelfNow == targetInTopShelf else { return }
-        if index < services.count {
-            if focus != .app(index) { setFocus(.app(index)) }
-            self.tilt = tilt
-        }
+        guard (index >= columns) == inGrid else { return }
+        if focus != .app(index) { Feedback.shared.play(.move, from: .pointer) }
+        setFocus(.app(index))
+        self.tilt = tilt
     }
 
     private func moveFocus(_ direction: RemoteCommand.Direction) {
@@ -719,8 +720,8 @@ final class TVController: NSObject, ObservableObject {
         switch command {
         case .home: goHome(); return
         case .activateBrowser:
-            if playbackCoordinator.iinaRunning {
-                playbackCoordinator.handleIINACommand(command)
+            if playbackCoordinator.iinaOpen {
+                playbackCoordinator.activateIINA()
             } else { activateExternalBrowser() }
             return
         case .retryBrowser:
@@ -730,11 +731,11 @@ final class TVController: NSObject, ObservableObject {
             if let service = services.first(where: { $0.id == id }) { open(service) }
             return
         case .volume(let delta):
-            if playbackCoordinator.iinaRunning { playbackCoordinator.handleIINACommand(command) }
+            if playbackCoordinator.iinaOpen { playbackCoordinator.handleIINACommand(command) }
             else { showVolume(SystemControl.changeVolume(by: delta)) }
             return
         case .mute:
-            if playbackCoordinator.iinaRunning { playbackCoordinator.handleIINACommand(command) }
+            if playbackCoordinator.iinaOpen { playbackCoordinator.handleIINACommand(command) }
             else { showVolume(SystemControl.toggleMute()) }
             return
         case .screenOff:
@@ -783,7 +784,7 @@ final class TVController: NSObject, ObservableObject {
             return
         }
 
-        if playbackCoordinator.iinaRunning {
+        if playbackCoordinator.iinaOpen {
             playbackCoordinator.handleIINACommand(command)
             return
         }
@@ -1004,12 +1005,12 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    func showToast(_ message: String) {
-        withAnimation(.smooth(duration: 0.3)) { toast = message }
+    func showToast(_ text: String) {
+        toast = text
         toastTask?.cancel()
         toastTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.toast = nil } }
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { self?.toast = nil }
         }
     }
 }
