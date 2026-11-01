@@ -14,7 +14,7 @@ struct SettingsPanel: Equatable {
         case addApp, arrangeApps, topShelfPreferences
         case dedicatedTV, preferredDisplay, launchAtLogin
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
-        case feedback
+        case audioOutput, feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
         case version, update, autoUpdate, source, analytics
     }
@@ -81,7 +81,7 @@ extension SettingsPanel.Section {
         case .screenSaver: ScreenSaverSettings.wallpaper == .aerials && !Aerials.categories.isEmpty
             ? [.wallpaper, .aerialCategory, .saverDelay, .saverClock, .saverPreview]
             : [.wallpaper, .saverDelay, .saverClock, .saverPreview]
-        case .sounds: [.feedback]
+        case .sounds: [.audioOutput, .feedback]
         case .apps: [.addApp, .arrangeApps, .topShelfPreferences]
         case .dedicatedTV: [.dedicatedTV, .preferredDisplay, .launchAtLogin]
         case .power: [.keepMacAwake, .lidOverride, .screenOff, .sleepMac]
@@ -229,6 +229,9 @@ extension TVController {
             settings = nil
             showScreensaver()
         case .feedback: Feedback.shared.enabled.toggle()
+        case .audioOutput:
+            settings = nil
+            openAudioPicker()
         case .keepMacAwake: keepMacAwake.toggle()
         case .lidOverride: lidOverride.toggle()
         case .screenOff: SystemControl.displayOff()
@@ -435,6 +438,10 @@ struct SettingsSheet: View {
             SettingSwitch(on: ScreenSaverSettings.showClock)
         case .saverPreview:
             title("Preview")
+            chevron
+        case .audioOutput:
+            title("Audio output", "Speakers, headphones or connected displays")
+            value(tv.currentAudioDevice?.name ?? "Speakers")
             chevron
         case .feedback:
             title("Sounds and haptics", "Clicks as you move, and taps on the trackpad and controller")

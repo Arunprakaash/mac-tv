@@ -104,12 +104,14 @@ final class RemoteCoordinator: ObservableObject {
         case .organizer: sheetName = "arrange-apps"
         case .settings: sheetName = "settings"
         case .controlCenter: sheetName = "control-center"
+        case .audioPicker: sheetName = "audio-picker"
         case nil: sheetName = ""
         }
 
         var state: [String: Any] = [
             "device": tv.deviceName,
             "mode": "launcher",
+            "audioDevice": tv.currentAudioDevice?.name ?? "",
             "apps": tv.arrangedServices.map { service -> [String: Any] in
                 ["id": service.id, "name": service.name, "icon": Icons.image(for: service) != nil,
                  "pinned": tv.isPinned(service.id), "canMoveEarlier": tv.canMoveApp(service.id, by: -1),

@@ -29,12 +29,14 @@ import Testing
         tv.topShelfPreferences = TopShelfPreferencesPanel()
         tv.playerFailure = PlayerFailure(message: "The streaming page couldn't load. Check the connection, then try again.")
         tv.playbackCheck = PlaybackDiagnostics()
+        tv.openAudioPicker()
         let views: [(String, AnyView)] = [
             ("organizer", AnyView(AppOrganizerSheet(tv: tv))),
             ("top-shelf", AnyView(TopShelfPreferencesSheet(tv: tv))),
             ("recovery", AnyView(PlaybackFailureView(tv: tv))),
             ("diagnostics", AnyView(PlaybackCheckSheet(tv: tv))),
-            ("settings", AnyView(SettingsSheet(tv: tv)))
+            ("settings", AnyView(SettingsSheet(tv: tv))),
+            ("audio-picker", AnyView(AudioPickerSheet(tv: tv)))
         ]
         let output = root.appendingPathComponent("work/native-qa")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
