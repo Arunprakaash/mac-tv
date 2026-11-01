@@ -785,28 +785,30 @@ struct PairSheet: View {
                     pairRow("Phone access", value: tv.pairingGuest ? "Guest" : "Full", focused: tv.pairingFocusedIndex == 0) {
                         tv.pairingGuest.toggle()
                     }
-                    if tv.pairingGuest {
-                        Text("Playback controls only, for 24 hours.").font(.tv(.caption2)).opacity(0.6).padding(.leading, 26)
-                    }
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(spacing: 10) {
-                                ForEach(Array(tv.availableTVDisplays.enumerated()), id: \.element.id) { index, display in
-                                    pairRow(display.name, value: display.current ? "Current" : nil, checked: display.preferred,
-                                            focused: tv.pairingFocusedIndex == index + 1) { _ = tv.selectTVDisplay(id: display.id) }
-                                        .id(index)
+                    // Always one line, so switching access never moves the sheet.
+                    Text(tv.pairingGuest ? "Playback controls only, for 24 hours." : "Controls, settings and Files on Mac.")
+                        .font(.tv(.caption2)).opacity(0.6).padding(.leading, 26)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("SHOW MAC TV ON").font(.tv(.caption2, emphasized: true)).tracking(2.4).opacity(0.6)
+                        .padding(.leading, 26)
+                    let displays = tv.availableTVDisplays
+                    // A scrolling list only once there are more displays than fit; otherwise rows take just their own height.
+                    if displays.count > 3 {
+                        ScrollViewReader { proxy in
+                            ScrollView { displayRows(displays).padding(.vertical, 6) }
+                                .frame(height: 230)
+                                .onChange(of: tv.pairingFocusedIndex) { _, index in
+                                    if index > 0 && index <= displays.count { proxy.scrollTo(index - 1, anchor: .center) }
                                 }
-                            }
-                            .padding(.vertical, 6)
                         }
-                        .frame(maxHeight: 230)
-                        .onChange(of: tv.pairingFocusedIndex) { _, index in
-                            if index > 0 && index <= tv.availableTVDisplays.count { proxy.scrollTo(index - 1, anchor: .center) }
-                        }
+                    } else {
+                        displayRows(displays)
                     }
                 }
                 ShelfButton(title: "Done", focused: tv.pairingFocusedIndex == tv.availableTVDisplays.count + 1,
                             glass: false) { tv.pairing = false }
+                    .padding(.top, 10)
             }
             .frame(maxWidth: 760, alignment: .leading)
         }
@@ -814,6 +816,16 @@ struct PairSheet: View {
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
+    }
+
+    private func displayRows(_ displays: [TVMode.DisplayOption]) -> some View {
+        VStack(spacing: 10) {
+            ForEach(Array(displays.enumerated()), id: \.element.id) { index, display in
+                pairRow(display.name, value: display.current ? "Current" : nil, checked: display.preferred,
+                        focused: tv.pairingFocusedIndex == index + 1) { _ = tv.selectTVDisplay(id: display.id) }
+                    .id(index)
+            }
+        }
     }
 
     /// A row on the frosted sheet: a plain fill at rest, the white platter with dark text when focused.
