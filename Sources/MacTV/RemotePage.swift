@@ -321,6 +321,15 @@ enum RemotePage {
         <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
         <label class="toggle"><span>Stay awake with lid closed</span><input type="checkbox" id="lid-override"></label>
         <p class="note">Works on battery and without the TV connected. Turns off by itself when the battery is low or the Mac gets hot.</p>
+        <div class="group-label">Network shares</div>
+        <div id="shares"></div>
+        <form id="share-form" autocomplete="off">
+          <input class="field" id="share-address" placeholder="Shared folder, e.g. nas.local/Movies" aria-label="Shared folder address" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <input class="field" id="share-user" placeholder="User name (blank for guest)" aria-label="User name" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
+          <input class="field" id="share-password" type="password" placeholder="Password" aria-label="Password" autocomplete="off" style="margin-top:8px">
+          <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Add share</button>
+        </form>
+        <p class="note" id="shares-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. The password stays in the Mac's Keychain.</p>
         <div class="group-label">Paired devices</div>
         <div id="devices"></div>
         <button class="row-btn danger" id="revoke-all">Remove all paired devices</button>
@@ -939,6 +948,60 @@ enum RemotePage {
         $('#devices-msg').textContent = e.message === 'Guests cannot manage devices' ? 'Guest devices cannot manage pairing.' : e.message;
       }
     }
+    let sharesPoll = 0;
+    async function loadShares() {
+      const box = $('#shares');
+      let list;
+      try { list = await api('/shares'); } catch (e) { $('#shares-msg').textContent = e.message; return; }
+      box.textContent = '';
+      for (const share of list) {
+        const row = document.createElement('div');
+        row.className = 'sheet-head';
+        const label = document.createElement('span');
+        label.textContent = `${share.name} · ${share.status}`;
+        label.title = share.address;
+        const buttons = document.createElement('div');
+        if (!share.connected && !share.connecting) {
+          const retry = document.createElement('button');
+          retry.className = 'pill'; retry.textContent = 'Connect';
+          retry.onclick = async () => { try { await api('/shares/connect', { id: share.id }); } catch {} watchShares(); };
+          buttons.appendChild(retry);
+        }
+        const remove = document.createElement('button');
+        remove.className = 'pill'; remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', `Remove ${share.name}`);
+        remove.onclick = async () => {
+          if (!confirm(`Remove ${share.name} from Mac TV?`)) return;
+          try { await api('/shares/remove', { id: share.id }); } catch (e) { $('#shares-msg').textContent = e.message; }
+          loadShares();
+        };
+        buttons.appendChild(remove);
+        row.append(label, buttons); box.appendChild(row);
+      }
+      return list;
+    }
+    // Connecting takes a few seconds: refresh the list until it settles.
+    function watchShares() {
+      clearTimeout(sharesPoll);
+      let tries = 0;
+      const tick = async () => {
+        const list = await loadShares();
+        if (list && list.some(share => share.connecting) && ++tries < 50) sharesPoll = setTimeout(tick, 1500);
+      };
+      tick();
+    }
+    $('#share-form').onsubmit = async e => {
+      e.preventDefault();
+      const address = $('#share-address').value.trim();
+      if (!address) { $('#shares-msg').textContent = 'Enter a shared folder, e.g. nas.local/Movies.'; return; }
+      try {
+        await api('/shares/add', { address, user: $('#share-user').value.trim(), password: $('#share-password').value });
+        $('#share-address').value = ''; $('#share-password').value = '';
+        $('#shares-msg').textContent = 'Its movies appear in Movies on the TV. The password stays in the Mac\'s Keychain.';
+        haptic('tap');
+      } catch (err) { $('#shares-msg').textContent = err.message; haptic('error'); }
+      watchShares();
+    };
     $('#revoke-all').onclick = async () => {
       if (!confirm('Remove all paired devices, including this one?')) return;
       try { await api('/devices/revoke-all', {}); key = ''; store.set(''); closeSheets(); showPair(); }
@@ -992,7 +1055,7 @@ enum RemotePage {
     document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
     $('#open-text').onclick = () => { haptic('tick'); $('#text-sheet').classList.add('show'); $('#text-sheet [data-close]').focus(); };
     $('#open-apps').onclick = () => { haptic('tick'); refresh(); $('#apps-sheet').classList.add('show'); };
-    $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); $('#power-sheet').classList.add('show'); };
+    $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); loadShares(); $('#power-sheet').classList.add('show'); };
     document.querySelectorAll('#sleep-chips button').forEach(b => b.onclick = () => {
       const m = Number(b.dataset.m);
       send('sleeptimer', { m }, 'tap').then(refresh);

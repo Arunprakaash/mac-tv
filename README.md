@@ -33,7 +33,7 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac.
 - **Your streaming apps:** Netflix, YouTube, Prime Video, JioHotstar, Apple TV, Spotify and YouTube Music in their official web players, with DRM. Add any website, Mac app or Steam game as a tile.
 - **Phone remote:** scan a QR code, no app to install. Clickpad, touchpad, typing, volume and haptics; wake the screen, choose the display, or open a website. Works away from home over Tailscale.
 - **Game controllers:** PlayStation, Xbox, Switch Pro and other controllers drive it like an Apple TV controller.
-- **Movies:** plays your own video files, including MKV, with subtitles and Continue Watching. Browse them from your phone.
+- **Movies:** plays your own video files, including MKV, with subtitles and Continue Watching, from the Mac, drives or a NAS (network shares stay connected). Browse them from your phone.
 - **Watching:** skips intros and recaps, plays the next episode, and has a sleep timer.
 - **Screen saver:** Apple's live aerial wallpapers, show art, your photos, or drifting colour, with a clock.
 - **Profiles:** each person gets their own apps and sign-ins.

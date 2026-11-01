@@ -241,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Updater.shared.isIdle = { [weak self] in self?.tv.idleForUpdate ?? false }
         Updater.shared.start()
+        NetworkShares.shared.start()
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
             return

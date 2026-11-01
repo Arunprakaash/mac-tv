@@ -127,7 +127,7 @@ extension TVController {
 
     private func handleFolders(_ command: RemoteCommand) {
         guard let row = movies?.folderRow else { return }
-        let count = MovieLibrary.shared.suggestedFolders.count + 1
+        let count = MovieLibrary.shared.suggestedFolders.count + 2
         switch command {
         case .back: movies?.folderRow = nil
         case .move(.up): movies?.folderRow = max(0, row - 1)
@@ -141,7 +141,15 @@ extension TVController {
         movies?.folderRow = row
         let suggested = MovieLibrary.shared.suggestedFolders
         if suggested.indices.contains(row) {
-            MovieLibrary.shared.toggle(suggested[row])
+            // An offline share reconnects; anything else switches on or off.
+            let shares = NetworkShares.shared
+            if let share = shares.share(for: suggested[row]), shares.status[share.id] != .connected {
+                shares.connect(share, addToMovies: false)
+            } else {
+                MovieLibrary.shared.toggle(suggested[row])
+            }
+        } else if row == suggested.count {
+            showToast("Add a network share from your phone: TV controls › Network Shares")
         } else {
             chooseMovieFolder()
         }
@@ -397,6 +405,7 @@ struct FoldersSheet: View {
     @ObservedObject var tv: TVController
     let focusedRow: Int
     @ObservedObject private var library = MovieLibrary.shared
+    @ObservedObject private var shares = NetworkShares.shared
     @Environment(\.canvasSize) private var canvas
     @Namespace private var focusSpace
 
@@ -408,12 +417,26 @@ struct FoldersSheet: View {
                 .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.65))
                 .padding(.bottom, 14)
             ForEach(Array(folders.enumerated()), id: \.element) { index, folder in
-                row(index, systemImage: folder.path.hasPrefix("/Volumes/") ? "externaldrive.fill" : "folder.fill",
-                    title: FileManager.default.displayName(atPath: folder.path)) {
-                    SettingSwitch(on: library.isWatched(folder))
+                if let share = shares.share(for: folder) {
+                    let status = shares.status[share.id] ?? .connecting
+                    row(index, systemImage: "server.rack", title: share.name) {
+                        if status == .connected {
+                            SettingSwitch(on: library.isWatched(folder))
+                        } else {
+                            Text(status.text).font(.tv(.caption1)).opacity(0.6)
+                        }
+                    }
+                } else {
+                    row(index, systemImage: folder.path.hasPrefix("/Volumes/") ? "externaldrive.fill" : "folder.fill",
+                        title: FileManager.default.displayName(atPath: folder.path)) {
+                        SettingSwitch(on: library.isWatched(folder))
+                    }
                 }
             }
-            row(folders.count, systemImage: "folder.badge.plus", title: "Choose Another Folder…") {
+            row(folders.count, systemImage: "plus", title: "Add Network Share…") {
+                Image(systemName: "chevron.right").font(.system(size: 22, weight: .semibold)).opacity(0.6)
+            }
+            row(folders.count + 1, systemImage: "folder.badge.plus", title: "Choose Another Folder…") {
                 Image(systemName: "chevron.right").font(.system(size: 22, weight: .semibold)).opacity(0.6)
             }
         }

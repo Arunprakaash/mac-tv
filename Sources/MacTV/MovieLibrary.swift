@@ -81,13 +81,20 @@ final class MovieLibrary: ObservableObject {
     private let folder = AppFolder.url.appendingPathComponent("Movies", isDirectory: true)
     private var postersFolder: URL { folder.appendingPathComponent("Posters", isDirectory: true) }
     private var listFile: URL { folder.appendingPathComponent("library.json") }
+    private var offlineFile: URL { folder.appendingPathComponent("offline.json") }
     private var lookingUp = false
+    /// Movies on a drive or network share that isn't connected right now, kept with where you stopped
+    /// so they come back as they were.
+    private var offline: [Movie] = []
 
     private init() {
         try? FileManager.default.createDirectory(at: postersFolder, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: listFile), let saved = try? JSONDecoder().decode([Movie].self, from: data) {
             movies = saved
             saved.forEach(loadPoster)
+        }
+        if let data = try? Data(contentsOf: offlineFile), let saved = try? JSONDecoder().decode([Movie].self, from: data) {
+            offline = saved
         }
     }
 
@@ -116,6 +123,10 @@ final class MovieLibrary: ObservableObject {
             at: URL(fileURLWithPath: "/Volumes"), includingPropertiesForKeys: [.volumeIsInternalKey],
             options: .skipsHiddenFiles)) ?? []
         list += volumes.filter { (try? $0.resourceValues(forKeys: [.volumeIsInternalKey]).volumeIsInternal) != true }
+        // Network shares stay listed while they're offline, so they can be reconnected from here.
+        for share in NetworkShares.shared.shares {
+            if let folder = share.folder, !list.contains(folder) { list.append(folder) }
+        }
         for chosen in folders where !list.contains(chosen) { list.append(chosen) }
         return list
     }
@@ -154,7 +165,8 @@ final class MovieLibrary: ObservableObject {
         let roots = folders
         Task.detached(priority: .utility) {
             let found = Self.scan(roots)
-            await MainActor.run { self.merge(found) }
+            let missing = roots.filter { !FileManager.default.fileExists(atPath: $0.path) }
+            await MainActor.run { self.merge(found, missing: missing) }
         }
     }
 
@@ -175,8 +187,14 @@ final class MovieLibrary: ObservableObject {
         return found
     }
 
-    private func merge(_ found: [(url: URL, added: Date, size: Int64)]) {
-        let known = Dictionary(movies.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+    private func merge(_ found: [(url: URL, added: Date, size: Int64)], missing: [URL]) {
+        let known = Dictionary((movies + offline).map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        // A folder that isn't there (a drive unplugged, a share offline): set its movies aside, don't forget them.
+        let missingPrefixes = missing.map { $0.path.hasSuffix("/") ? $0.path : $0.path + "/" }
+        let foundPaths = Set(found.map(\.url.path))
+        offline = known.values.filter { movie in
+            !foundPaths.contains(movie.path) && missingPrefixes.contains { movie.path.hasPrefix($0) }
+        }
         movies = found.map { file in
             if var movie = known[file.url.path] {
                 movie.size = file.size
@@ -221,6 +239,7 @@ final class MovieLibrary: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(movies) { try? data.write(to: listFile, options: .atomic) }
+        if let data = try? JSONEncoder().encode(offline) { try? data.write(to: offlineFile, options: .atomic) }
     }
 
     // MARK: Posters

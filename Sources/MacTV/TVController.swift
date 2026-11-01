@@ -591,6 +591,7 @@ final class TVController: NSObject, ObservableObject {
 
     /// The phone remote's app-management requests.
     func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? {
+        if let response = handleSharesRequest(request) { return response }
         if request.method == "POST", request.path == "/display/select" {
             guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
                   let id = body["id"] as? String, selectTVDisplay(id: id) else {
