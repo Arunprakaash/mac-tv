@@ -776,45 +776,34 @@ struct PairSheet: View {
                 Text("Use your phone as a remote").font(.tv(.title3, emphasized: true))
                 Text("Scan with your phone's camera, then add the page to your home screen.")
                     .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.75))
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
                     ForEach(links) { link in Text("\(link.label): \(link.address)") }
                     Text("Pairing code \(tv.pairingGuest ? tv.remoteGuestToken : tv.remoteToken)")
-                }.font(.system(size: 38, weight: .medium)).monospacedDigit().foregroundStyle(.white.opacity(0.9))
-                Button { tv.pairingGuest.toggle() } label: {
-                    HStack {
-                        Text("Phone access")
-                        Spacer()
-                        Text(tv.pairingGuest ? "Guest (24 hours)" : "Trusted phone")
-                        Image(systemName: "chevron.left.forwardslash.chevron.right").opacity(0.7)
+                }
+                .font(.tv(.caption2)).monospacedDigit().foregroundStyle(.white.opacity(0.7))
+                VStack(alignment: .leading, spacing: 10) {
+                    pairRow("Phone access", value: tv.pairingGuest ? "Guest" : "Full", focused: tv.pairingFocusedIndex == 0) {
+                        tv.pairingGuest.toggle()
                     }
-                    .font(.system(size: 30, weight: .medium))
-                    .padding(.horizontal, 18).padding(.vertical, 12)
-                    .background(.white.opacity(tv.pairingFocusedIndex == 0 ? 0.25 : 0.1), in: RoundedRectangle(cornerRadius: 12))
-                }.buttonStyle(.plain)
-                Text(tv.pairingGuest ? "Playback controls only. Access expires after 24 hours." : "Full remote controls and settings.")
-                    .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.7))
-                Text("Choose a display").font(.tv(.caption2, emphasized: true))
-                ScrollViewReader { proxy in
-                  ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(tv.availableTVDisplays.enumerated()), id: \.element.id) { index, display in
-                            Button { _ = tv.selectTVDisplay(id: display.id) } label: {
-                                HStack {
-                                    Text(display.name).lineLimit(1)
-                                    Spacer()
-                                    if display.current { Text("Current").opacity(0.75) }
-                                    if display.preferred { Image(systemName: "checkmark") }
+                    if tv.pairingGuest {
+                        Text("Playback controls only, for 24 hours.").font(.tv(.caption2)).opacity(0.6).padding(.leading, 26)
+                    }
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(spacing: 10) {
+                                ForEach(Array(tv.availableTVDisplays.enumerated()), id: \.element.id) { index, display in
+                                    pairRow(display.name, value: display.current ? "Current" : nil, checked: display.preferred,
+                                            focused: tv.pairingFocusedIndex == index + 1) { _ = tv.selectTVDisplay(id: display.id) }
+                                        .id(index)
                                 }
-                                .font(.system(size: 36, weight: .medium))
-                                .padding(.horizontal, 18).padding(.vertical, 10)
-                                .background(.white.opacity(tv.pairingFocusedIndex == index + 1 ? 0.25 : 0.1), in: RoundedRectangle(cornerRadius: 12))
-                            }.buttonStyle(.plain).id(index)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        .frame(maxHeight: 230)
+                        .onChange(of: tv.pairingFocusedIndex) { _, index in
+                            if index > 0 && index <= tv.availableTVDisplays.count { proxy.scrollTo(index - 1, anchor: .center) }
                         }
                     }
-                  }.frame(maxHeight: 210)
-                  .onChange(of: tv.pairingFocusedIndex) { _, index in
-                      if index > 0 && index <= tv.availableTVDisplays.count { proxy.scrollTo(index - 1, anchor: .center) }
-                  }
                 }
                 ShelfButton(title: "Done", focused: tv.pairingFocusedIndex == tv.availableTVDisplays.count + 1,
                             glass: false) { tv.pairing = false }
@@ -825,6 +814,29 @@ struct PairSheet: View {
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
+    }
+
+    /// A row on the frosted sheet: a plain fill at rest, the white platter with dark text when focused.
+    private func pairRow(_ title: String, value: String? = nil, checked: Bool = false, focused: Bool,
+                         action: @escaping () -> Void) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return Button(action: action) {
+            HStack(spacing: 16) {
+                Text(title).lineLimit(1)
+                Spacer(minLength: 16)
+                if let value { Text(value).opacity(0.6) }
+                if checked { Image(systemName: "checkmark") }
+            }
+            .font(.tv(.callout))
+            .padding(.horizontal, 26)
+            .frame(height: 66)
+            .foregroundStyle(focused ? .black : .white)
+            .background { if !focused { shape.fill(.white.opacity(0.07)) } }
+            .focusPlatter(shape, focused: focused, glass: false)
+            .scaleEffect(focused ? 1.03 : 1)
+            .animation(Motion.focus, value: focused)
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -1,27 +1,22 @@
-import AppKit
+import Foundation
 
 /// A website player choice belongs to the Mac TV profile, not the system browser.
 enum BrowserChoice: String {
     case embedded, brave
 }
 
-@MainActor
 struct BrowserPreferences {
     private let defaults: UserDefaults
     private let key = "websitePlayerByProfile"
-    private let braveAvailable: () -> Bool
 
-    init(defaults: UserDefaults = .standard,
-         braveAvailable: @escaping () -> Bool = {
-             NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") != nil
-         }) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.braveAvailable = braveAvailable
     }
 
+    /// The built-in player until someone chooses Brave: installing Brave never switches a profile on its own.
     func choice(for profileID: String) -> BrowserChoice {
         let choices = defaults.dictionary(forKey: key) as? [String: String] ?? [:]
-        return choices[profileID].flatMap(BrowserChoice.init(rawValue:)) ?? (braveAvailable() ? .brave : .embedded)
+        return choices[profileID].flatMap(BrowserChoice.init(rawValue:)) ?? .embedded
     }
 
     func setChoice(_ choice: BrowserChoice, for profileID: String) {

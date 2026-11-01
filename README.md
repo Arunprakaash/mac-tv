@@ -31,7 +31,7 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac.
 
 - **Apple TV's home screen:** a Top Shelf of the latest shows on each app, a dock of app tiles and the full grid below, in Liquid Glass.
 - **Your streaming apps:** Netflix, YouTube, Prime Video, JioHotstar, Apple TV, Spotify and YouTube Music in their official web players, with DRM. Add any website, Mac app or Steam game as a tile.
-- **Phone remote:** scan a QR code, no app to install. Clickpad, touchpad, typing, volume and haptics. Works away from home over Tailscale.
+- **Phone remote:** scan a QR code, no app to install. Clickpad, touchpad, typing, volume and haptics; wake the screen, choose the display, or open a website. Works away from home over Tailscale.
 - **Game controllers:** PlayStation, Xbox, Switch Pro and other controllers drive it like an Apple TV controller.
 - **Movies:** plays your own video files, including MKV, with subtitles and Continue Watching. Browse them from your phone.
 - **Watching:** skips intros and recaps, plays the next episode, and has a sleep timer.

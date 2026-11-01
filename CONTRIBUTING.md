@@ -50,7 +50,9 @@ Built-in checks, run on the app's binary:
 
 ## How some parts work
 
-- **Phone remote:** a web page Mac TV serves on the local network. The PIN refreshes every five minutes and is exchanged for a per-device credential, stored hashed on the Mac. Guests expire after 24 hours and can't browse files or manage devices. It's plain HTTP, so use a trusted network or Tailscale, and never expose its port publicly.
+- **Phone remote:** a web page Mac TV serves only to local and private-network phones (Tailscale included), with limits on connections, request size and time. Trusted and guest phones scan separate rotating codes, exchanged for a per-device credential stored hashed on the Mac. Guests get playback controls only and expire after 24 hours. It's plain HTTP, so use a trusted network or Tailscale, and never expose its port publicly.
+- **IINA:** Mac TV starts its own IINA window on the TV display and controls it over a private mpv socket (in a 0700 temporary folder), so commands work whatever app is in front. Home and Quit close only that window. Placing the window needs Accessibility.
+- **Screen wake:** "Wake screen" and other remote presses ask macOS to wake sleeping displays (a short user-activity assertion). It can't wake a Mac that is asleep or a TV that is switched off.
 - **Brave player:** Mac TV opens its own Brave window through Apple Events (values passed as descriptors, never as script text) and sends input only to that window. It needs Automation and Accessibility permission. Auto-skip, auto-next and the playback check apply only to the built-in player.
 - **Tiles:** generated from any square app icon (`TileArt.swift`): the background is read, the logo found and sized, and the background extended to 5:3.
 - **Top Shelf:** daily lists from [TVmaze](https://www.tvmaze.com) (CC BY-SA) and Apple's public music charts.
