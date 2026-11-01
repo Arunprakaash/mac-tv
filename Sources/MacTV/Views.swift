@@ -445,7 +445,6 @@ struct GlassDock: View {
         Color.clear
             .shadow(color: .black.opacity(visible ? 0.25 : 0), radius: 30, y: 16)
             .tvGlass(in: RoundedRectangle(cornerRadius: 48, style: .continuous), enabled: visible)
-            .opacity(visible ? 1 : 0)
     }
 }
 
@@ -491,8 +490,6 @@ struct AppCell: View {
             .overlay(alignment: .bottom) {
                 Text(service.name)
                     .font(.tv(.caption1))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.8), radius: 6, y: 2)
                     .fixedSize()
                     .offset(y: 50)
                     .opacity(focused && showsLabel ? 1 : 0)
@@ -539,7 +536,7 @@ struct AppTile: View {
                     .opacity(focused ? 1 : 0)
                     .allowsHitTesting(false)
             }
-            // Apple TV focus ring: subtle rim at rest, bright highlight when focused.
+            // A glass edge: a faint rim at rest, a bright top highlight when focused.
             .overlay {
                 shape.strokeBorder(LinearGradient(colors: [.white.opacity(focused ? 0.55 : 0.14), .white.opacity(focused ? 0.08 : 0.03)],
                                                   startPoint: .top, endPoint: .bottom), lineWidth: focused ? 1.5 : 1)
@@ -548,8 +545,6 @@ struct AppTile: View {
             .rotation3DEffect(.degrees(tilt.width * 12), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
             .scaleEffect(focused ? (reduceMotion ? 1.06 : 1.14) : 1)
             .offset(y: focused && !reduceMotion ? -10 : 0)
-            // Apple TV ambient glow and drop shadow on focused tile
-            .shadow(color: focused ? .white.opacity(0.35) : .clear, radius: 14, y: 0)
             // Resting icons sit flat on the glass; only the focused one casts a shadow.
             .shadow(color: .black.opacity(focused ? 0.6 : 0), radius: focused ? 28 : 0, y: focused ? 24 : 0)
             .animation(Motion.focus, value: focused)
@@ -813,10 +808,10 @@ struct WebViewHost: NSViewRepresentable {
 /// Mac TV's motion, built from Apple's system springs so everything moves with one feel.
 /// With Reduce Motion on, views fade instead of moving, scaling or tilting.
 enum Motion {
-    /// Focus moving between tiles, rows and buttons: smooth and fluid with zero bounce.
-    static let focus = Animation.smooth(duration: 0.32)
+    /// Focus moving between tiles, rows and buttons: quick, with a hint of bounce.
+    static let focus = Animation.snappy(duration: 0.28, extraBounce: 0.04)
     /// Scrolling between the Top Shelf, dock and grid.
-    static let navigate = Animation.smooth(duration: 0.32)
+    static let navigate = Animation.smooth(duration: 0.5)
     /// Sheets, toasts and pills arriving and leaving.
     static let appear = Animation.smooth(duration: 0.35)
     /// A control pressed: quick, settling without a bounce.
