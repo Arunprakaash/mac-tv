@@ -95,7 +95,7 @@ final class JellyfinServers: ObservableObject {
         }
         let user = user.trimmingCharacters(in: .whitespaces)
         guard !user.isEmpty else { return "Type your Jellyfin user name." }
-        let address = base.absoluteString
+        let address = await Self.tailscaleName(for: base).absoluteString
         do {
             guard let info = try await Self.call(Self.request(address, "/System/Info/Public")) as? [String: Any],
                   let id = info["Id"] as? String else { throw Failure.notJellyfin }
@@ -308,6 +308,35 @@ final class JellyfinServers: ObservableObject {
         return parts.url
     }
 
+    /// Tailscale's 100.x addresses are in the shared 100.64.0.0/10 range.
+    nonisolated static func isTailscaleAddress(_ host: String) -> Bool {
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+    }
+
+    /// macOS refuses plain HTTP to another machine's Tailscale number but allows its Tailscale
+    /// name (Info.plist allows ts.net), so a typed 100.x address becomes the name Tailscale gives it.
+    nonisolated static func tailscaleName(for url: URL) async -> URL {
+        guard let host = url.host, isTailscaleAddress(host) else { return url }
+        let name = await Task.detached(priority: .userInitiated) { () -> String? in
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else { return nil }
+            var name = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let found = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    getnameinfo($0, socklen_t(MemoryLayout<sockaddr_in>.size), &name, socklen_t(name.count), nil, 0, NI_NAMEREQD)
+                }
+            }
+            return found == 0 ? String(cString: name) : nil
+        }.value
+        guard let name = name?.trimmingCharacters(in: CharacterSet(charactersIn: ".")), name.hasSuffix(".ts.net"),
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        parts.host = name
+        return parts.url ?? url
+    }
+
     nonisolated static func ids(in path: String) -> (server: String, item: String)? {
         guard path.hasPrefix(scheme) else { return nil }
         let parts = path.dropFirst(scheme.count).split(separator: "/")
@@ -383,7 +412,9 @@ final class JellyfinServers: ObservableObject {
         case .cannotConnectToHost: return "Nothing is answering at \(place)"
         case .timedOut: return "No answer from \(place)"
         case .notConnectedToInternet, .networkConnectionLost: return "This Mac isn't connected"
-        case .appTransportSecurityRequiresSecureConnection: return "Use the server's IP address, or https://"
+        case .appTransportSecurityRequiresSecureConnection:
+            return error.failingURL?.host.map(isTailscaleAddress) == true
+                ? "Use the server's Tailscale name, like mac.tailnet.ts.net:8096" : "Use the server's IP address, or https://"
         case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
              .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot: return "The server's certificate isn't trusted"
         default: return "Can't reach \(place) (\(error.code.rawValue))"

@@ -21,6 +21,21 @@ struct JellyfinTests {
     }
 
     @Test
+    func knowsTailscaleAddresses() {
+        #expect(JellyfinServers.isTailscaleAddress("100.92.2.111"))
+        #expect(JellyfinServers.isTailscaleAddress("100.64.0.1"))
+        #expect(!JellyfinServers.isTailscaleAddress("100.128.0.1"))
+        #expect(!JellyfinServers.isTailscaleAddress("192.168.1.5"))
+        #expect(!JellyfinServers.isTailscaleAddress("nas.local"))
+    }
+
+    @Test
+    func leavesOtherAddressesAlone() async {
+        let url = URL(string: "http://192.168.1.5:8096")!
+        #expect(await JellyfinServers.tailscaleName(for: url) == url)
+    }
+
+    @Test
     func pathsCarryServerAndItem() {
         #expect(JellyfinServers.ids(in: "jellyfin://srv1/abc")?.server == "srv1")
         #expect(JellyfinServers.ids(in: "jellyfin://srv1/abc")?.item == "abc")
