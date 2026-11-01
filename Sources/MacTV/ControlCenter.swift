@@ -4,7 +4,7 @@ import SwiftUI
 /// for the things people change most. Opened from the status row's Control Center button.
 struct ControlCenterPanel: Equatable {
     enum Item: CaseIterable {
-        case sleepMac, phone, audio, sounds, sleepTimer, skipIntros, controller, screenOff, lid, settings
+        case sleepMac, phone, audio, sleepTimer, skipIntros, controller, screenOff, lid, settings
     }
 
     var item: Item = .audio
@@ -23,22 +23,17 @@ struct ControlCenterPanel: Equatable {
         case (.phone, .down): .skipIntros
         case (.sleepTimer, .up): .sleepMac
         case (.sleepTimer, .right): .skipIntros
-        case (.sleepTimer, .down): .sounds
+        case (.sleepTimer, .down): .controller
         case (.skipIntros, .up): .phone
         case (.skipIntros, .left): .sleepTimer
         case (.skipIntros, .down): .lid
-        case (.sounds, .up): .sleepTimer
-        case (.sounds, .right): .controller
-        case (.controller, .up): .sleepTimer
-        case (.controller, .left): .sounds
+        case (.controller, .up), (.screenOff, .up): .sleepTimer
         case (.controller, .right): .screenOff
-        case (.screenOff, .up): .sleepTimer
         case (.screenOff, .left): .controller
         case (.screenOff, .right): .lid
-        case (.lid, .up): .skipIntros
+        case (.lid, .up), (.settings, .up): .skipIntros
         case (.lid, .left): .screenOff
         case (.lid, .right): .settings
-        case (.settings, .up): .skipIntros
         case (.settings, .left): .lid
         default: nil
         }
@@ -65,7 +60,7 @@ extension TVController {
                 // Up from the top row goes back to the status row's Control Center button.
                 controlCenter = nil
                 return
-            } else if direction == .down, panel.item == .sounds || panel.item == .controller || panel.item == .screenOff
+            } else if direction == .down, panel.item == .controller || panel.item == .screenOff
                         || panel.item == .lid || panel.item == .settings {
                 controlCenter = nil
                 return
@@ -98,7 +93,6 @@ extension TVController {
         case .phone:
             controlCenter = nil
             pairing = true
-        case .sounds: Feedback.shared.enabled.toggle()
         case .sleepTimer: stepSleepTimer(by: 1, wrap: true)
         case .skipIntros: autoSkip.toggle()
         case .controller:
@@ -145,7 +139,6 @@ struct ControlCenterView: View {
                              detail: tv.autoSkip ? "On" : "Off", on: tv.autoSkip)
                     }
                     HStack(spacing: Self.gap) {
-                        round(.sounds, panel, symbol: Feedback.shared.enabled ? "speaker.wave.2.fill" : "speaker.slash.fill", on: Feedback.shared.enabled)
                         round(.controller, panel, symbol: "gamecontroller.fill", on: tv.controller != nil)
                         round(.screenOff, panel, symbol: "tv.slash", on: true)
                         round(.lid, panel, symbol: tv.lidOverride ? "laptopcomputer" : "laptopcomputer.slash", on: tv.lidOverride)
@@ -170,7 +163,6 @@ struct ControlCenterView: View {
     /// What the focused round button does, shown under the cluster since those buttons have no label.
     private func caption(_ panel: ControlCenterPanel) -> String {
         switch panel.item {
-        case .sounds: Feedback.shared.enabled ? "Navigation Sounds: On" : "Navigation Sounds: Off"
         case .controller: tv.controller?.name ?? "No controller connected"
         case .screenOff: "Turn Screen Off"
         case .lid: tv.lidOverride ? "Stays awake with the lid closed" : "Sleeps when the lid closes"
@@ -228,7 +220,7 @@ struct ControlCenterView: View {
 
     private func round(_ item: ControlCenterPanel.Item, _ panel: ControlCenterPanel, symbol: String, on: Bool) -> some View {
         let focused = panel.item == item
-        let count: CGFloat = 5
+        let count: CGFloat = 4
         let size = (Self.column * 2 + Self.gap - Self.gap * (count - 1)) / count
         return Image(systemName: symbol)
             .font(.system(size: 34, weight: .medium))

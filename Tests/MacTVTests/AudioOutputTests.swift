@@ -81,9 +81,33 @@ struct AudioOutputTests {
             #expect(levelAfter <= levelBefore)
         }
 
+        // Navigation sound slider
+        let soundSliderRow = tv.audioDevices.count + 1
+        tv.audioPicker?.row = soundSliderRow
+
+        Feedback.shared.volume = 0.50
+        Feedback.shared.enabled = true
+        tv.handleAudioPicker(.move(.left))
+        #expect(abs(Feedback.shared.volume - 0.45) < 0.01)
+
+        tv.handleAudioPicker(.move(.right))
+        #expect(abs(Feedback.shared.volume - 0.50) < 0.01)
+
+        tv.handleAudioPicker(.select)
+        #expect(Feedback.shared.isMuted)
+        tv.handleAudioPicker(.select)
+        #expect(!Feedback.shared.isMuted)
+
         // Dismiss with Back
         tv.handleAudioPicker(.back)
         #expect(tv.audioPicker == nil)
         #expect(tv.activeSheet == nil)
+    }
+
+    @Test
+    func controlCenterItemsExcludeSounds() {
+        #expect(!ControlCenterPanel.Item.allCases.contains(where: { "\($0)" == "sounds" }))
+        #expect(ControlCenterPanel.neighbour(of: .sleepTimer, .down) == .controller)
+        #expect(ControlCenterPanel.neighbour(of: .controller, .up) == .sleepTimer)
     }
 }
