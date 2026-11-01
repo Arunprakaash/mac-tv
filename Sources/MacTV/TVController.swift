@@ -592,6 +592,7 @@ final class TVController: NSObject, ObservableObject {
     /// The phone remote's app-management requests.
     func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? {
         if let response = handleSharesRequest(request) { return response }
+        if let response = handleJellyfinRequest(request) { return response }
         if request.method == "POST", request.path == "/display/select" {
             guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
                   let id = body["id"] as? String, selectTVDisplay(id: id) else {
@@ -1334,7 +1335,19 @@ final class TVController: NSObject, ObservableObject {
         localMoviePlayer = "native"
         Task { @MainActor in
             let opened: Result<PlaybackEngine, PlaybackProblem>
-            if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
+            var stream: JellyfinServers.Stream?
+            if movie.isRemote {
+                switch await JellyfinServers.shared.stream(for: movie) {
+                case .success(let found):
+                    stream = found
+                    opened = await AVPlayback.open(found.url).map { $0 as PlaybackEngine }
+                case .failure(let problem):
+                    guard playbackRequest == request else { return }
+                    currentLocalMovie = nil
+                    showToast(problem.message)
+                    return
+                }
+            } else if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
                 opened = await Task.detached(priority: .userInitiated) { MatroskaPlayback.open(movie.url) }.value
                     .map { $0 as PlaybackEngine }
             } else {
@@ -1345,9 +1358,10 @@ final class TVController: NSObject, ObservableObject {
                 return
             }
             // The kind of file and how it played, never its name.
-            let format = movie.url.pathExtension.lowercased()
+            let format = movie.isRemote ? "jellyfin" : movie.url.pathExtension.lowercased()
             switch opened {
             case .success(let engine):
+                if let stream { JellyfinServers.shared.started(stream, movie: movie, at: seconds) }
                 Analytics.send(.moviePlayed, ["format": format, "player": engine is AVPlayback ? "system" : "matroska",
                                               "resumed": String(seconds > 0)])
                 startMovie(movie, engine: engine, from: seconds)
@@ -1383,6 +1397,7 @@ final class TVController: NSObject, ObservableObject {
     func closeMovie() {
         playbackRequest = UUID()
         currentLocalMovie = nil
+        if let player = moviePlayer { JellyfinServers.shared.stopped(player.movie, at: player.engine.currentTime) }
         moviePlayer?.stop()
         if let path = moviePlayer?.movie.path {
             for (row, line) in movieRows.enumerated() {
@@ -1404,6 +1419,11 @@ final class TVController: NSObject, ObservableObject {
 
     /// IINA or VLC play almost anything; IINA opens full screen. Remote presses go to it as keys.
     private func openElsewhere(_ movie: Movie) {
+        guard !movie.isRemote else {
+            currentLocalMovie = nil
+            showToast("Mac TV couldn't play \(movie.title) from \(movie.server ?? "the server").")
+            return
+        }
         let iina = "com.colliderli.iina", vlc = "org.videolan.vlc"
         if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iina) != nil, playInIINA(movie) { return }
         if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: vlc) {

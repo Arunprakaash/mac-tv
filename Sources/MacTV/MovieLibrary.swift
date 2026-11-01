@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 
-/// A video file on the Mac.
+/// A video file on the Mac, or a movie on a Jellyfin server.
 struct Movie: Codable, Identifiable, Hashable {
     let path: String
     var title: String
@@ -18,8 +18,13 @@ struct Movie: Codable, Identifiable, Hashable {
     /// Where playback stopped, in seconds; nil once finished.
     var position: Double?
     var lastWatched: Date?
+    /// The Jellyfin server it's on; nil for a file.
+    var server: String?
+    /// The server item whose picture is the poster (an episode's show).
+    var artwork: String?
 
     var id: String { path }
+    var isRemote: Bool { path.hasPrefix(JellyfinServers.scheme) }
     var url: URL { URL(fileURLWithPath: path) }
     var displayTitle: String { episode.map { "\(title) · \($0)" } ?? title }
 
@@ -83,6 +88,8 @@ final class MovieLibrary: ObservableObject {
     private var listFile: URL { folder.appendingPathComponent("library.json") }
     private var offlineFile: URL { folder.appendingPathComponent("offline.json") }
     private var lookingUp = false
+    /// A refresh asked for while one was running, done when it finishes.
+    private var refreshAgain = false
     /// Movies on a drive or network share that isn't connected right now, kept with where you stopped
     /// so they come back as they were.
     private var offline: [Movie] = []
@@ -158,15 +165,18 @@ final class MovieLibrary: ObservableObject {
 
     // MARK: Scanning
 
-    /// Looks through the folders again, keeping what's known about files still there.
+    /// Looks through the folders and Jellyfin servers again, keeping what's known about movies still there.
     func refresh() {
-        guard !scanning else { return }
+        guard !scanning else { refreshAgain = true; return }
         scanning = true
         let roots = folders
+        let servers = JellyfinServers.shared.servers.filter(\.on)
         Task.detached(priority: .utility) {
+            async let remote = JellyfinServers.movies(on: servers)
             let found = Self.scan(roots)
-            let missing = roots.filter { !FileManager.default.fileExists(atPath: $0.path) }
-            await MainActor.run { self.merge(found, missing: missing) }
+            let missing = roots.filter { !FileManager.default.fileExists(atPath: $0.path) }.map(\.path)
+            let (served, unreachable) = await remote
+            await MainActor.run { self.merge(found, served: served, missing: missing + unreachable) }
         }
     }
 
@@ -187,15 +197,17 @@ final class MovieLibrary: ObservableObject {
         return found
     }
 
-    private func merge(_ found: [(url: URL, added: Date, size: Int64)], missing: [URL]) {
+    /// `missing` are folders that aren't there and servers that didn't answer, as path prefixes.
+    private func merge(_ found: [(url: URL, added: Date, size: Int64)], served: [Movie], missing: [String]) {
         let known = Dictionary((movies + offline).map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
-        // A folder that isn't there (a drive unplugged, a share offline): set its movies aside, don't forget them.
-        let missingPrefixes = missing.map { $0.path.hasSuffix("/") ? $0.path : $0.path + "/" }
-        let foundPaths = Set(found.map(\.url.path))
+        // A folder that isn't there (a drive unplugged, a share offline) or a server that's down:
+        // set its movies aside, don't forget them.
+        let missingPrefixes = missing.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        let foundPaths = Set(found.map(\.url.path) + served.map(\.path))
         offline = known.values.filter { movie in
             !foundPaths.contains(movie.path) && missingPrefixes.contains { movie.path.hasPrefix($0) }
         }
-        movies = found.map { file in
+        let files = found.map { file in
             if var movie = known[file.url.path] {
                 movie.size = file.size
                 return movie
@@ -204,10 +216,32 @@ final class MovieLibrary: ObservableObject {
             return Movie(path: file.url.path, title: name.title, year: name.year, episode: name.episode,
                          added: file.added, size: file.size)
         }
-        .sorted { $0.added != $1.added ? $0.added > $1.added : $0.title < $1.title }
+        // On the Mac running the server (or one with its own copy), the file plays here directly.
+        let local = Set(files.map(Self.matchKey))
+        let fromServers = served.filter { !local.contains(Self.matchKey($0)) }
+        movies = (files + fromServers.map { Self.update(known[$0.path], from: $0) })
+            .sorted { $0.added != $1.added ? $0.added > $1.added : $0.title < $1.title }
         scanning = false
         save()
         lookUpPosters()
+        if refreshAgain {
+            refreshAgain = false
+            refresh()
+        }
+    }
+
+    /// A server's movie as the server describes it now, keeping the poster already here and
+    /// whichever place you stopped at is newer: watched here, or in another Jellyfin app.
+    nonisolated static func update(_ known: Movie?, from served: Movie) -> Movie {
+        guard let known else { return served }
+        var movie = served
+        movie.poster = known.poster
+        movie.posterChecked = known.posterChecked || served.posterChecked
+        if (known.lastWatched ?? .distantPast) > (served.lastWatched ?? .distantPast) {
+            movie.position = known.position
+            movie.lastWatched = known.lastWatched
+        }
+        return movie
     }
 
     // MARK: Watching
@@ -233,6 +267,7 @@ final class MovieLibrary: ObservableObject {
         movies[index].position = finished ? nil : position
         movies[index].lastWatched = Date()
         save()
+        if movies[index].isRemote { JellyfinServers.shared.progress(movies[index], at: position, paused: false) }
     }
 
     func movie(_ path: String) -> Movie? { movies.first { $0.path == path } }
@@ -256,9 +291,15 @@ final class MovieLibrary: ObservableObject {
         lookingUp = true
         Task {
             while let movie = movies.first(where: { !$0.posterChecked }) {
-                let poster = await Self.findPoster(for: movie)
+                let poster: Data?
                 var duration = movie.duration
-                if duration == nil { duration = await Self.duration(of: movie.url) }
+                if movie.isRemote {
+                    let server = JellyfinServers.shared.server(for: movie.path)
+                    poster = if let server { await JellyfinServers.poster(for: movie, on: server) } else { nil }
+                } else {
+                    poster = await Self.findPoster(for: movie)
+                    if duration == nil { duration = await Self.duration(of: movie.url) }
+                }
                 guard let index = movies.firstIndex(where: { $0.path == movie.path }) else { continue }
                 if let poster {
                     let name = "\(abs(movie.path.hashValue))-\(Int(Date().timeIntervalSince1970)).jpg"
@@ -310,6 +351,11 @@ final class MovieLibrary: ObservableObject {
             }
         }
         return nil
+    }
+
+    /// The same film or episode, wherever it comes from.
+    nonisolated static func matchKey(_ movie: Movie) -> String {
+        "\(simplified(movie.title))|\(movie.year ?? 0)|\(movie.episode ?? "")"
     }
 
     private nonisolated static func simplified(_ title: String) -> String {

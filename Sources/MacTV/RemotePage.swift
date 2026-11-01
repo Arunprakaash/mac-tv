@@ -330,6 +330,15 @@ enum RemotePage {
           <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Add share</button>
         </form>
         <p class="note" id="shares-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. The password stays in the Mac's Keychain.</p>
+        <div class="group-label">Jellyfin servers</div>
+        <div id="jellyfin"></div>
+        <form id="jellyfin-form" autocomplete="off">
+          <input class="field" id="jellyfin-address" placeholder="Server, e.g. 192.168.1.5:8096" aria-label="Jellyfin server address" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <input class="field" id="jellyfin-user" placeholder="User name" aria-label="Jellyfin user name" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
+          <input class="field" id="jellyfin-password" type="password" placeholder="Password" aria-label="Jellyfin password" autocomplete="off" style="margin-top:8px">
+          <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Sign in</button>
+        </form>
+        <p class="note" id="jellyfin-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. Only a sign-in key is kept, in the Mac's Keychain.</p>
         <div class="group-label">Paired devices</div>
         <div id="devices"></div>
         <button class="row-btn danger" id="revoke-all">Remove all paired devices</button>
@@ -1002,6 +1011,56 @@ enum RemotePage {
       } catch (err) { $('#shares-msg').textContent = err.message; haptic('error'); }
       watchShares();
     };
+    let jellyfinPoll = 0;
+    const jellyfinNote = 'Its movies appear in Movies on the TV. Only a sign-in key is kept, in the Mac\'s Keychain.';
+    async function loadJellyfin() {
+      const box = $('#jellyfin');
+      let reply;
+      try { reply = await api('/jellyfin'); } catch (e) { $('#jellyfin-msg').textContent = e.message; return; }
+      box.textContent = '';
+      for (const server of reply.servers) {
+        const row = document.createElement('div');
+        row.className = 'sheet-head';
+        const label = document.createElement('span');
+        label.textContent = `${server.name} · ${server.status}`;
+        label.title = `${server.user} on ${server.address}`;
+        const remove = document.createElement('button');
+        remove.className = 'pill'; remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', `Remove ${server.name}`);
+        remove.onclick = async () => {
+          if (!confirm(`Sign out of ${server.name} and remove it from Mac TV?`)) return;
+          try { await api('/jellyfin/remove', { id: server.id }); } catch (e) { $('#jellyfin-msg').textContent = e.message; }
+          loadJellyfin();
+        };
+        row.append(label, remove); box.appendChild(row);
+      }
+      if (reply.signingIn) $('#jellyfin-msg').textContent = 'Signing in…';
+      return reply;
+    }
+    // Signing in takes a moment: check until it's done, then say how it went.
+    function watchJellyfin() {
+      clearTimeout(jellyfinPoll);
+      let tries = 0;
+      const tick = async () => {
+        const reply = await loadJellyfin();
+        if (!reply) return;
+        if (reply.signingIn && ++tries < 40) { jellyfinPoll = setTimeout(tick, 1000); return; }
+        if (reply.error) { $('#jellyfin-msg').textContent = reply.error; haptic('error'); }
+        else { $('#jellyfin-msg').textContent = jellyfinNote; $('#jellyfin-password').value = ''; }
+      };
+      tick();
+    }
+    $('#jellyfin-form').onsubmit = async e => {
+      e.preventDefault();
+      const address = $('#jellyfin-address').value.trim();
+      const user = $('#jellyfin-user').value.trim();
+      if (!address || !user) { $('#jellyfin-msg').textContent = 'Enter the server and your user name.'; return; }
+      try {
+        await api('/jellyfin/add', { address, user, password: $('#jellyfin-password').value });
+        haptic('tap');
+      } catch (err) { $('#jellyfin-msg').textContent = err.message; haptic('error'); return; }
+      watchJellyfin();
+    };
     $('#revoke-all').onclick = async () => {
       if (!confirm('Remove all paired devices, including this one?')) return;
       try { await api('/devices/revoke-all', {}); key = ''; store.set(''); closeSheets(); showPair(); }
@@ -1055,7 +1114,7 @@ enum RemotePage {
     document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
     $('#open-text').onclick = () => { haptic('tick'); $('#text-sheet').classList.add('show'); $('#text-sheet [data-close]').focus(); };
     $('#open-apps').onclick = () => { haptic('tick'); refresh(); $('#apps-sheet').classList.add('show'); };
-    $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); loadShares(); $('#power-sheet').classList.add('show'); };
+    $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); loadShares(); loadJellyfin(); $('#power-sheet').classList.add('show'); };
     document.querySelectorAll('#sleep-chips button').forEach(b => b.onclick = () => {
       const m = Number(b.dataset.m);
       send('sleeptimer', { m }, 'tap').then(refresh);

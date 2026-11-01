@@ -258,7 +258,7 @@ final class MoviePlayer: ObservableObject {
     init(movie: Movie, engine: PlaybackEngine) {
         self.movie = movie
         self.engine = engine
-        sidecars = Self.findSidecars(for: movie.url)
+        sidecars = movie.isRemote ? [] : Self.findSidecars(for: movie.url)
         if engine.subtitleOptions.isEmpty, let first = sidecars.firstIndex(where: { MediaOption.prefers($0.option.language) }) {
             // A subtitle file sitting next to the movie in your language was put there to be used.
             selectedSubtitle = first

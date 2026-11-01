@@ -8,15 +8,17 @@ struct MoviesBrowser: Equatable {
     var column = 0
     /// The Folders sheet, and its focused row.
     var folderRow: Int?
-    /// Adding a network share, over the Folders sheet.
+    /// Adding a network share or a Jellyfin server, over the Folders sheet.
     var shareForm: ShareForm?
     /// Asking Resume or Start Over for this movie; 0 resume, 1 from the beginning.
     var resuming: String?
     var resumeRow = 0
 }
 
-/// The TV's Add Network Share form, typed with the keyboard or the phone's Type on TV.
+/// The TV's Add Network Share and Add Jellyfin Server form, typed with the keyboard or the
+/// phone's Type on TV.
 struct ShareForm: Equatable {
+    var jellyfin = false
     /// 0 address, 1 user name, 2 password, 3 Connect.
     var row = 0
     var address = ""
@@ -142,7 +144,7 @@ extension TVController {
 
     private func handleFolders(_ command: RemoteCommand) {
         guard let row = movies?.folderRow else { return }
-        let count = MovieLibrary.shared.suggestedFolders.count + 2
+        let count = MovieLibrary.shared.suggestedFolders.count + JellyfinServers.shared.servers.count + 3
         switch command {
         case .back: movies?.folderRow = nil
         case .move(.up): movies?.folderRow = max(0, row - 1)
@@ -155,6 +157,8 @@ extension TVController {
     func activateFolderRow(_ row: Int) {
         movies?.folderRow = row
         let suggested = MovieLibrary.shared.suggestedFolders
+        let servers = JellyfinServers.shared.servers
+        let extras = suggested.count + servers.count
         if suggested.indices.contains(row) {
             // An offline share reconnects; anything else switches on or off.
             let shares = NetworkShares.shared
@@ -163,8 +167,12 @@ extension TVController {
             } else {
                 MovieLibrary.shared.toggle(suggested[row])
             }
-        } else if row == suggested.count {
+        } else if row < extras {
+            JellyfinServers.shared.activate(servers[row - suggested.count])
+        } else if row == extras {
             movies?.shareForm = ShareForm()
+        } else if row == extras + 1 {
+            movies?.shareForm = ShareForm(jellyfin: true)
         } else {
             chooseMovieFolder()
         }
@@ -185,7 +193,11 @@ extension TVController {
         case .move(.up): form.row = max(0, form.row - 1)
         case .move(.down): form.row = min(3, form.row + 1)
         case .select:
-            if form.row == 3 { movies?.shareForm = form; submitShareForm(); return }
+            if form.row == 3 {
+                movies?.shareForm = form
+                form.jellyfin ? submitJellyfinForm() : submitShareForm()
+                return
+            }
             form.row += 1
         case .text(let text):
             let typed = text.replacingOccurrences(of: "\n", with: "")
@@ -236,6 +248,27 @@ extension TVController {
                     return
                 default: continue
                 }
+            }
+        }
+    }
+
+    /// Signs in to the Jellyfin server: closes on success, or shows why it couldn't.
+    private func submitJellyfinForm() {
+        guard var form = movies?.shareForm else { return }
+        form.connecting = true
+        form.message = "Signing in…"
+        movies?.shareForm = form
+        Task { @MainActor [weak self] in
+            let error = await JellyfinServers.shared.signIn(address: form.address, user: form.user, password: form.password)
+            guard let self, self.movies?.shareForm?.connecting == true else { return }
+            if let error {
+                self.movies?.shareForm?.connecting = false
+                self.movies?.shareForm?.message = error
+                self.movies?.shareForm?.failed = true
+            } else {
+                self.movies?.shareForm = nil
+                let name = JellyfinServers.shared.servers.last?.name ?? "the server"
+                self.showToast("Signed in to \(name). Its movies are on the way.")
             }
         }
     }
@@ -382,7 +415,7 @@ struct MoviesScreen: View {
         if movie.inProgress, let position = movie.position, let duration = movie.duration {
             parts.append("\(Self.length(duration - position)) left")
         }
-        parts.append(movie.url.pathExtension.uppercased())
+        parts.append(movie.server ?? movie.url.pathExtension.uppercased())
         return parts.joined(separator: "  ·  ")
     }
 
@@ -495,6 +528,7 @@ struct FoldersSheet: View {
     let focusedRow: Int
     @ObservedObject private var library = MovieLibrary.shared
     @ObservedObject private var shares = NetworkShares.shared
+    @ObservedObject private var jellyfin = JellyfinServers.shared
     @Environment(\.canvasSize) private var canvas
     @Namespace private var focusSpace
 
@@ -502,7 +536,7 @@ struct FoldersSheet: View {
         let folders = library.suggestedFolders
         VStack(alignment: .leading, spacing: 10) {
             Text("Folders").font(.tv(.title3, emphasized: true))
-            Text("Mac TV shows the movies in the folders you turn on, including folders inside them.")
+            Text("Mac TV shows the movies in the folders and servers you turn on.")
                 .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.65))
                 .padding(.bottom, 14)
             ForEach(Array(folders.enumerated()), id: \.element) { index, folder in
@@ -522,10 +556,24 @@ struct FoldersSheet: View {
                     }
                 }
             }
-            row(folders.count, systemImage: "plus", title: "Add Network Share…") {
+            ForEach(Array(jellyfin.servers.enumerated()), id: \.element.id) { index, server in
+                let status = jellyfin.status[server.id] ?? .connecting
+                row(folders.count + index, systemImage: "tv.and.mediabox", title: server.name) {
+                    if !server.on || status == .connected {
+                        SettingSwitch(on: server.on)
+                    } else {
+                        Text(status.text).font(.tv(.caption1)).opacity(0.6)
+                    }
+                }
+            }
+            let extras = folders.count + jellyfin.servers.count
+            row(extras, systemImage: "plus", title: "Add Network Share…") {
                 Image(systemName: "chevron.right").font(.system(size: 22, weight: .semibold)).opacity(0.6)
             }
-            row(folders.count + 1, systemImage: "folder.badge.plus", title: "Choose Another Folder…") {
+            row(extras + 1, systemImage: "plus", title: "Add Jellyfin Server…") {
+                Image(systemName: "chevron.right").font(.system(size: 22, weight: .semibold)).opacity(0.6)
+            }
+            row(extras + 2, systemImage: "folder.badge.plus", title: "Choose Another Folder…") {
                 Image(systemName: "chevron.right").font(.system(size: 22, weight: .semibold)).opacity(0.6)
             }
         }
@@ -868,7 +916,8 @@ struct LayerHost: NSViewRepresentable {
     func updateNSView(_ nsView: Host, context: Context) {}
 }
 
-/// Add Network Share on the TV: the address, an optional user name and password, then Connect.
+/// Add Network Share or Add Jellyfin Server on the TV: the address, a user name and password, then
+/// Connect or Sign In.
 struct ShareFormSheet: View {
     @ObservedObject var tv: TVController
     let form: ShareForm
@@ -876,16 +925,21 @@ struct ShareFormSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            Text("Add Network Share").font(.tv(.title3, emphasized: true))
-            AdderField(label: "Shared folder", text: form.address, placeholder: "e.g. nas.local/Movies", focused: form.row == 0) { set(0) }
-            AdderField(label: "User name", text: form.user, placeholder: "Leave empty for guest", focused: form.row == 1) { set(1) }
+            Text(form.jellyfin ? "Add Jellyfin Server" : "Add Network Share").font(.tv(.title3, emphasized: true))
+            AdderField(label: form.jellyfin ? "Server" : "Shared folder", text: form.address,
+                       placeholder: form.jellyfin ? "e.g. 192.168.1.5:8096" : "e.g. nas.local/Movies", focused: form.row == 0) { set(0) }
+            AdderField(label: "User name", text: form.user, placeholder: form.jellyfin ? "Your Jellyfin user" : "Leave empty for guest",
+                       focused: form.row == 1) { set(1) }
             AdderField(label: "Password", text: String(repeating: "•", count: form.password.count), placeholder: "Password",
                        focused: form.row == 2) { set(2) }
-            ShelfButton(title: form.connecting ? "Connecting…" : "Connect", systemImage: "server.rack", focused: form.row == 3, glass: false) {
+            ShelfButton(title: buttonTitle, systemImage: form.jellyfin ? "tv.and.mediabox" : "server.rack",
+                        focused: form.row == 3, glass: false) {
                 set(3)
                 tv.handle(.select)
             }
-            Text(form.message ?? "Type with the keyboard or the remote's typing box. The password stays in this Mac's Keychain.")
+            Text(form.message ?? (form.jellyfin
+                ? "Use the user the server's owner made for you. Only a sign-in key is kept, in this Mac's Keychain."
+                : "Type with the keyboard or the remote's typing box. The password stays in this Mac's Keychain."))
                 .font(.tv(.caption2, emphasized: form.message != nil))
                 .foregroundStyle(form.failed ? Color(hex: "#FF8A80") : .white.opacity(form.message == nil ? 0.55 : 0.9))
                 .lineLimit(2)
@@ -899,6 +953,15 @@ struct ShareFormSheet: View {
         .frame(width: canvas.width, height: canvas.height)
         .background(Color.black.opacity(0.35))
         .animation(Motion.focus, value: form)
+    }
+
+    private var buttonTitle: String {
+        switch (form.jellyfin, form.connecting) {
+        case (true, true): "Signing In…"
+        case (true, false): "Sign In"
+        case (false, true): "Connecting…"
+        case (false, false): "Connect"
+        }
     }
 
     private func set(_ row: Int) {
