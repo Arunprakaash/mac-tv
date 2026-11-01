@@ -55,6 +55,7 @@ extension TVController {
         }
         setup = nil
         setFocus(.app(0))
+        showStartupPairingIfReady()
     }
 
     func handleSetup(_ command: RemoteCommand) {

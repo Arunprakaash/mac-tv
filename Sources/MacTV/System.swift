@@ -30,6 +30,10 @@ enum SystemControl {
     /// Turns the displays off; playback and the remote keep working.
     static func displayOff() { pmset("displaysleepnow") }
 
+    /// Ask macOS to wake sleeping displays. The return value reports request acceptance only.
+    @discardableResult
+    static func displayOn() -> Bool { DisplayPower.wake() }
+
     /// Full system sleep. The phone can't wake the Mac over Wi-Fi; its keyboard or lid can.
     static func sleepNow() { pmset("sleepnow") }
 
@@ -72,6 +76,8 @@ final class KeepAwake {
     init(_ type: String = kIOPMAssertionTypePreventUserIdleDisplaySleep) {
         self.type = type
     }
+
+    deinit { release() }
 
     func hold(reason: String) {
         guard !held else { return }

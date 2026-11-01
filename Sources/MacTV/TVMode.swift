@@ -9,14 +9,26 @@ final class TVMode {
     private weak var tv: TVController?
     private var normalFrame: NSRect?
     private var transitioning = false
+    private var transitionGeneration = 0
+    private var pendingDedicatedEntry = false
     private var relocationPending = false
+    private var manualTargetID: String?
+    private var manualRestoreFullscreen = false
+    private var manualDedicatedEntry = false
+    private var manualEntering = false
+    private var fullscreenTargetID: String?
+    private var fullscreenMoveRetries = 0
+    private var movingWindow = false
+    private var pairingFocus = 0
     private var screenChangeGeneration = 0
     private var observers: [NSObjectProtocol] = []
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
-    init(window: NSWindow, tv: TVController) {
+    init(window: NSWindow, tv: TVController, defaults: UserDefaults = .standard) {
         self.window = window
         self.tv = tv
+        self.defaults = defaults
+        tv.displayCoordinator = self
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.didEnterFullScreen() }
@@ -24,6 +36,34 @@ final class TVMode {
         observers.append(center.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.didExitFullScreen() }
         })
+    }
+
+    private func toggleFullscreenWithWatchdog() {
+        transitionGeneration += 1
+        let generation = transitionGeneration
+        window.toggleFullScreen(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, self.transitionGeneration == generation, self.transitioning else { return }
+            self.trace("fullscreen transition timed out")
+            self.transitioning = false
+            self.pendingDedicatedEntry = false
+            self.manualEntering = false
+            self.manualTargetID = nil
+            self.fullscreenTargetID = nil
+            self.manualRestoreFullscreen = false
+            self.manualDedicatedEntry = false
+            self.relocationPending = false
+            self.tv?.showToast("Fullscreen transition did not finish. Try choosing the display again.")
+            self.tv?.objectWillChange.send()
+        }
+    }
+
+    private func trace(_ event: String) {
+        guard ProcessInfo.processInfo.environment["MACTV_DISPLAY_DEBUG"] == "1" else { return }
+        NSLog("Mac TV display: %@ current=%@ preferred=%@ fullscreen=%@ transitioning=%@ moving=%@ target=%@ frame=%@", event,
+              window.screen.map(id) ?? "none", preferredID ?? "automatic",
+              String(window.styleMask.contains(.fullScreen)), String(transitioning), String(movingWindow),
+              manualTargetID ?? "none", NSStringFromRect(window.frame))
     }
 
     var enabled: Bool { defaults.bool(forKey: "dedicatedTVMode") }
@@ -36,6 +76,137 @@ final class TVMode {
             return "display-\(screen.displayID)"
         }
         return CFUUIDCreateString(nil, uuid) as String
+    }
+
+    struct DisplayOption: Equatable {
+        let id: String
+        let name: String
+        let current: Bool
+        let preferred: Bool
+    }
+
+    var displayOptions: [DisplayOption] {
+        NSScreen.screens.map { screen in
+            DisplayOption(id: id(screen), name: screen.localizedName,
+                          current: window.screen?.displayID == screen.displayID,
+                          preferred: preferredID == id(screen))
+        }
+    }
+
+    var pairingFocusedIndex: Int { min(pairingFocus, displayOptions.count + 1) }
+
+    func resetPairingFocus() { pairingFocus = 0 }
+
+    static func pairingIndex(_ index: Int, count: Int, step: Int) -> Int {
+        min(max(0, index + step), max(0, count) + 1)
+    }
+
+    func handlePairing(_ command: RemoteCommand) {
+        let count = displayOptions.count
+        pairingFocus = min(pairingFocus, count + 1)
+        switch command {
+        case .move(.left), .move(.up): pairingFocus = Self.pairingIndex(pairingFocus, count: count, step: -1)
+        case .move(.right), .move(.down): pairingFocus = Self.pairingIndex(pairingFocus, count: count, step: 1)
+        case .select:
+            if pairingFocus == 0 { tv?.pairingGuest.toggle() }
+            else if pairingFocus == count + 1 { tv?.pairing = false }
+            else { _ = chooseDisplay(id: displayOptions[pairingFocus - 1].id) }
+        case .back: tv?.pairing = false
+        default: return
+        }
+        tv?.objectWillChange.send()
+    }
+
+    @discardableResult
+    func chooseDisplay(id displayID: String) -> Bool {
+        guard NSScreen.screens.contains(where: { id($0) == displayID }) else { return false }
+        defaults.set(displayID, forKey: "preferredTVDisplay")
+        trace("choose")
+        if !transitioning, !movingWindow, window.screen.map({ id($0) }) == displayID {
+            tv?.objectWillChange.send()
+            return true
+        }
+        manualTargetID = displayID
+        fullscreenMoveRetries = 0
+        manualRestoreFullscreen = manualRestoreFullscreen || window.styleMask.contains(.fullScreen) || enabled
+        manualDedicatedEntry = manualDedicatedEntry || enabled
+        tv?.objectWillChange.send()
+        performManualMove()
+        return true
+    }
+
+    private func performManualMove() {
+        guard let targetID = manualTargetID, !transitioning, !movingWindow else { return }
+        guard let target = NSScreen.screens.first(where: { id($0) == targetID }) else {
+            finishManualMoveFailure("The selected display disconnected.")
+            return
+        }
+        if window.styleMask.contains(.fullScreen) {
+            transitioning = true
+            trace("request exit fullscreen")
+            toggleFullscreenWithWatchdog()
+        } else {
+            movingWindow = true
+            moveWindow(to: target)
+            confirmManualMove(targetID: targetID, attempt: 0)
+        }
+    }
+
+    private func confirmManualMove(targetID: String, attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            self.trace("confirm move attempt \(attempt)")
+            guard self.manualTargetID == targetID else {
+                self.movingWindow = false
+                self.performManualMove()
+                return
+            }
+            guard let target = NSScreen.screens.first(where: { self.id($0) == targetID }) else {
+                self.finishManualMoveFailure("The selected display disconnected.")
+                return
+            }
+            if self.window.screen?.displayID == target.displayID {
+                self.movingWindow = false
+                self.manualTargetID = nil
+                self.tv?.objectWillChange.send()
+                if self.manualRestoreFullscreen {
+                    self.manualRestoreFullscreen = false
+                    self.manualEntering = true
+                    self.fullscreenTargetID = targetID
+                    self.pendingDedicatedEntry = self.manualDedicatedEntry
+                    self.manualDedicatedEntry = false
+                    self.transitioning = true
+                    self.trace("request enter fullscreen")
+                    self.toggleFullscreenWithWatchdog()
+                }
+            } else if attempt < 9 {
+                self.moveWindow(to: target)
+                self.confirmManualMove(targetID: targetID, attempt: attempt + 1)
+            } else {
+                self.finishManualMoveFailure("Could not move Mac TV to the selected display.")
+            }
+        }
+    }
+
+    private func finishManualMoveFailure(_ message: String) {
+        movingWindow = false
+        manualTargetID = nil
+        let restore = manualRestoreFullscreen
+        let dedicated = manualDedicatedEntry
+        manualRestoreFullscreen = false
+        manualDedicatedEntry = false
+        trace("move failure: \(message)")
+        tv?.showToast(message)
+        tv?.objectWillChange.send()
+        guard restore, !window.styleMask.contains(.fullScreen) else { return }
+        if window.screen == nil, let fallback = NSScreen.main ?? NSScreen.screens.first {
+            moveWindow(to: fallback)
+        }
+        manualEntering = true
+        fullscreenTargetID = nil
+        pendingDedicatedEntry = dedicated
+        transitioning = true
+        toggleFullscreenWithWatchdog()
     }
 
     var preferredName: String {
@@ -66,7 +237,7 @@ final class TVMode {
         } else if window.styleMask.contains(.fullScreen) && !transitioning {
             relocationPending = false
             transitioning = true
-            window.toggleFullScreen(nil)
+            toggleFullscreenWithWatchdog()
         } else if !transitioning {
             restoreNormalFrame()
         }
@@ -103,6 +274,8 @@ final class TVMode {
         }
     }
 
+    var playbackScreen: NSScreen? { targetScreen }
+
     private var targetScreen: NSScreen? {
         if let preferredID, let match = NSScreen.screens.first(where: { id($0) == preferredID }) { return match }
         return NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 }) ?? NSScreen.main ?? NSScreen.screens.first
@@ -110,38 +283,91 @@ final class TVMode {
 
     private func reconcileScreen() {
         guard enabled, let target = targetScreen else { return }
-        if transitioning { relocationPending = true; return }
-        if window.styleMask.contains(.fullScreen) {
-            guard window.screen?.displayID != target.displayID else { return }
+        if transitioning || movingWindow {
             relocationPending = true
-            transitioning = true
-            window.toggleFullScreen(nil)
-        } else {
-            moveWindow(to: target)
-            transitioning = true
-            window.toggleFullScreen(nil)
+            return
         }
+        if window.styleMask.contains(.fullScreen), window.screen?.displayID == target.displayID { return }
+        // Use the same exit, move, verify and re-enter sequence as an explicit display choice.
+        manualTargetID = id(target)
+        fullscreenMoveRetries = 0
+        manualRestoreFullscreen = true
+        manualDedicatedEntry = true
+        relocationPending = false
+        performManualMove()
     }
 
     private func moveWindow(to screen: NSScreen) {
         let area = screen.visibleFrame
-        let size = window.frame.size
-        window.setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.midY - size.height / 2))
+        let original = window.frame.size
+        let scale = min(1, area.width / max(original.width, 1), area.height / max(original.height, 1))
+        let size = NSSize(width: original.width * scale, height: original.height * scale)
+        window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
+                               width: size.width, height: size.height), display: true)
+        trace("set frame for \(id(screen))")
     }
 
     private func didEnterFullScreen() {
-        transitioning = false
-        if !enabled {
-            transitioning = true
-            window.toggleFullScreen(nil)
-        } else if relocationPending {
-            relocationPending = false
-            reconcileScreen()
+        transitionGeneration += 1
+        trace("did enter fullscreen")
+        let wasDedicatedEntry = pendingDedicatedEntry
+        pendingDedicatedEntry = false
+        let wasManualEntry = manualEntering
+        manualEntering = false
+        let enteredTarget = fullscreenTargetID
+        fullscreenTargetID = nil
+        // didEnter arrives before macOS has always finished settling its Space animation.
+        // Serialize any next toggle and check the final screen after that settling period.
+        transitioning = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            self.transitioning = false
+            self.trace("settled fullscreen entry")
+            self.tv?.objectWillChange.send()
+            if self.manualTargetID != nil { self.performManualMove(); return }
+            if wasDedicatedEntry && !self.enabled {
+                self.transitioning = true
+                self.toggleFullscreenWithWatchdog()
+                return
+            }
+            if wasManualEntry, let enteredTarget,
+               self.window.screen.map({ self.id($0) }) != enteredTarget {
+                if self.fullscreenMoveRetries < 2,
+                   NSScreen.screens.contains(where: { self.id($0) == enteredTarget }) {
+                    self.fullscreenMoveRetries += 1
+                    self.manualTargetID = enteredTarget
+                    self.manualRestoreFullscreen = true
+                    self.manualDedicatedEntry = wasDedicatedEntry && self.enabled
+                    self.performManualMove()
+                } else {
+                    self.fullscreenMoveRetries = 0
+                    self.tv?.showToast("Could not move fullscreen Mac TV to the selected display.")
+                }
+                return
+            }
+            self.fullscreenMoveRetries = 0
+            if self.enabled && self.relocationPending {
+                self.relocationPending = false
+                self.reconcileScreen()
+            }
         }
     }
 
     private func didExitFullScreen() {
+        transitionGeneration += 1
+        trace("did exit fullscreen")
         transitioning = false
+        tv?.objectWillChange.send()
+        if manualTargetID != nil {
+            transitioning = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                self.transitioning = false
+                self.trace("settled fullscreen exit")
+                self.performManualMove()
+            }
+            return
+        }
         if enabled {
             // macOS can exit full screen during display removal. Keep the user's
             // setting and recover on the available screen until they choose Exit TV mode.
@@ -166,7 +392,14 @@ final class TVMode {
 }
 
 extension TVController {
-    private var tvMode: TVMode? { (NSApp.delegate as? AppDelegate)?.tvMode }
+    private var tvMode: TVMode? { displayCoordinator }
+    var availableTVDisplays: [TVMode.DisplayOption] { tvMode?.displayOptions ?? [] }
+    var displaySetup: [[String: Any]] {
+        availableTVDisplays.map { ["id": $0.id, "name": $0.name, "current": $0.current, "preferred": $0.preferred] }
+    }
+    var pairingFocusedIndex: Int { tvMode?.pairingFocusedIndex ?? 0 }
+    func handlePairing(_ command: RemoteCommand) { tvMode?.handlePairing(command) }
+    @discardableResult func selectTVDisplay(id: String) -> Bool { tvMode?.chooseDisplay(id: id) ?? false }
     var dedicatedTVMode: Bool { tvMode?.enabled ?? false }
     var preferredTVDisplayName: String { tvMode?.preferredName ?? "Automatic" }
     var launchAtLogin: Bool { tvMode?.loginEnabled ?? false }

@@ -52,7 +52,7 @@ enum RemotePage {
       /* The touch surface takes whatever height is left, so the remote fills any phone. */
       .surface { position:relative; flex:1 1 auto; min-height:210px; max-height:440px; border-radius:34px; background:rgba(255,255,255,.06); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); overflow:hidden; touch-action:none; }
       /* The ring is centred and sized to fit the surface; arrows and OK sit on it. */
-      #clickpad .ring { position:absolute; left:50%; top:50%; width:min(260px, 70vw); max-height:86%; aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1.5px solid rgba(255,255,255,.14); pointer-events:none; }
+      #clickpad .ring { position:absolute; left:50%; top:50%; height:min(260px, 70vw, 86%); aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1.5px solid rgba(255,255,255,.14); pointer-events:none; }
       #clickpad .chev { background:none; border:0; padding:0; min-width:44px; min-height:44px; position:absolute; width:40px; height:40px; display:grid; place-items:center; color:rgba(255,255,255,.55); transition:color .12s, scale .12s; }
       #clickpad .chev.hit { color:#fff; scale:1.25; }
       #clickpad .up { left:50%; top:4%; translate:-50% 0; } #clickpad .down { left:50%; bottom:4%; translate:-50% 0; }
@@ -63,12 +63,18 @@ enum RemotePage {
       #touchpad .hint { position:absolute; left:0; right:0; bottom:18px; text-align:center; font-size:13px; font-weight:500; color:rgba(255,255,255,.55); pointer-events:none; padding:0 16px; }
       .keys { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--gap) 8px; justify-items:center; flex:none; }
       .key { width:var(--key); height:var(--key); border-radius:50%; border:1px solid var(--line); background:var(--glass); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); display:grid; place-items:center; box-shadow:var(--sheen); }
+      .key.home { display:flex; flex-direction:column; justify-content:center; gap:1px; }
+      .key.home svg { width:20px; height:20px; }
+      .key.home span { font-size:10px; font-weight:700; line-height:1; }
       .key.primary { background:#fff; color:#000; }
       .key.primary.pressed { background:#d9d9d9; }
       .key svg, .round svg { width:22px; height:22px; }
       .type { display:flex; align-items:center; gap:8px; height:52px; flex:none; padding:0 6px 0 16px; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); color:var(--dim); }
       .type input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:#fff; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; }
-      .type button { width:40px; height:40px; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:#fff; }
+      .type button { width:44px; height:44px; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:#fff; }
+      .text-tools { min-height:44px; width:100%; text-align:center; }
+      .website-form button { width:auto; min-width:48px; padding:0 12px; font-weight:700; }
+      .website-form button:disabled { opacity:.45; }
       /* Short phones: a smaller touch surface so the controls fit without scrolling. */
       @media (max-height: 640px) { .surface { min-height:180px; } }
 
@@ -79,7 +85,7 @@ enum RemotePage {
       .sheet-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
       .sheet-head > span { font-size:18px; font-weight:800; }
       .sheet-head > div { display:flex; gap:8px; }
-      .pill { height:36px; padding:0 14px; border:0; border-radius:999px; background:rgba(255,255,255,.12); font-size:14px; font-weight:600; }
+      .pill { height:44px; padding:0 14px; border:0; border-radius:999px; background:rgba(255,255,255,.12); font-size:14px; font-weight:600; }
       .pill.on { background:#fff; color:#000; }
       .apps { display:grid; grid-template-columns:repeat(auto-fill, minmax(72px, 1fr)); gap:16px 12px; }
       .app { position:relative; border:0; background:none; padding:0; display:flex; flex-direction:column; gap:6px; align-items:center; font-size:12px; font-weight:600; color:var(--dim); text-align:center; }
@@ -109,7 +115,7 @@ enum RemotePage {
       .note.ok { color:var(--ok); } .note.err { color:var(--warn); }
       .group-label { font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--dim); margin:6px 4px -4px; }
       .chips { display:flex; flex-wrap:wrap; gap:8px; }
-      .chips button { height:40px; padding:0 16px; border:0; border-radius:999px; background:rgba(255,255,255,.1); font-size:14px; font-weight:600; }
+      .chips button { min-height:44px; padding:0 16px; border:0; border-radius:999px; background:rgba(255,255,255,.1); font-size:14px; font-weight:600; }
       .chips button.on { background:#fff; color:#000; }
       .toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:54px; padding:0 14px 0 16px; border-radius:16px; background:rgba(255,255,255,.07); font-size:15px; font-weight:600; }
       .toggle input { appearance:none; -webkit-appearance:none; flex:none; position:relative; width:48px; height:28px; margin:0; border-radius:999px; background:rgba(255,255,255,.22); transition:background .15s; cursor:pointer; }
@@ -120,6 +126,8 @@ enum RemotePage {
       .field { width:100%; height:50px; border-radius:14px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#fff; padding:0 14px; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; outline:0; }
       .field:focus { border-color:rgba(255,255,255,.4); }
       .sheet form { display:flex; flex-direction:column; gap:10px; margin:0; }
+      .sheet form.type { flex-direction:row; }
+      #text-sheet .pill { min-height:44px; }
       .list { display:flex; flex-direction:column; gap:6px; }
       .list button { display:flex; align-items:center; justify-content:space-between; gap:10px; height:50px; border:0; border-radius:14px; background:rgba(255,255,255,.07); padding:0 16px; font-size:15px; font-weight:600; text-align:left; }
       .list button span:last-child { font-size:12px; color:var(--dim); font-weight:600; }
@@ -138,6 +146,12 @@ enum RemotePage {
       #pair #device-name { font-size:16px; letter-spacing:normal; height:48px; }
       #pair label { color:var(--dim); font-size:14px; }
       #pair button { height:52px; border:0; border-radius:999px; background:#fff; color:#000; font-weight:700; }
+      #guest-note { display:none; }
+      body.guest #guest-note { display:block; }
+      body.guest .actions, body.guest .tabs, body.guest .surface, body.guest #open-text,
+      body.guest .keys [data-a="back"], body.guest #browser-controls [data-a="previouscontrol"],
+      body.guest #browser-controls [data-a="nextcontrol"], body.guest #browser-retry,
+      body.guest .scrim { display:none !important; }
     </style>
     </head>
     <body>
@@ -153,6 +167,7 @@ enum RemotePage {
         </div>
       </header>
 
+      <p class="note" id="guest-note">Guest remote · playback controls only</p>
       <div class="tabs" role="tablist" aria-label="Remote mode">
         <button role="tab" id="tab-click" class="on">Clickpad</button>
         <button role="tab" id="tab-touch">Touchpad</button>
@@ -171,7 +186,7 @@ enum RemotePage {
 
       <div class="keys">
         <button class="key" data-a="back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
-        <button class="key" data-a="home" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></button>
+        <button class="key home" data-a="home" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span>Home</span></button>
         <button class="key primary" data-a="playpause" data-h="tap" aria-label="Play or pause"><svg viewBox="0 0 24 24" fill="#000"><path d="M3 5v14l8-7z"/><rect x="14" y="5" width="3" height="14" rx="1"/><rect x="19" y="5" width="3" height="14" rx="1"/></svg></button>
         <button class="key" data-a="mute" aria-label="Mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/></svg></button>
         <button class="key" data-a="rewind" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6v12l-8-6z"/><path d="M21 6v12l-8-6z"/></svg></button>
@@ -184,18 +199,40 @@ enum RemotePage {
         <button type="button" data-a="previouscontrol">Previous control</button>
         <button type="button" data-a="nextcontrol">Next control</button>
         <button type="button" data-a="activatebrowser">Return to Brave</button>
-        <button type="button" data-a="browserfullscreen">Full screen</button>
+        <button type="button" data-a="browserfullscreen">Full screen on/off</button>
         <button type="button" id="browser-retry" hidden>Retry</button>
         <p class="note err" id="browser-error" role="status" hidden></p>
         <p class="note" id="browser-control-note" role="status"></p>
       </div>
 
+      <div id="iina-controls" class="browser-controls" hidden aria-label="IINA controls">
+        <button type="button" data-a="activatebrowser">Return to IINA</button>
+        <button type="button" data-a="browserfullscreen">Full screen on/off</button>
+        <p class="note" id="iina-status" role="status" aria-live="polite" hidden></p>
+        <p class="note err" id="iina-error" role="status" aria-live="polite" hidden></p>
+      </div>
+
+      <button class="row-btn text-tools" id="open-text" aria-label="Open website or type on TV">Open website or type</button>
+    </main>
+
+    <div class="scrim" id="text-sheet">
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Open website or type on TV">
+        <div class="sheet-head"><span>Website and keyboard</span><div><button class="pill" data-close>Done</button></div></div>
+        <div class="group-label">Open a website</div>
+      <form class="type website-form" id="open-website" autocomplete="off">
+        <input id="website-address" type="text" inputmode="url" placeholder="Open a website…" aria-label="Website address" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="submit" id="website-go">Go</button>
+      </form>
+      <p class="note err" id="website-open-error" role="status" aria-live="polite" hidden></p>
+
+      <div class="group-label">Type on TV</div>
       <form class="type" id="type" autocomplete="off">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
         <input id="typed" placeholder="Type on the TV…" aria-label="Type on the TV" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false">
         <button type="button" data-a="backspace" aria-label="Delete"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H8l-6 7 6 7h13z"/><path d="M17 9l-6 6M11 9l6 6"/></svg></button>
       </form>
-    </main>
+      </div>
+    </div>
 
     <div class="scrim" id="apps-sheet">
       <div class="sheet" role="dialog" aria-label="Apps">
@@ -274,6 +311,11 @@ enum RemotePage {
         <label class="toggle" for="website-player"><span>Website player</span><select class="field" id="website-player" style="width:auto;max-width:58%"><option value="embedded">Built-in</option><option value="brave">Brave</option></select></label>
         <p class="note">Brave uses its own sign-ins and Shields. Applies the next time you open a website.</p>
         <p class="note" id="browser-msg" role="status" aria-live="polite" hidden></p>
+        <div class="group-label">Display</div>
+        <label class="toggle" for="display-select"><span>TV display</span><select class="field" id="display-select" style="width:auto;max-width:60%" disabled><option>Loading…</option></select></label>
+        <p class="note" id="display-msg" role="status" aria-live="polite" hidden></p>
+        <button class="row-btn" id="screen-on">Wake screen</button>
+        <button class="row-btn" id="screen-off">Turn screen off</button>
         <div class="group-label">Power</div>
         <p class="note" id="lid-status"></p>
         <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
@@ -283,7 +325,6 @@ enum RemotePage {
         <div id="devices"></div>
         <button class="row-btn danger" id="revoke-all">Remove all paired devices</button>
         <p class="note" id="devices-msg"></p>
-        <button class="row-btn" id="screen-off">Turn screen off</button>
         <button class="row-btn" id="sleep">Sleep Mac</button>
         <p class="note">After sleep, wake the Mac with its keyboard or by opening the lid.</p>
       </div>
@@ -291,10 +332,9 @@ enum RemotePage {
 
     <div id="pair">
       <h1>Pair with your TV</h1>
-      <p>Enter the 6-digit code from Settings on the TV.</p>
+      <p>Enter the 6-digit code chosen on the TV. It determines this phone’s access.</p>
       <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" aria-label="Pairing code">
       <input id="device-name" maxlength="60" placeholder="Device name (optional)" aria-label="Device name">
-      <label><input type="checkbox" id="guest"> Guest access (expires in 24 hours)</label>
       <button id="pair-btn">Pair</button>
       <p id="pair-err"></p>
     </div>
@@ -348,43 +388,105 @@ enum RemotePage {
     if (qrCode) history.replaceState(null, '', location.pathname);
     let key = store.get();
 
-    // The status line only shows when something's wrong.
-    function online(ok) {
-      $('.status').hidden = ok;
-      $('#status').textContent = ok ? '' : 'Can’t reach the TV';
+    // Keep a reachable sleeping display distinct from an offline Mac.
+    function online(ok, sleeping = false) {
+      $('.status').hidden = ok && !sleeping;
+      $('#status').textContent = !ok ? 'Can’t reach the TV' : sleeping ? 'Screen asleep · controls wake it' : '';
     }
 
-    async function api(path, body) {
-      const res = await fetch(path, {
-        method: body ? 'POST' : 'GET',
-        headers: { 'Content-Type': 'application/json', 'X-Couch-Key': key },
-        body: body ? JSON.stringify(body) : undefined,
+    // A timed-out POST may already have reached the TV; never replay it automatically.
+    async function request(path, body, authenticated = true, cancelSignal = null) {
+      if (cancelSignal?.aborted) throw new Error('cancelled');
+      const controller = new AbortController();
+      const credential = key;
+      let timer, cancel;
+      const interrupted = new Promise((_, reject) => {
+        timer = setTimeout(() => { controller.abort(); reject(new Error('Request timed out.')); }, 9000);
+        cancel = () => { controller.abort(); reject(new Error('cancelled')); };
+        if (cancelSignal) {
+          if (cancelSignal.aborted) cancel();
+          else cancelSignal.addEventListener('abort', cancel, { once: true });
+        }
       });
-      if (res.status === 401) { showPair(); throw new Error('unpaired'); }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      return data;
+      try {
+        return await Promise.race([interrupted, (async () => {
+          const res = await fetch(path, {
+            method: body ? 'POST' : 'GET',
+            headers: authenticated ? { 'Content-Type': 'application/json', 'X-Couch-Key': credential } : { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined,
+            signal: controller.signal,
+          });
+          if (authenticated && res.status === 401) {
+            // A late response from an old request must not revoke a newly paired key.
+            if (key === credential) { key = ''; store.set(''); showPair(); }
+            throw new Error('unpaired');
+          }
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+          return data;
+        })()]);
+      } finally {
+        clearTimeout(timer);
+        if (cancelSignal) cancelSignal.removeEventListener('abort', cancel);
+      }
     }
+    function api(path, body, signal) { return request(path, body, true, signal); }
 
+    // Keep a small bounded queue: repeats are dropped under load and urgent actions jump ahead.
+    const commandQueue = [];
+    let activeCommand = null;
+    function pumpCommands() {
+      if (activeCommand || !commandQueue.length) return;
+      const item = commandQueue.shift();
+      if (!key) { item.done(); pumpCommands(); return; }
+      const controller = new AbortController();
+      activeCommand = controller;
+      api('/cmd', item.body, controller.signal).catch(e => {
+        if (e.message !== 'unpaired' && e.message !== 'cancelled') { online(false); haptic('error'); }
+      }).finally(() => { activeCommand = null; item.done(); pumpCommands(); });
+    }
     function send(a, extra, kind = 'tick') {
       haptic(kind);
-      return api('/cmd', { a, ...extra }).catch(e => {
-        if (e.message !== 'unpaired') { online(false); haptic('error'); }
+      return new Promise(resolve => {
+        const urgent = a === 'home' || a === 'screenoff';
+        if (urgent) {
+          while (commandQueue.length) commandQueue.shift().done();
+          if (activeCommand) activeCommand.abort();
+          commandQueue.unshift({ body: { a, ...extra }, done: resolve });
+        } else if ((kind === 'repeat' && (activeCommand || commandQueue.length)) || commandQueue.length >= 8) {
+          resolve(); return;
+        } else {
+          commandQueue.push({ body: { a, ...extra }, done: resolve });
+        }
+        pumpCommands();
       });
     }
 
     // State: connection, the app list, settings.
     let appsShown = '', apps = [], canRestore = false, currentLocalMovie = null, iinaInstalled = false;
-    let stateGeneration = 0, appMutationPending = false;
+    let stateGeneration = 0, appMutationPending = false, displayChanging = false, availableDisplays = [];
+    let stateInFlight = null;
     async function refresh(duringMutation = false) {
       if (appMutationPending && !duringMutation) return false;
-      if (!key) return showPair();
+      if (!key) { showPair(); return false; }
+      if (stateInFlight) {
+        if (!duringMutation) return stateInFlight;
+        await stateInFlight; // The pre-edit snapshot must finish before the reconciliation read.
+        if (!key) return false;
+      }
+      const pending = readState();
+      stateInFlight = pending;
+      try { return await pending; } finally { if (stateInFlight === pending) stateInFlight = null; }
+    }
+    async function readState() {
       const generation = ++stateGeneration;
       try {
         const s = await api('/state');
         // A newer refresh or an edit invalidates an older in-flight response.
         if (generation !== stateGeneration) return false;
-        online(true);
+        online(true, s.displaysSleeping === true);
+        document.body.classList.toggle('guest', s.guest === true);
+        if (s.guest === true) document.querySelectorAll('.scrim.show').forEach(sheet => sheet.classList.remove('show'));
         const focused = appFocus();
         apps = s.apps;
         canRestore = s.canRestore;
@@ -397,7 +499,16 @@ enum RemotePage {
         $('#keep-awake').checked = s.keepMacAwake;
         $('#lid-override').checked = s.lidOverride;
         $('#lid-status').textContent = s.lidStatus || '';
+        if (!displayChanging) updateDisplays(s.displaySetup);
         $('#website-player').value = s.websitePlayer === 'brave' ? 'brave' : 'embedded';
+        const player = s.externalPlayer && s.externalPlayer.name === 'IINA' ? s.externalPlayer : null;
+        $('#iina-controls').hidden = !player;
+        const iinaStatus = player && typeof player.status === 'string' ? player.status : '';
+        const iinaError = player && typeof player.error === 'string' ? player.error : '';
+        $('#iina-status').textContent = iinaStatus;
+        $('#iina-status').hidden = !iinaStatus;
+        $('#iina-error').textContent = iinaError;
+        $('#iina-error').hidden = !iinaError;
         const browser = s.externalBrowser;
         $('#browser-controls').hidden = !browser;
         const browserError = browser && typeof browser.error === 'string' ? browser.error : '';
@@ -417,6 +528,28 @@ enum RemotePage {
         if (generation === stateGeneration && e.message !== 'unpaired') online(false);
         return false;
       }
+    }
+
+    function updateDisplays(setup) {
+      const select = $('#display-select');
+      availableDisplays = Array.isArray(setup?.displays) ? setup.displays : [];
+      select.replaceChildren();
+      if (!availableDisplays.length) {
+        const option = document.createElement('option');
+        option.textContent = 'No displays available';
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+      }
+      for (const display of availableDisplays) {
+        const option = document.createElement('option');
+        option.value = String(display.id);
+        option.textContent = display.name + (display.current ? ' · current' : '');
+        select.appendChild(option);
+      }
+      const selected = availableDisplays.find(display => display.preferred) || availableDisplays.find(display => display.current);
+      if (selected) select.value = String(selected.id);
+      select.disabled = false;
     }
 
     // Apps sheet: launch tiles, or accessible controls for arranging the same apps.
@@ -762,12 +895,9 @@ enum RemotePage {
     }
 
     // A six-digit code is exchanged once for a separate device credential.
-    function showPair() { $('#pair').classList.add('show'); setTimeout(() => $('#code').focus(), 50); }
-    async function pair(code, name, guest) {
-      const res = await fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, name, guest }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.statusText);
+    function showPair() { if ($('#pair').classList.contains('show')) return; $('#pair').classList.add('show'); setTimeout(() => $('#code').focus(), 50); }
+    async function pair(code, name) {
+      const data = await request('/pair', { code, name }, false);
       key = data.token;
       store.set(key);
       $('#pair').classList.remove('show');
@@ -776,7 +906,7 @@ enum RemotePage {
       return refresh();
     }
     $('#pair-btn').onclick = async () => {
-      try { await pair($('#code').value.trim(), $('#device-name').value.trim(), $('#guest').checked); haptic('tap'); }
+      try { await pair($('#code').value.trim(), $('#device-name').value.trim()); haptic('tap'); }
       catch (e) { haptic('error'); $('#pair-err').textContent = e.message; }
     };
     async function loadDevices() {
@@ -818,6 +948,32 @@ enum RemotePage {
     // Buttons
     document.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => send(b.dataset.a, {}, b.dataset.h || 'tick')));
     $('#browser-retry').onclick = () => send('retrybrowser', {}, 'tap').then(refresh);
+    let websiteOpening = false;
+    $('#open-website').onsubmit = async e => {
+      e.preventDefault();
+      if (websiteOpening) return;
+      const input = $('#website-address'), note = $('#website-open-error');
+      const url = input.value.trim();
+      if (!url) { note.textContent = 'Enter a website address.'; note.hidden = false; return; }
+      websiteOpening = true;
+      $('#website-go').disabled = true;
+      note.hidden = true;
+      try {
+        await api('/browser/open', { url });
+        input.value = '';
+        haptic('tap');
+        await refresh();
+      } catch (error) {
+        if (error.message !== 'unpaired') {
+          note.textContent = error.message || 'Could not open website.';
+          note.hidden = false;
+          haptic('error');
+        }
+      } finally {
+        websiteOpening = false;
+        $('#website-go').disabled = false;
+      }
+    };
     $('#type').onsubmit = e => {
       e.preventDefault();
       const t = $('#typed').value;
@@ -827,11 +983,14 @@ enum RemotePage {
 
     // Sheets
     const closeSheets = () => {
+      const closingText = $('#text-sheet').classList.contains('show');
       document.querySelectorAll('.scrim').forEach(s => s.classList.remove('show'));
+      if (closingText) $('#open-text').focus();
       if (editing) { editing = false; renderApps(); }
     };
     document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', e => { if (e.target === s) closeSheets(); }));
     document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
+    $('#open-text').onclick = () => { haptic('tick'); $('#text-sheet').classList.add('show'); $('#text-sheet [data-close]').focus(); };
     $('#open-apps').onclick = () => { haptic('tick'); refresh(); $('#apps-sheet').classList.add('show'); };
     $('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); $('#power-sheet').classList.add('show'); };
     document.querySelectorAll('#sleep-chips button').forEach(b => b.onclick = () => {
@@ -839,6 +998,30 @@ enum RemotePage {
       send('sleeptimer', { m }, 'tap').then(refresh);
       showSleep(m);
     });
+    $('#display-select').onchange = async e => {
+      if (displayChanging) return;
+      const display = availableDisplays.find(item => String(item.id) === e.target.value);
+      if (!display) return;
+      const note = $('#display-msg');
+      displayChanging = true;
+      e.target.disabled = true;
+      note.hidden = true;
+      try {
+        await api('/display/select', { id: display.id });
+        haptic('tap');
+      } catch (error) {
+        if (error.message !== 'unpaired') {
+          note.textContent = error.message || 'Could not change display.';
+          note.className = 'note err';
+          note.hidden = false;
+          haptic('error');
+        }
+      } finally {
+        displayChanging = false;
+        e.target.disabled = false;
+        await refresh();
+      }
+    };
     $('#website-player').onchange = async e => {
       const note = $('#browser-msg');
       note.hidden = true;
@@ -866,6 +1049,7 @@ enum RemotePage {
         : 'When it ends, playback stops and the screen turns off.';
       if (minutes) document.querySelectorAll('#sleep-chips button').forEach(b => b.classList.toggle('on', b.dataset.m !== '0' && Number(b.dataset.m) >= minutes && Number(b.dataset.m) - minutes < 15));
     }
+    $('#screen-on').onclick = () => { closeSheets(); send('screenon', {}, 'tap'); };
     $('#screen-off').onclick = () => { closeSheets(); send('screenoff', {}, 'tap'); };
 
     let sleepArmed = false;
@@ -935,7 +1119,10 @@ enum RemotePage {
         flash(zone);
         send(zone, {}, zone === 'ok' ? 'tap' : 'tick');
       });
-      pad.addEventListener('pointercancel', () => { stop(); start = null; });
+      const cancelHold = () => { stop(); start = null; };
+      pad.addEventListener('pointercancel', cancelHold);
+      pad.addEventListener('lostpointercapture', cancelHold);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') cancelHold(); });
     })();
 
     // Touchpad: one finger moves the pointer, tap clicks, two fingers scroll.
@@ -992,7 +1179,7 @@ enum RemotePage {
     const initialCode = /^\d{6}$/.test(qrCode) ? qrCode : (/^\d{6}$/.test(key) ? key : '');
     if (initialCode) {
       if (/^\d{6}$/.test(key)) { key = ''; store.set(''); }
-      pair(initialCode, 'Phone', false).catch(() => { $('#code').value = ''; showPair(); });
+      pair(initialCode, 'Phone').catch(() => { $('#code').value = ''; showPair(); });
     } else { refresh(); }
     setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 3000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
