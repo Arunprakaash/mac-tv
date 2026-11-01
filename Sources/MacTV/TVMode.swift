@@ -28,7 +28,7 @@ final class TVMode {
         self.window = window
         self.tv = tv
         self.defaults = defaults
-        tv.displayCoordinator = self
+        tv.displayCoordinator.tvMode = self
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.didEnterFullScreen() }
@@ -414,7 +414,7 @@ final class TVMode {
 }
 
 extension TVController {
-    private var tvMode: TVMode? { displayCoordinator }
+    private var tvMode: TVMode? { displayCoordinator.tvMode }
     var availableTVDisplays: [TVMode.DisplayOption] { tvMode?.displayOptions ?? [] }
     var displaySetup: [[String: Any]] {
         availableTVDisplays.map { ["id": $0.id, "name": $0.name, "current": $0.current, "preferred": $0.preferred] }

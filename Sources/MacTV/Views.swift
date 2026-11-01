@@ -56,86 +56,16 @@ struct RootView: View {
                     // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
                     TVCanvas { MoviesScreen(tv: tv) }
                         .ignoresSafeArea()
-                        .allowsHitTesting(tv.controlCenter == nil && tv.settings == nil && tv.organizer == nil && !tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.controlCenter != nil || tv.settings != nil || tv.organizer != nil || tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
+                        .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
                 } else if !tv.screensaver {
                     Wallpaper().ignoresSafeArea()
                     TVCanvas { HomeView(tv: tv) }
                         .ignoresSafeArea()
-                        .allowsHitTesting(tv.organizer == nil && tv.settings == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && !tv.pairing && tv.adder == nil && tv.controlCenter == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.organizer != nil || tv.settings != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.pairing || tv.adder != nil || tv.controlCenter != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
+                        .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
+                        .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
                 }
-                if tv.controlCenter != nil {
-                    TVCanvas { ControlCenterView(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.settings == nil && tv.organizer == nil && !tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.settings != nil || tv.organizer != nil || tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .transition(.move(edge: .top))
-                }
-                if tv.settings != nil {
-                    TVCanvas { SettingsSheet(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.organizer == nil && !tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.organizer != nil || tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(Motion.sheet(reduceMotion: reduceMotion))
-                }
-                if tv.organizer != nil {
-                    TVCanvas { AppOrganizerSheet(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(!tv.pairing && tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.pairing || tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(Motion.sheet(reduceMotion: reduceMotion))
-                }
-                if tv.pairing {
-                    TVCanvas { PairSheet(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.adder == nil && tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.adder != nil || tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(Motion.sheet(reduceMotion: reduceMotion))
-                }
-                if tv.adder != nil {
-                    TVCanvas { AddAppSheet(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.topShelfPreferences == nil && tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.topShelfPreferences != nil || tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(Motion.sheet(reduceMotion: reduceMotion))
-                }
-                if tv.topShelfPreferences != nil {
-                    TVCanvas { TopShelfPreferencesSheet(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.playbackCheck == nil && tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.playbackCheck != nil || tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(Motion.sheet(reduceMotion: reduceMotion))
-                }
-                if tv.playbackCheck != nil {
-                    TVCanvas { PlaybackCheckSheet(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.profilePicker == nil && tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.profilePicker != nil || tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(Motion.sheet(reduceMotion: reduceMotion))
-                }
-                if tv.profilePicker != nil {
-                    TVCanvas { ProfilesScreen(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.setup == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.setup != nil || tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(.opacity)
-                }
-                if tv.setup != nil {
-                    TVCanvas { SetupScreen(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(!tv.screensaver)
-                        .accessibilityHidden(tv.screensaver)
-                        .background { SheetBackdrop() }
-                        .transition(.opacity)
-                }
+                ModalSheetRouter(tv: tv)
                 if tv.screensaver {
                     TVCanvas { Screensaver() }
                         .ignoresSafeArea()
@@ -199,6 +129,88 @@ struct RootView: View {
         .animation(Motion.appear, value: tv.adder != nil)
         .animation(Motion.appear, value: tv.movies != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
+    }
+}
+
+/// Routes modal sheets with top-level focus gating and transition animations.
+struct ModalSheetRouter: View {
+    @ObservedObject var tv: TVController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if tv.controlCenter != nil {
+                TVCanvas { ControlCenterView(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.controlCenter))
+                    .accessibilityHidden(!tv.isTopSheet(.controlCenter))
+                    .transition(.move(edge: .top))
+            }
+            if tv.settings != nil {
+                TVCanvas { SettingsSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.settings))
+                    .accessibilityHidden(!tv.isTopSheet(.settings))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.organizer != nil {
+                TVCanvas { AppOrganizerSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.organizer))
+                    .accessibilityHidden(!tv.isTopSheet(.organizer))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.pairing {
+                TVCanvas { PairSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.pairing))
+                    .accessibilityHidden(!tv.isTopSheet(.pairing))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.adder != nil {
+                TVCanvas { AddAppSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.addApp))
+                    .accessibilityHidden(!tv.isTopSheet(.addApp))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.topShelfPreferences != nil {
+                TVCanvas { TopShelfPreferencesSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.topShelfPreferences))
+                    .accessibilityHidden(!tv.isTopSheet(.topShelfPreferences))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.playbackCheck != nil {
+                TVCanvas { PlaybackCheckSheet(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.playbackCheck))
+                    .accessibilityHidden(!tv.isTopSheet(.playbackCheck))
+                    .background { SheetBackdrop() }
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if tv.profilePicker != nil {
+                TVCanvas { ProfilesScreen(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.profilePicker))
+                    .accessibilityHidden(!tv.isTopSheet(.profilePicker))
+                    .background { SheetBackdrop() }
+                    .transition(.opacity)
+            }
+            if tv.setup != nil {
+                TVCanvas { SetupScreen(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.isTopSheet(.setup))
+                    .accessibilityHidden(!tv.isTopSheet(.setup))
+                    .background { SheetBackdrop() }
+                    .transition(.opacity)
+            }
+        }
     }
 }
 

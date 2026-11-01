@@ -122,6 +122,32 @@ final class TVController: NSObject, ObservableObject {
         (lidSleepOff ? [.lid] : []) + [.controlCenter, .profile]
     }
 
+    enum SheetDestination: Int, Identifiable, Equatable, Comparable, CaseIterable {
+        case controlCenter = 0
+        case settings
+        case organizer
+        case pairing
+        case addApp
+        case topShelfPreferences
+        case playbackCheck
+        case profilePicker
+        case setup
+
+        var id: Int { rawValue }
+
+        static func < (lhs: SheetDestination, rhs: SheetDestination) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    // MARK: - Dedicated Coordinators
+
+    let playbackCoordinator: PlaybackCoordinator
+    let remoteCoordinator: RemoteCoordinator
+    let displayCoordinator: DisplayCoordinator
+
+    // MARK: - State
+
     @Published private(set) var mode: Mode = .launcher
     @Published private(set) var focus: Focus = .app(0)
     /// Suppresses mouse hover focus changes during scrolling or keyboard navigation until the pointer actually moves.
@@ -133,24 +159,24 @@ final class TVController: NSObject, ObservableObject {
     @Published var pairing = false {
         didSet {
             if pairing {
-                if !oldValue { pairingGuest = false; displayCoordinator?.resetPairingFocus() }
+                if !oldValue {
+                    remoteCoordinator.pairingGuest = false
+                    displayCoordinator.resetPairingFocus()
+                }
                 refreshRemoteURL()
+            } else {
+                remoteCoordinator.notePairingDismissed()
             }
-            else { startupPairingVisible = false }
         }
     }
-    private var startupPairingPending = false
-    private var startupPairingVisible = false
-    private var phoneConnectedThisLaunch = false
-    @Published private(set) var displaysSleeping = false
-    private var lastDisplayWakeRequest = -Double.infinity
+
     /// The Settings sheet on the TV, while it's open.
     @Published var settings: SettingsPanel?
     /// Arrange apps with the keyboard, game controller or phone's D-pad.
     @Published var organizer: AppOrganizer?
     @Published var playbackCheck: PlaybackDiagnostics?
-    @Published var playerFailure: PlayerFailure?
     @Published var topShelfPreferences: TopShelfPreferencesPanel?
+    @Published var playerFailure: PlayerFailure?
     /// The add-app sheet on the TV, while it's open.
     @Published var adder: AppAdder?
     /// The Movies app's screen, while it's open.
@@ -163,22 +189,10 @@ final class TVController: NSObject, ObservableObject {
     @Published var profilePicker: ProfilePicker?
     /// Who's watching: their apps and their sign-ins.
     @Published var profile: Profile
-    /// The movie playing, in `.movie` mode.
-    @Published private(set) var moviePlayer: MoviePlayer?
-    @Published private(set) var currentLocalMovie: Movie?
-    private var localMoviePlayer = "native"
-    private var iinaSession: IINAPlaybackSession?
-    @Published private(set) var iinaPlaybackError: String?
-    @Published private(set) var iinaPlaybackStatus = ""
-    private var playbackRequest = UUID()
+
     /// Shown after a few idle minutes on the home screen; any input dismisses it.
     @Published private(set) var screensaver = false
     @Published private(set) var sleepAt: Date?
-    @Published private(set) var webView: WKWebView?
-    @Published private(set) var externalBrowser: BraveSession?
-    @Published private(set) var externalBrowserService: Service?
-    @Published private(set) var externalBrowserError: String?
-    @Published private(set) var externalBrowserOpening = false
     /// The focused button on Mac TV's own Brave screen.
     @Published var browserFocus = 0
     let browserPreferences: BrowserPreferences
@@ -189,12 +203,6 @@ final class TVController: NSObject, ObservableObject {
     @Published var controller: ControllerInfo?
     /// A controller connecting or disconnecting, shown for a moment.
     @Published private(set) var controllerNotice: ControllerNotice?
-    @Published var pairingGuest = false
-    @Published private(set) var remoteGuestToken = ""
-    @Published private(set) var remoteGuestLinks: [RemoteLink] = []
-
-    /// Addresses a phone can open the remote at, one per network this Mac is on.
-    @Published private(set) var remoteLinks: [RemoteLink] = []
 
     /// The home screen's apps, in order; changes when the user adds or removes apps.
     @Published private(set) var services: [Service] = []
@@ -203,18 +211,6 @@ final class TVController: NSObject, ObservableObject {
     let columns = 6
     let deviceName = Host.current().localizedName ?? "Mac"
     weak var window: NSWindow?
-    weak var displayCoordinator: TVMode?
-    var remoteToken = ""
-    var remotePort: UInt16 = 0 {
-        didSet {
-            refreshRemoteURL()
-            // Wi-Fi changes and Tailscale starting or stopping don't announce themselves; poll.
-            addressTimer?.invalidate()
-            addressTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshRemoteURL() }
-            }
-        }
-    }
 
     /// Press the players' own Skip Intro / Skip Recap buttons.
     var autoSkip: Bool {
@@ -228,64 +224,106 @@ final class TVController: NSObject, ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "autoNext") }
     }
 
-    /// Stop the Mac sleeping by itself while Mac TV is open, so the phone remote always reaches it.
-    /// The screen can still turn off.
-    var keepMacAwake: Bool {
-        get { UserDefaults.standard.bool(forKey: "keepMacAwake") }
-        set { UserDefaults.standard.set(newValue, forKey: "keepMacAwake"); applyPower() }
+    // MARK: - Forwarded Properties to Coordinators
+
+    // Playback
+    var webView: WKWebView? { playbackCoordinator.webView }
+    var moviePlayer: MoviePlayer? { playbackCoordinator.moviePlayer }
+    var currentLocalMovie: Movie? { playbackCoordinator.currentLocalMovie }
+    var localMoviePlayer: String { playbackCoordinator.localMoviePlayer }
+    var iinaPlaybackError: String? { playbackCoordinator.iinaPlaybackError }
+    var iinaPlaybackStatus: String { playbackCoordinator.iinaPlaybackStatus }
+    var externalBrowser: BraveSession? { playbackCoordinator.externalBrowser }
+    var externalBrowserService: Service? { playbackCoordinator.externalBrowserService }
+    var externalBrowserError: String? { playbackCoordinator.externalBrowserError }
+    var externalBrowserOpening: Bool { playbackCoordinator.externalBrowserOpening }
+
+    // Remote
+    var remoteToken: String {
+        get { remoteCoordinator.remoteToken }
+        set { remoteCoordinator.remoteToken = newValue }
     }
-
-    /// Keep running with the lid closed even on battery or without the TV connected.
-    var lidOverride: Bool {
-        get { UserDefaults.standard.bool(forKey: "lidOverride") }
-        set { UserDefaults.standard.set(newValue, forKey: "lidOverride"); applyPower() }
+    var remoteGuestToken: String { remoteCoordinator.remoteGuestToken }
+    var remoteLinks: [RemoteLink] { remoteCoordinator.remoteLinks }
+    var remoteGuestLinks: [RemoteLink] { remoteCoordinator.remoteGuestLinks }
+    var remotePort: UInt16 {
+        get { remoteCoordinator.remotePort }
+        set { remoteCoordinator.remotePort = newValue }
     }
-
-    /// Lid, power and displays, refreshed every few seconds while Mac TV runs.
-    @Published private(set) var power = PowerStatus()
-    /// Whether the lid override is in effect right now.
-    @Published private(set) var lidSleepOff = false
-
+    var pairingGuest: Bool {
+        get { remoteCoordinator.pairingGuest }
+        set { remoteCoordinator.pairingGuest = newValue }
+    }
     var phonePaired: Bool {
-        get { UserDefaults.standard.bool(forKey: "phonePaired") }
-        set { UserDefaults.standard.set(newValue, forKey: "phonePaired") }
+        get { remoteCoordinator.phonePaired }
+        set { remoteCoordinator.phonePaired = newValue }
     }
 
-    /// Reoffer pairing on a new launch even if an old device token is still saved.
-    func offerStartupPairing() {
-        startupPairingPending = !phoneConnectedThisLaunch
-        showStartupPairingIfReady()
+    // Display & Power
+    var power: PowerStatus { displayCoordinator.power }
+    var lidSleepOff: Bool { displayCoordinator.lidSleepOff }
+    var displaysSleeping: Bool { displayCoordinator.displaysSleeping }
+    var keepMacAwake: Bool {
+        get { displayCoordinator.keepMacAwake }
+        set { displayCoordinator.keepMacAwake = newValue }
+    }
+    var lidOverride: Bool {
+        get { displayCoordinator.lidOverride }
+        set { displayCoordinator.lidOverride = newValue }
+    }
+    var lidStatus: String { displayCoordinator.lidStatus }
+    var playbackScreen: NSScreen? { displayCoordinator.playbackScreen }
+
+    // MARK: - Forwarded Methods
+
+    func offerStartupPairing() { remoteCoordinator.offerStartupPairing() }
+    func showStartupPairingIfReady() { remoteCoordinator.showStartupPairingIfReady() }
+    func noteRemoteConnection() { remoteCoordinator.noteRemoteConnection() }
+    func refreshRemoteURL() { remoteCoordinator.refreshRemoteURL() }
+    func remoteState() -> [String: Any] { remoteCoordinator.remoteState() }
+    func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? { remoteCoordinator.handleAppsRequest(request) }
+    func handleGuestCommand(_ command: RemoteCommand) -> Bool { remoteCoordinator.handleGuestCommand(command) }
+
+    func startPowerManagement() { displayCoordinator.startPowerManagement() }
+    func stopPowerManagement() { displayCoordinator.stopPowerManagement() }
+    func refreshPower() { displayCoordinator.refreshPower() }
+    func noteDisplaySleep(_ sleeping: Bool) { displayCoordinator.noteDisplaySleep(sleeping) }
+    func wakeDisplays() { displayCoordinator.wakeDisplays() }
+
+    @discardableResult
+    func playInIINA(_ movie: Movie, subtitle: URL? = nil) -> Bool {
+        guard let screen = playbackScreen else { showToast("Connect the display for movie playback."); return false }
+        return playbackCoordinator.playInIINA(movie, subtitle: subtitle, position: nil, screen: screen)
+    }
+    func closeIINAPlayback(terminating: Bool = false) { playbackCoordinator.closeIINAPlayback(terminating: terminating) }
+    func searchIINASubtitles() -> Bool { playbackCoordinator.searchIINASubtitles() }
+    func playMovie(_ movie: Movie, from seconds: Double) { playbackCoordinator.playMovie(movie, from: seconds) }
+    func closeMovie() { playbackCoordinator.closeMovie() }
+    func retryExternalBrowser() { playbackCoordinator.retryExternalBrowser() }
+    func activateExternalBrowser() { playbackCoordinator.activateExternalBrowser() }
+    func closeExternalBrowser() { playbackCoordinator.closeExternalBrowser() }
+
+    // MARK: - Sheet Router State
+
+    var activeSheet: SheetDestination? {
+        if setup != nil { return .setup }
+        if profilePicker != nil { return .profilePicker }
+        if playbackCheck != nil { return .playbackCheck }
+        if topShelfPreferences != nil { return .topShelfPreferences }
+        if adder != nil { return .addApp }
+        if pairing { return .pairing }
+        if organizer != nil { return .organizer }
+        if settings != nil { return .settings }
+        if controlCenter != nil { return .controlCenter }
+        return nil
     }
 
-    func showStartupPairingIfReady() {
-        guard startupPairingPending, !phoneConnectedThisLaunch,
-              setup == nil, profilePicker == nil, mode == .launcher else { return }
-        startupPairingPending = false
-        startupPairingVisible = true
-        pairing = true
+    func isTopSheet(_ destination: SheetDestination) -> Bool {
+        activeSheet == destination && !screensaver
     }
 
-    private func noteRemoteConnection() {
-        phoneConnectedThisLaunch = true
-        startupPairingPending = false
-        if startupPairingVisible { pairing = false }
-    }
+    // MARK: - Private State
 
-    func noteDisplaySleep(_ sleeping: Bool) {
-        displaysSleeping = sleeping
-        if sleeping { screensaver = false }
-    }
-
-    private func wakeDisplays() {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastDisplayWakeRequest >= 0.5 else { return }
-        if SystemControl.displayOn() { lastDisplayWakeRequest = now }
-        else { showToast("The display wake request failed. Try Wake screen again.") }
-        // Only the system's wake notification confirms that display sleep ended.
-    }
-
-    private var addressTimer: Timer?
-    private let keepAwake = KeepAwake()
     private var toastTask: Task<Void, Never>?
     private var volumeTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
@@ -297,16 +335,12 @@ final class TVController: NSObject, ObservableObject {
     /// Mac TV opened Steam or a Steam game, so remote presses may go to it.
     var openedSteam = false
     var steamObservers: [NSObjectProtocol] = []
-    private var pointer: CGPoint?
-    private var popups: [NSWindow] = []
+    var pointer: CGPoint?
     private var sleepTimer: Timer?
     private var idleTimer: Timer?
-    private let macAwake = KeepAwake(kIOPMAssertionTypePreventUserIdleSystemSleep)
-    private var powerTimer: Timer?
-    private var lidGuard: Process?
-    private var wakeObserver: NSObjectProtocol?
-    private static let lowBattery = 20
     private var lastActivity = Date()
+
+    // MARK: - Lifecycle
 
     override convenience init() {
         let store = ProfileStore()
@@ -319,7 +353,16 @@ final class TVController: NSObject, ObservableObject {
         self.profiles = store
         self.profile = store.current
         self.library = library
+        let pc = PlaybackCoordinator()
+        let rc = RemoteCoordinator()
+        let dc = DisplayCoordinator()
+        self.playbackCoordinator = pc
+        self.remoteCoordinator = rc
+        self.displayCoordinator = dc
         super.init()
+        pc.tv = self
+        rc.tv = self
+        dc.tv = self
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
@@ -327,7 +370,7 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    // MARK: Screensaver and sleep timer
+    // MARK: - Screensaver and sleep timer
 
     /// Any keyboard, mouse or remote input. Returns true when it only woke the screensaver.
     @discardableResult
@@ -339,9 +382,8 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func checkIdle() {
-        if mode == .launcher, iinaSession == nil, !displaysSleeping, !pairing, settings == nil, organizer == nil, playbackCheck == nil,
-           topShelfPreferences == nil, adder == nil, movies == nil, setup == nil, profilePicker == nil,
-           controlCenter == nil, !screensaver,
+        if mode == .launcher, !playbackCoordinator.isAnyPlaybackActive, !displaysSleeping,
+           activeSheet == nil, movies == nil, !screensaver,
            Date().timeIntervalSince(lastActivity) > TimeInterval(ScreenSaverSettings.delayMinutes * 60) {
             showScreensaver()
         }
@@ -369,96 +411,14 @@ final class TVController: NSObject, ObservableObject {
                 guard let self else { return }
                 self.sleepAt = nil
                 self.goHome()
+                self.displayCoordinator.noteDisplaySleep(true)
                 SystemControl.displayOff()
             }
         }
         showToast("Sleep timer: \(minutes) minutes")
     }
 
-    // MARK: Power and the lid
-
-    func startPowerManagement() {
-        applyPower()
-        // Often enough to win back the lid switch soon after powerd rewrites it.
-        powerTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshPower() }
-        }
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshPower() }
-        }
-    }
-
-    func stopPowerManagement() {
-        powerTimer?.invalidate()
-        macAwake.release()
-        if lidSleepOff { releaseLid() }
-    }
-
-    func refreshPower() {
-        // Published only when something changed: every change redraws whatever shows power.
-        let now = PowerStatus.current()
-        if now != power { power = now }
-        guard lidSleepOff else { return }
-        if let reason = lidOverrideStopReason() {
-            lidOverride = false
-            showToast(reason)
-        } else {
-            LidSleep.setPrevented(true)
-        }
-    }
-
-    private func applyPower() {
-        power = PowerStatus.current()
-        keepMacAwake ? macAwake.hold(reason: "Mac TV is open, so the phone remote can reach it") : macAwake.release()
-
-        if lidOverride, lidSleepOff == false {
-            if let reason = lidOverrideStopReason() {
-                UserDefaults.standard.set(false, forKey: "lidOverride")
-                showToast(reason)
-            } else if LidSleep.setPrevented(true) {
-                lidSleepOff = true
-                lidGuard = LidSleep.startGuard()
-            } else {
-                UserDefaults.standard.set(false, forKey: "lidOverride")
-                showToast("This Mac doesn't allow staying awake with the lid closed")
-            }
-        } else if !lidOverride, lidSleepOff {
-            releaseLid()
-        }
-    }
-
-    private func releaseLid() {
-        LidSleep.restore()
-        lidGuard?.terminate()
-        lidGuard = nil
-        lidSleepOff = false
-    }
-
-    /// Why the lid override has to stop now, if it does: a closed Mac that never sleeps can run
-    /// its battery flat or overheat in a bag.
-    private func lidOverrideStopReason() -> String? {
-        if !power.onAC, let battery = power.battery, battery < Self.lowBattery {
-            return "Battery low: closing the lid sleeps the Mac again"
-        }
-        switch ProcessInfo.processInfo.thermalState {
-        case .serious, .critical: return "Mac is hot: closing the lid sleeps the Mac again"
-        default: return nil
-        }
-    }
-
-    /// One line for the remote about what closing the lid will do.
-    var lidStatus: String {
-        if lidSleepOff {
-            return power.onAC ? "Lid sleep is off while Mac TV is open. Keep the Mac somewhere ventilated."
-                : "Lid sleep is off while Mac TV is open, on battery. It turns back on below \(Self.lowBattery)%."
-        }
-        if power.closedLidModeReady { return "You can close the lid: the TV and power are connected." }
-        if !power.onAC { return "Closing the lid will sleep the Mac. Connect power, or turn on the option below." }
-        return "Closing the lid will sleep the Mac. Connect the TV, or turn on the option below."
-    }
-
-    // MARK: Adding and removing apps
+    // MARK: - Adding and removing apps
 
     func reloadServices() {
         let oldFocus = focus
@@ -474,7 +434,6 @@ final class TVController: NSObject, ObservableObject {
         case .app(let index):
             let next = newIndex ?? min(index, max(services.count - 1, 0))
             setFocus(.app(next))
-            // setFocus skips equal numeric indices, but the item at an index may have changed.
             if next < columns { shelfAppIndex = next }
         case .shelf(let index):
             if let newIndex, newIndex < columns, shelfCount > 0 {
@@ -589,96 +548,7 @@ final class TVController: NSObject, ObservableObject {
         reloadServices()
     }
 
-    /// The phone remote's app-management requests.
-    func handleAppsRequest(_ request: HTTPRequest) -> HTTPResponse? {
-        if let response = handleSharesRequest(request) { return response }
-        if let response = handleJellyfinRequest(request) { return response }
-        if request.method == "POST", request.path == "/display/select" {
-            guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
-                  let id = body["id"] as? String, selectTVDisplay(id: id) else {
-                return .json(["error": "Choose a connected display."], status: "400 Bad Request")
-            }
-            return .json(["ok": true])
-        }
-        if request.method == "POST", request.path == "/browser/open" {
-            guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
-                  let address = body["url"] as? String, let url = WebsiteAddress.url(from: address) else {
-                return .json(["error": "Enter an HTTP or HTTPS website address, such as youtube.com."], status: "400 Bad Request")
-            }
-            guard !externalBrowserOpening else {
-                return .json(["error": "Wait for the website to open, then try again."], status: "409 Conflict")
-            }
-            let service = Service(id: "browser-session", name: url.host ?? "Website", kind: .web(url))
-            if browserPreferences.choice(for: profile.id) == .brave, let browser = externalBrowser {
-                externalBrowserService = service
-                do {
-                    try browser.navigate(to: url)
-                    externalBrowserError = nil
-                    mode = .player(service)
-                } catch {
-                    externalBrowserError = error.localizedDescription
-                    return .json(["error": error.localizedDescription], status: "409 Conflict")
-                }
-            } else { open(service) }
-            return .json(["ok": true])
-        }
-        if request.method == "POST", request.path == "/browser/preference" {
-            guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
-                  let raw = body["player"] as? String, setWebsitePlayer(raw) else {
-                return .json(["error": "Install Brave to choose it."], status: "400 Bad Request")
-            }
-            return .json(["ok": true])
-        }
-        if let response = handleSubtitleRequest(request) ?? handleFilesRequest(request) { return response }
-        let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
-        switch (request.method, request.path) {
-        case ("GET", "/macapps"):
-            let installed = Set(services.compactMap { service -> String? in
-                if case .app(let bundleID) = service.kind { return bundleID }
-                return nil
-            })
-            return .json(InstalledApps.matching(request.query["q"] ?? "").map {
-                ["name": $0.name, "bundleID": $0.bundleID, "added": installed.contains($0.bundleID)]
-            })
-        case ("POST", "/apps/add"):
-            let app: AddedApp?
-            if let bundleID = body["bundleID"] as? String {
-                app = addMacApp(bundleID: bundleID)
-            } else if let address = body["url"] as? String {
-                app = addWebsite(name: body["name"] as? String, address: address)
-            } else {
-                app = nil
-            }
-            guard let app else { return .json(["error": "Couldn't add that. Check the address."], status: "400 Bad Request") }
-            return .json(["ok": true, "id": app.id, "name": app.name])
-        case ("POST", "/apps/remove"):
-            guard let id = body["id"] as? String else { return .json(["error": "Missing app"], status: "400 Bad Request") }
-            removeApp(id)
-            return .json(["ok": true])
-        case ("POST", "/apps/restore"):
-            restoreBuiltInApps()
-            return .json(["ok": true])
-        case ("POST", "/apps/pin"):
-            guard let id = body["id"] as? String, let value = body["pinned"] as? NSNumber,
-                  CFGetTypeID(value) == CFBooleanGetTypeID(), arrangedServices.contains(where: { $0.id == id }) else {
-                return .json(["error": "Choose an app and whether to pin it."], status: "400 Bad Request")
-            }
-            guard setPinned(id, value.boolValue) else { return .json(["error": "Couldn't save favourites. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
-            return .json(["ok": true])
-        case ("POST", "/apps/move"):
-            guard let id = body["id"] as? String, let value = body["offset"] as? NSNumber,
-                  CFGetTypeID(value) != CFBooleanGetTypeID(), value == -1 || value == 1,
-                  canMoveApp(id, by: value.intValue) else {
-                return .json(["error": "That app can't move further in this group."], status: "400 Bad Request")
-            }
-            guard moveApp(id, by: value.intValue) else { return .json(["error": "Couldn't save that app's position. Check storage on the Mac."], status: "500 Internal Server Error") }
-            return .json(["ok": true])
-        default:
-            return nil
-        }
-    }
-
-    // MARK: Home screen
+    // MARK: - Home screen focus
 
     var shelfService: Service { services.indices.contains(shelfAppIndex) ? services[shelfAppIndex] : services[0] }
 
@@ -703,20 +573,19 @@ final class TVController: NSObject, ObservableObject {
         if case .app(let index) = newFocus, index < columns { shelfAppIndex = index }
     }
 
-    /// The pointer over a tile focuses it, but only within the row group already in view: moving
-    /// between the dock and the grid slides the whole screen, which would put a different tile
-    /// under a resting pointer and bounce focus back and forth. Clicks, keys, the remote and
-    /// scrolling change rows instead.
     func hover(_ index: Int, tilt: CGSize) {
         guard !suppressHover else { return }
         switch focus {
         case .shelf, .status: return
         case .app: break
         }
-        guard (index >= columns) == inGrid else { return }
-        if focus != .app(index) { Feedback.shared.play(.move, from: .pointer) }
-        setFocus(.app(index))
-        self.tilt = tilt
+        let inTopShelfNow = !inGrid
+        let targetInTopShelf = index < columns
+        guard inTopShelfNow == targetInTopShelf else { return }
+        if index < services.count {
+            if focus != .app(index) { setFocus(.app(index)) }
+            self.tilt = tilt
+        }
     }
 
     private func moveFocus(_ direction: RemoteCommand.Direction) {
@@ -748,7 +617,6 @@ final class TVController: NSObject, ObservableObject {
             case .left: if index > 0 { setFocus(.shelf(index - 1)) }
             case .right: if index + 1 < shelfCount { setFocus(.shelf(index + 1)) }
             case .down: setFocus(.app(shelfAppIndex))
-            // Up from the Top Shelf reaches the status row, like Apple TV.
             case .up: setFocus(.status(.controlCenter))
             }
         case .status(let item):
@@ -763,7 +631,6 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    /// Select on a status pill: Control Center, the profile picker, or the Power settings for the lid.
     func activateStatus(_ item: StatusItem) {
         setFocus(.status(item))
         switch item {
@@ -774,8 +641,11 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func activateShelf(_ index: Int) {
-        if index == 0, let url = TopShelfFeed.shared.searchURL(for: shelfService) { play(shelfService, url: url) }
-        else { open(shelfService) }
+        if index == 0, let url = TopShelfFeed.shared.searchURL(for: shelfService) {
+            playbackCoordinator.playWeb(shelfService, url: url)
+        } else {
+            open(shelfService)
+        }
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
@@ -812,82 +682,6 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    // MARK: Remote
-
-    func refreshRemoteURL() {
-        guard remotePort != 0 else { return }
-        let code = RemoteServer.pairingCode()
-        let guestCode = RemoteServer.guestPairingCode()
-        let codeChanged = code != remoteToken || guestCode != remoteGuestToken
-        remoteToken = code
-        remoteGuestToken = guestCode
-        let found: [(label: String, ip: String?)] = [("Same Wi-Fi", LAN.ipv4()), ("Tailscale", LAN.tailscaleIPv4())]
-        let addresses = found.compactMap { entry in entry.ip.map { (entry.label, "http://\($0):\(remotePort)") } }
-        guard codeChanged || addresses.map(\.1) != remoteLinks.map(\.address) else { return }
-        remoteLinks = addresses.map { label, address in
-            RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteToken)"))
-        }
-        remoteGuestLinks = addresses.map { label, address in
-            RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteGuestToken)"))
-        }
-    }
-
-    /// What the phone remote shows. Only called for a phone that knows the pairing code.
-    func remoteState() -> [String: Any] {
-        phonePaired = true
-        noteRemoteConnection()
-        notePhoneDuringSetup()
-        var state: [String: Any] = [
-            "device": deviceName,
-            "mode": "launcher",
-            "apps": arrangedServices.map { service -> [String: Any] in
-                ["id": service.id, "name": service.name, "icon": Icons.image(for: service) != nil,
-                 "pinned": isPinned(service.id), "canMoveEarlier": canMoveApp(service.id, by: -1),
-                 "canMoveLater": canMoveApp(service.id, by: 1)]
-            },
-            "canRestore": library.hasHiddenBuiltIns,
-            // Which sheet is open on the TV, if any: the remote can show it.
-            "profile": profile.name,
-            "focus": String(describing: focus),
-            "sheet": setup != nil ? "setup" : profilePicker != nil ? "profiles" : playbackCheck != nil ? "playback-check" : topShelfPreferences != nil ? "top-shelf" : adder != nil ? "add-app" : pairing ? "pairing" : organizer != nil ? "arrange-apps" : settings != nil ? "settings" : controlCenter != nil ? "control-center" : "",
-            "autoSkip": autoSkip,
-            "autoNext": autoNext,
-            "keepMacAwake": keepMacAwake,
-            "lidOverride": lidOverride,
-            "lidStatus": lidStatus,
-            // Whether macOS lets Mac TV pass presses to other apps and size game windows.
-            "accessibilityAllowed": AXIsProcessTrusted(),
-            // Minutes left on the sleep timer; 0 when it's off.
-            "sleepMinutes": sleepMinutesLeft,
-        ]
-        state["displaySetup"] = ["displays": displaySetup, "fullscreen": window?.styleMask.contains(.fullScreen) ?? false]
-        state["displaysSleeping"] = displaysSleeping
-        state["websitePlayer"] = browserPreferences.choice(for: profile.id).rawValue
-        state["braveInstalled"] = braveInstalled
-        if externalBrowser != nil {
-            state["externalBrowser"] = ["name": "Brave", "service": externalBrowserService?.name ?? "Website", "accessibilityAllowed": AXIsProcessTrusted(), "error": externalBrowserError ?? "", "opening": externalBrowserOpening]
-        }
-        if iinaSession != nil {
-            state["mode"] = "player"
-            state["externalPlayer"] = ["name": "IINA", "status": iinaPlaybackStatus, "error": iinaPlaybackError ?? ""]
-        }
-        state["iinaInstalled"] = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.colliderli.iina") != nil
-        if let movie = currentLocalMovie {
-            state["currentLocalMovie"] = ["id": PhoneFiles.id(for: movie.url), "title": movie.displayTitle, "player": localMoviePlayer]
-        }
-        if case .player(let service) = mode {
-            state["mode"] = "player"
-            state["current"] = ["id": service.id, "name": service.name]
-        } else if mode == .movie, let player = moviePlayer {
-            state["mode"] = "player"
-            state["current"] = ["id": "movies", "name": player.movie.displayTitle]
-            state["movie"] = ["time": player.time, "duration": player.duration, "playing": player.playing,
-                              "failure": player.engine.renderFailure ?? ""]
-        }
-        return state
-    }
-
-    /// Everything a press can change on Mac TV's own screens; a change means focus moved somewhere.
     private var feedbackState: String {
         String(describing: (focus, setup, profilePicker, controlCenter, settings, organizer, playbackCheck, topShelfPreferences, adder, movies, pairing, mode == .launcher))
     }
@@ -896,16 +690,7 @@ final class TVController: NSObject, ObservableObject {
         services.first { $0.id == id }.flatMap { Icons.png(for: $0) }
     }
 
-    /// Guest credentials grant playback controls, not typing or access to setup/settings.
-    @discardableResult
-    func handleGuestCommand(_ command: RemoteCommand) -> Bool {
-        switch command {
-        case .home, .playPause, .seek, .volume, .mute, .activateBrowser, .browserFullscreen:
-            handle(command, from: .remote)
-            return true
-        default: return false
-        }
-    }
+    // MARK: - Command Dispatch
 
     func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
         if source == .remote {
@@ -917,7 +702,6 @@ final class TVController: NSObject, ObservableObject {
                 }
             }
         }
-        // Explicit power actions must still run when the screensaver was visible.
         let dismissedScreensaver = noteActivity()
         switch command {
         case .screenOff, .screenOn, .sleepMac: break
@@ -932,13 +716,11 @@ final class TVController: NSObject, ObservableObject {
             suppressHover = true
         }
 
-        // Commands that mean the same thing everywhere.
         switch command {
         case .home: goHome(); return
         case .activateBrowser:
-            if let session = iinaSession {
-                do { try session.activate() }
-                catch { iinaPlaybackError = error.localizedDescription; showToast(error.localizedDescription) }
+            if playbackCoordinator.iinaRunning {
+                playbackCoordinator.handleIINACommand(command)
             } else { activateExternalBrowser() }
             return
         case .retryBrowser:
@@ -948,15 +730,15 @@ final class TVController: NSObject, ObservableObject {
             if let service = services.first(where: { $0.id == id }) { open(service) }
             return
         case .volume(let delta):
-            if let session = iinaSession { session.handle(command) }
+            if playbackCoordinator.iinaRunning { playbackCoordinator.handleIINACommand(command) }
             else { showVolume(SystemControl.changeVolume(by: delta)) }
             return
         case .mute:
-            if let session = iinaSession { session.handle(command) }
+            if playbackCoordinator.iinaRunning { playbackCoordinator.handleIINACommand(command) }
             else { showVolume(SystemControl.toggleMute()) }
             return
         case .screenOff:
-            displaysSleeping = true
+            displayCoordinator.noteDisplaySleep(true)
             SystemControl.displayOff()
             return
         case .screenOn: wakeDisplays(); return
@@ -966,7 +748,6 @@ final class TVController: NSObject, ObservableObject {
             if key == "autoNext" { autoNext = value }
             if key == "keepMacAwake" { keepMacAwake = value }
             if key == "lidOverride" { lidOverride = value }
-            // These live in UserDefaults; tell an open Settings sheet to redraw.
             objectWillChange.send()
             return
         case .sleepMac:
@@ -974,7 +755,6 @@ final class TVController: NSObject, ObservableObject {
             SystemControl.sleepNow()
             return
         case .controlCenter:
-            // First-run setup and profile selection retain ownership of input.
             guard setup == nil, profilePicker == nil else { return }
             if controlCenter != nil {
                 controlCenter = nil
@@ -992,26 +772,22 @@ final class TVController: NSObject, ObservableObject {
         default: break
         }
 
-        if let browser = externalBrowser {
-            // Mac TV is in front of its Brave window (opening, an error, or brought back): drive its own screen.
+        if playbackCoordinator.externalBrowser != nil {
             if NSApp.isActive {
                 switch command {
                 case .move, .select, .back: handleBrowserScreen(command); return
                 default: break
                 }
             }
-            do { _ = try browser.handle(command) }
-            catch { externalBrowserError = error.localizedDescription; showToast(error.localizedDescription) }
+            playbackCoordinator.handleExternalBrowserCommand(command)
             return
         }
 
-        if let session = iinaSession {
-            _ = session.handle(command)
+        if playbackCoordinator.iinaRunning {
+            playbackCoordinator.handleIINACommand(command)
             return
         }
 
-        // A Mac app, Steam or a Steam game that Mac TV opened is in front: forward the basics to it,
-        // as arrow keys, Return, Esc and Space. That drives Steam Big Picture and keyboard-friendly games.
         if !NSApp.isActive, let front = NSWorkspace.shared.frontmostApplication,
            front.bundleIdentifier == launchedAppID
             || (openedSteam && (front.bundleIdentifier == SteamLibrary.bundleID || front.processIdentifier == steamGamePID)) {
@@ -1019,8 +795,6 @@ final class TVController: NSObject, ObservableObject {
             return
         }
 
-        // Driven from the sofa while another app is in front: come forward. The TV is what's being watched,
-        // and macOS frosts the glass of a window that isn't active.
         if source == .remote || source == .controller, !NSApp.isActive {
             bringToFront()
         }
@@ -1036,20 +810,20 @@ final class TVController: NSObject, ObservableObject {
             case .back where changed: Feedback.shared.play(.back, from: source)
             default: break
             }
-        case .player(let service): handleInPlayer(command, service: service)
-        case .movie: handleInMovie(command)
+        case .player(let service): playbackCoordinator.handleInPlayer(command, service: service)
+        case .movie: playbackCoordinator.handleInMovie(command)
         }
     }
 
-    // MARK: Opening things
+    // MARK: - Opening & Home
 
     func open(_ service: Service) {
-        closeIINAPlayback()
-        closeExternalBrowser()
+        playbackCoordinator.closeIINAPlayback()
+        playbackCoordinator.closeExternalBrowser()
         var opened = ["app": analyticsAppName(service)]
         if case .web = service.kind { opened["player"] = browserPreferences.choice(for: profile.id).rawValue }
         Analytics.send(.appOpened, opened)
-        playbackRequest = UUID()
+        playbackCoordinator.resetPlaybackRequest()
         settings = nil
         pairing = false
         adder = nil
@@ -1058,7 +832,7 @@ final class TVController: NSObject, ObservableObject {
         topShelfPreferences = nil
         switch service.kind {
         case .web(let url):
-            play(service, url: url)
+            playbackCoordinator.playWeb(service, url: url)
         case .app(let bundleID):
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
             launchedAppID = bundleID
@@ -1077,43 +851,14 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    private func play(_ service: Service, url: URL) {
-        if browserPreferences.choice(for: profile.id) == .brave {
-            playInBrave(service, url: url)
-            return
-        }
-        playbackRequest = UUID()
-        currentLocalMovie = nil
-        playerFailure = nil
-        let web = makeWebView(for: service)
-        web.load(URLRequest(url: url))
-        webView = web
-        mode = .player(service)
-        pointer = nil
-        keepAwake.hold(reason: "Watching \(service.name) in Mac TV")
-        bringToFront()
-        Task { @MainActor [weak self] in self?.window?.makeFirstResponder(web) }
-        showToast("Home on your phone remote, or ⌘⇧H, comes back here")
-    }
-
     func goHome() {
-        closeIINAPlayback()
-        closeExternalBrowser()
-        playbackRequest = UUID()
-        currentLocalMovie = nil
-        if let moviePlayer {
-            moviePlayer.stop()
-            self.moviePlayer = nil
-        }
+        playbackCoordinator.closeIINAPlayback()
+        playbackCoordinator.closeExternalBrowser()
+        playbackCoordinator.resetPlaybackRequest()
+        playbackCoordinator.clearCurrentLocalMovie()
+        playbackCoordinator.stopMoviePlayer()
         movies = nil
-        if let web = webView {
-            // Releasing the page stops playback; pause first so audio cuts immediately.
-            web.pauseAllMediaPlayback(completionHandler: nil)
-            web.stopLoading()
-        }
-        popups.forEach { $0.close() }
-        popups.removeAll()
-        webView = nil
+        playbackCoordinator.closeWebPlayback()
         mode = .launcher
         pairing = false
         settings = nil
@@ -1124,116 +869,12 @@ final class TVController: NSObject, ObservableObject {
         controlCenter = nil
         pointer = nil
         launchedAppID = nil
-        keepAwake.release()
+        displayCoordinator.releasePlaybackKeepAwake()
         bringToFront()
     }
 
-    /// Nothing is being watched or used: the screen saver is up, or the screen is off at home.
     var idleForUpdate: Bool {
-        (screensaver || displaysSleeping) && mode == .launcher && setup == nil && iinaSession == nil
-            && externalBrowser == nil && moviePlayer == nil
-    }
-
-    var playbackScreen: NSScreen? {
-        displayCoordinator?.playbackScreen
-            ?? window?.screen ?? NSScreen.screens.first(where: { CGDisplayIsBuiltin($0.displayID) == 0 })
-            ?? NSScreen.main
-    }
-
-    @discardableResult
-    func playInIINA(_ movie: Movie, subtitle: URL? = nil) -> Bool {
-        if currentLocalMovie?.path == movie.path, let session = iinaSession, session.isRunning {
-            do {
-                if let subtitle { try session.loadSubtitle(subtitle) }
-                try session.activate()
-                return true
-            } catch { iinaPlaybackError = error.localizedDescription; showToast(error.localizedDescription); return false }
-        }
-        guard let screen = playbackScreen else { showToast("Connect the display for movie playback."); return false }
-        let position = moviePlayer?.movie.path == movie.path ? moviePlayer?.time : nil
-        var launched: IINAPlaybackSession?
-        do {
-            let session = try IINAPlaybackSession()
-            launched = session
-            goHome()
-            iinaSession = session
-            currentLocalMovie = movie
-            localMoviePlayer = "iina"
-            launchedAppID = "com.colliderli.iina"
-            iinaPlaybackStatus = "Opening IINA on \(screen.localizedName)…"
-            session.onError = { [weak self, weak session] error in
-                guard let self, let session, self.iinaSession === session else { return }
-                self.iinaPlaybackError = error.localizedDescription + (session.isRunning ? "" : " Select the movie again in Files.")
-                self.iinaPlaybackStatus = "IINA needs attention"
-                if !session.isRunning { self.keepAwake.release() }
-                self.showToast(error.localizedDescription)
-            }
-            session.onReady = { [weak self, weak session] in
-                guard let self, let session, self.iinaSession === session else { return }
-                self.iinaPlaybackError = nil
-                self.iinaPlaybackStatus = "IINA on \(screen.localizedName)"
-            }
-            try session.launch(file: movie.url, subtitle: subtitle, position: position, screen: screen)
-            keepAwake.hold(reason: "Watching a movie in IINA")
-            return true
-        } catch {
-            launched?.close()
-            iinaSession = nil
-            currentLocalMovie = nil
-            iinaPlaybackError = error.localizedDescription
-            showToast(error.localizedDescription)
-            return false
-        }
-    }
-
-    func closeIINAPlayback(terminating: Bool = false) {
-        let previous = iinaSession
-        iinaSession = nil
-        iinaPlaybackError = nil
-        iinaPlaybackStatus = ""
-        previous?.close(immediate: terminating)
-    }
-
-    /// Invoke IINA's own subtitle search after it has opened the selected movie.
-    func searchIINASubtitles() -> Bool {
-        guard AXIsProcessTrusted() else {
-            showToast("Allow Mac TV in Accessibility settings to control IINA."); return false
-        }
-        guard let expected = currentLocalMovie?.path else { return false }
-        Task { @MainActor [weak self] in
-            for _ in 0..<8 {
-                try? await Task.sleep(for: .milliseconds(350))
-                guard let self, self.currentLocalMovie?.path == expected else { return }
-                let target: NSRunningApplication?
-                if let session = self.iinaSession { target = session.application }
-                else { target = NSRunningApplication.runningApplications(withBundleIdentifier: "com.colliderli.iina").first }
-                guard let running = target else { continue }
-                running.activate(options: [])
-                let element = AXUIElementCreateApplication(running.processIdentifier)
-                var bar: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(element, kAXMenuBarAttribute as CFString, &bar) == .success,
-                      let bar else { continue }
-                if self.pressIINASubtitleSearch(unsafeBitCast(bar, to: AXUIElement.self), depth: 0) { return }
-            }
-            self?.showToast("IINA search wasn't available. Use the phone's subtitle upload or web search.")
-        }
-        return true
-    }
-
-    private func pressIINASubtitleSearch(_ element: AXUIElement, depth: Int) -> Bool {
-        guard depth < 6 else { return false }
-        var title: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &title)
-        let name = (title as? String ?? "").lowercased()
-        if name.contains("online") && name.contains("subtitle") && (name.contains("find") || name.contains("search")) {
-            return AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
-        }
-        var children: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children)
-        for child in children as? [AXUIElement] ?? [] {
-            if pressIINASubtitleSearch(child, depth: depth + 1) { return true }
-        }
-        return false
+        (screensaver || displaysSleeping) && mode == .launcher && setup == nil && !playbackCoordinator.isAnyPlaybackActive
     }
 
     var braveInstalled: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") != nil }
@@ -1252,292 +893,32 @@ final class TVController: NSObject, ObservableObject {
         if !setWebsitePlayer(next.rawValue) { showToast("Install Brave Browser to select it.") }
     }
 
-    private func playInBrave(_ service: Service, url: URL) {
-        closeExternalBrowser()
-        webView?.pauseAllMediaPlayback(completionHandler: nil)
-        webView?.stopLoading()
-        webView = nil
-        currentLocalMovie = nil
-        playerFailure = nil
-        moviePlayer?.stop()
-        moviePlayer = nil
-        launchedAppID = nil
-        let session = BraveSession()
-        externalBrowser = session
-        browserFocus = 0
-        externalBrowserService = service
-        mode = .player(service)
-        keepAwake.hold(reason: "Watching \(service.name) in Brave")
-        openExternalBrowser(session, url: url)
-    }
+    // MARK: - Helpers for Coordinators
 
-    func retryExternalBrowser() {
-        guard !externalBrowserOpening, externalBrowser != nil,
-              let service = externalBrowserService, case .web(let url) = service.kind else { return }
-        playInBrave(service, url: url)
-    }
-
-    private func openExternalBrowser(_ session: BraveSession, url: URL) {
-        let request = UUID()
-        playbackRequest = request
-        externalBrowserError = nil
-        externalBrowserOpening = true
-        Task { @MainActor [weak self] in
-            do {
-                try await session.open(url)
-                guard let self, self.playbackRequest == request, self.externalBrowser === session else {
-                    try? session.close(); return
-                }
-                if let screen = self.playbackScreen {
-                    try await session.fit(to: screen)
-                }
-                guard self.playbackRequest == request, self.externalBrowser === session else {
-                    try? session.close(); return
-                }
-                try session.activate()
-                self.externalBrowserOpening = false
-            } catch {
-                guard let self, self.playbackRequest == request, self.externalBrowser === session else { return }
-                self.externalBrowserOpening = false
-                self.keepAwake.release()
-                self.externalBrowserError = error.localizedDescription
-                self.bringToFront()
+    func setMode(_ newMode: Mode) { mode = newMode }
+    func clearPointer() { pointer = nil }
+    func setLaunchedAppID(_ id: String?) { launchedAppID = id }
+    func openMoviesBrowserOnly() { movies = MoviesBrowser() }
+    func reconcileMovieBrowserPosition(for path: String) {
+        for (row, line) in movieRows.enumerated() {
+            if let column = line.items.firstIndex(of: .movie(path)) {
+                movies?.row = row
+                movies?.column = column
+                break
             }
         }
     }
+    func screensaverOff() { screensaver = false }
 
-    func activateExternalBrowser() {
-        do { try externalBrowser?.activate(); externalBrowserError = nil }
-        catch { externalBrowserError = error.localizedDescription; showToast(error.localizedDescription) }
-    }
+    // MARK: - Touchpad & Pointer
 
-    func closeExternalBrowser() {
-        let previous = externalBrowser
-        externalBrowser = nil
-        externalBrowserService = nil
-        externalBrowserError = nil
-        externalBrowserOpening = false
-        do { try previous?.close() }
-        catch BraveSession.SessionError.noWindow {} // It may already have been closed by the user.
-        catch BraveSession.SessionError.unavailable {}
-        catch { showToast("Could not close the Mac TV Brave window. Close it manually in Brave.") }
-    }
-
-    // MARK: Movies
-
-    /// Plays a movie in Mac TV's own player; files it can't play open in IINA or VLC.
-    func playMovie(_ movie: Movie, from seconds: Double) {
-        closeIINAPlayback()
-        closeExternalBrowser()
-        let request = UUID()
-        playbackRequest = request
-        currentLocalMovie = movie
-        localMoviePlayer = "native"
-        Task { @MainActor in
-            let opened: Result<PlaybackEngine, PlaybackProblem>
-            var stream: JellyfinServers.Stream?
-            if movie.isRemote {
-                switch await JellyfinServers.shared.stream(for: movie) {
-                case .success(let found):
-                    stream = found
-                    opened = await AVPlayback.open(found.url).map { $0 as PlaybackEngine }
-                case .failure(let problem):
-                    guard playbackRequest == request else { return }
-                    currentLocalMovie = nil
-                    showToast(problem.message)
-                    return
-                }
-            } else if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
-                opened = await Task.detached(priority: .userInitiated) { MatroskaPlayback.open(movie.url) }.value
-                    .map { $0 as PlaybackEngine }
-            } else {
-                opened = await AVPlayback.open(movie.url).map { $0 as PlaybackEngine }
-            }
-            guard playbackRequest == request else {
-                if case .success(let engine) = opened { engine.stop() }
-                return
-            }
-            // The kind of file and how it played, never its name.
-            let format = movie.isRemote ? "jellyfin" : movie.url.pathExtension.lowercased()
-            switch opened {
-            case .success(let engine):
-                if let stream { JellyfinServers.shared.started(stream, movie: movie, at: seconds) }
-                Analytics.send(.moviePlayed, ["format": format, "player": engine is AVPlayback ? "system" : "matroska",
-                                              "resumed": String(seconds > 0)])
-                startMovie(movie, engine: engine, from: seconds)
-            case .failure:
-                Analytics.send(.moviePlayed, ["format": format, "player": "external"])
-                openElsewhere(movie)
-            }
-        }
-    }
-
-    private func startMovie(_ movie: Movie, engine: PlaybackEngine, from seconds: Double) {
-        let player = MoviePlayer(movie: movie, engine: engine)
-        player.onEnd = { [weak self] in self?.closeMovie() }
-        player.onClose = { [weak self] in self?.closeMovie() }
-        player.onFailure = { [weak self] _ in
-            self?.closeMovie()
-            self?.openElsewhere(movie)
-        }
-        // Straight to the picture: no fade through other screens.
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            if movies == nil { movies = MoviesBrowser() }
-            moviePlayer = player
-            mode = .movie
-        }
-        keepAwake.hold(reason: "Watching \(movie.title) in Mac TV")
-        bringToFront()
-        player.start(at: seconds)
-    }
-
-    /// Back to the Movies screen, on what was playing: first in Continue Watching, unless it's finished.
-    func closeMovie() {
-        playbackRequest = UUID()
-        currentLocalMovie = nil
-        if let player = moviePlayer { JellyfinServers.shared.stopped(player.movie, at: player.engine.currentTime) }
-        moviePlayer?.stop()
-        if let path = moviePlayer?.movie.path {
-            for (row, line) in movieRows.enumerated() {
-                if let column = line.items.firstIndex(of: .movie(path)) {
-                    movies?.row = row
-                    movies?.column = column
-                    break
-                }
-            }
-        }
-        var instant = Transaction()
-        instant.disablesAnimations = true
-        withTransaction(instant) {
-            moviePlayer = nil
-            mode = .launcher
-        }
-        keepAwake.release()
-    }
-
-    /// IINA or VLC play almost anything; IINA opens full screen. Remote presses go to it as keys.
-    private func openElsewhere(_ movie: Movie) {
-        guard !movie.isRemote else {
-            currentLocalMovie = nil
-            showToast("Mac TV couldn't play \(movie.title) from \(movie.server ?? "the server").")
-            return
-        }
-        let iina = "com.colliderli.iina", vlc = "org.videolan.vlc"
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: iina) != nil, playInIINA(movie) { return }
-        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: vlc) {
-            NSWorkspace.shared.open([movie.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
-            launchedAppID = vlc
-            showToast("Playing \(movie.title) in VLC. Home comes back here.")
-        } else {
-            showToast("Mac TV can't play this file. IINA, free from iina.io, can.")
-        }
-    }
-
-    private func handleInMovie(_ command: RemoteCommand) {
-        guard let player = moviePlayer else { return }
-        if player.menu != nil {
-            switch command {
-            case .move(let direction): player.moveInMenu(direction)
-            case .select: player.chooseInMenu()
-            case .back: player.menu = nil; player.showControls()
-            case .playPause: player.togglePlayback()
-            default: break
-            }
-            return
-        }
-        switch command {
-        case .select, .playPause: player.togglePlayback()
-        case .move(.left): player.skip(-10)
-        case .move(.right): player.skip(10)
-        case .seek(let forward): player.skip(forward ? 10 : -10)
-        case .move(.down): player.openMenu()
-        case .move(.up): player.showControls()
-        case .back: closeMovie()
-        case .pointer, .click, .scroll: player.showControls()
-        default: break
-        }
-    }
-
-    // MARK: Player
-
-    private func handleInPlayer(_ command: RemoteCommand, service: Service) {
-        if playerFailure != nil { handlePlayerFailure(command); return }
-        guard let web = webView else { return }
-        switch command {
-        case .move(let direction): sendKey(.direction(direction), to: web)
-        case .select: sendKey(.enter, to: web)
-        case .back:
-            if !service.dpadNavigation {
-                // TV-style web apps (youtube.com/tv) treat Escape as their own back button.
-                sendKey(.escape, to: web)
-            } else if web.canGoBack {
-                web.goBack()
-            } else {
-                goHome()
-            }
-        case .playPause:
-            runWebPlayback("toggle", in: web, fallback: .space)
-        case .seek(let forward):
-            if service.id == "netflix" { sendKey(forward ? .right : .left, to: web) }
-            else { runWebPlayback(forward ? "forward" : "backward", in: web, fallback: forward ? .right : .left) }
-        case .text(let text):
-            for character in text {
-                sendKey(character == "\n" ? .enter : Key(code: 0, chars: String(character)), to: web)
-            }
-        case .deleteBackward: sendKey(.delete, to: web)
-        case .pointer(let dx, let dy): movePointer(dx: dx, dy: dy)
-        case .click: clickPointer()
-        case .scroll(let dy): scrollPage(web, by: dy)
-        case .openInBrowser:
-            if let url = web.url {
-                goHome()
-                NSWorkspace.shared.open(url)
-            }
-        default: break
-        }
-    }
-
-    private func runWebPlayback(_ action: String, in web: WKWebView, fallback: Key) {
-        Task { @MainActor [weak self, weak web] in
-            guard let web else { return }
-            do {
-                let value = try await web.callAsyncJavaScript("return await window.__macTVPlayback(action)",
-                    arguments: ["action": action], contentWorld: .page)
-                guard self?.webView === web else { return }
-                if value as? String == "none" { self?.sendKey(fallback, to: web) }
-                else if value as? String == "unsupported" { self?.showToast("The website didn't accept this control. Try its on-screen player controls.") }
-            } catch {
-                if self?.webView === web { self?.sendKey(fallback, to: web) }
-            }
-        }
-    }
-
-    private func sendKey(_ key: Key, to web: WKWebView) {
-        guard let window else { return }
-        if window.firstResponder !== web { window.makeFirstResponder(web) }
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let event = NSEvent.keyEvent(
-                with: type, location: .zero, modifierFlags: key.flags,
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                context: nil, characters: key.chars, charactersIgnoringModifiers: key.chars,
-                isARepeat: false, keyCode: key.code)
-            else { continue }
-            window.sendEvent(event)
-        }
-    }
-
-    // MARK: Touchpad
-
-    private func movePointer(dx: Double, dy: Double) {
+    func movePointer(dx: Double, dy: Double) {
         guard let window, let bounds = window.contentView?.bounds else { return }
         var point = pointer ?? CGPoint(x: bounds.midX, y: bounds.midY)
         point.x = min(max(point.x + dx, 0), bounds.width - 1)
-        point.y = min(max(point.y - dy, 0), bounds.height - 1) // window y grows upward
+        point.y = min(max(point.y - dy, 0), bounds.height - 1)
         pointer = point
 
-        // Show the real cursor where the virtual pointer is.
         let onScreen = window.convertPoint(toScreen: point)
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         CGWarpMouseCursorPosition(CGPoint(x: onScreen.x, y: primaryHeight - onScreen.y))
@@ -1545,7 +926,7 @@ final class TVController: NSObject, ObservableObject {
         postMouse(.mouseMoved, at: point)
     }
 
-    private func clickPointer() {
+    func clickPointer() {
         guard let window, let bounds = window.contentView?.bounds else { return }
         let point = pointer ?? CGPoint(x: bounds.midX, y: bounds.midY)
         postMouse(.leftMouseDown, at: point)
@@ -1562,21 +943,7 @@ final class TVController: NSObject, ObservableObject {
         window.sendEvent(event)
     }
 
-    private func scrollPage(_ web: WKWebView, by dy: Double) {
-        let point = pointer ?? CGPoint(x: web.bounds.midX, y: web.bounds.midY)
-        let x = Int(point.x), y = Int(web.bounds.height - point.y), amount = Int(dy)
-        web.evaluateJavaScript("""
-            ((x, y, dy) => {
-              for (let el = document.elementFromPoint(x, y); el && el !== document.body; el = el.parentElement) {
-                const style = getComputedStyle(el);
-                if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) { el.scrollBy(0, dy); return; }
-              }
-              window.scrollBy(0, dy);
-            })(\(x), \(y), \(amount))
-            """)
-    }
-
-    // MARK: Mac apps
+    // MARK: - Mac apps & Steam
 
     private func forwardToFrontApp(_ command: RemoteCommand) {
         let code: CGKeyCode
@@ -1605,32 +972,6 @@ final class TVController: NSObject, ObservableObject {
         SystemControl.postKeyToFrontApp(code)
     }
 
-    // MARK: Helpers
-
-    private func makeWebView(for service: Service) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        // Each profile's own store keeps its sign-ins between launches.
-        config.websiteDataStore = profile.websiteDataStore
-        config.mediaTypesRequiringUserActionForPlayback = []
-        config.allowsAirPlayForMediaPlayback = true
-        config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        config.userContentController.addUserScript(
-            WKUserScript(source: WebPlayback.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        config.userContentController.addUserScript(
-            WKUserScript(source: AutoPlay.script(skip: autoSkip, next: autoNext), injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        if service.dpadNavigation {
-            config.userContentController.addUserScript(
-                WKUserScript(source: SpatialNav.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
-        let web = WKWebView(frame: .zero, configuration: config)
-        web.customUserAgent = service.userAgent
-        web.uiDelegate = self
-        web.navigationDelegate = self
-        web.underPageBackgroundColor = .black
-        web.isInspectable = true
-        return web
-    }
-
     func bringToFront() {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
@@ -1648,7 +989,6 @@ final class TVController: NSObject, ObservableObject {
     func startControllers() {
         controllerInput = ControllerInput(tv: self)
         controllerInput?.start()
-        // MACTV_PREVIEW_CONTROLLER=1 shows a pretend PlayStation controller, for checking the design without one.
         if ProcessInfo.processInfo.environment["MACTV_PREVIEW_CONTROLLER"] == "1" {
             controllerChanged(ControllerInfo(name: "DualSense Wireless Controller", battery: 0.7, selectSymbol: "xmark.circle",
                                              backSymbol: "circle.circle", menuSymbol: "line.3.horizontal.circle"), connected: true)
@@ -1664,63 +1004,12 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    func showToast(_ text: String) {
-        toast = text
+    func showToast(_ message: String) {
+        withAnimation(.smooth(duration: 0.3)) { toast = message }
         toastTask?.cancel()
         toastTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled { self?.toast = nil }
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.toast = nil } }
         }
-    }
-}
-
-// Sign-in pages (Google, Apple, Amazon) open popups that talk back to their opener.
-extension TVController: WKUIDelegate {
-    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
-                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        let popup = WKWebView(frame: NSRect(x: 0, y: 0, width: 520, height: 700), configuration: configuration)
-        popup.customUserAgent = webView.customUserAgent
-        popup.uiDelegate = self
-        popup.navigationDelegate = self
-        let popupWindow = NSWindow(contentRect: popup.frame, styleMask: [.titled, .closable, .resizable],
-                                   backing: .buffered, defer: false)
-        popupWindow.contentView = popup
-        popupWindow.isReleasedWhenClosed = false
-        popupWindow.level = .floating
-        if let frame = window?.frame {
-            popupWindow.setFrameOrigin(NSPoint(x: frame.midX - 260, y: frame.midY - 350))
-        }
-        popupWindow.makeKeyAndOrderFront(nil)
-        popups.append(popupWindow)
-        return popup
-    }
-
-    func webViewDidClose(_ webView: WKWebView) {
-        guard let popupWindow = popups.first(where: { $0.contentView === webView }) else { return }
-        popupWindow.close()
-        popups.removeAll { $0 === popupWindow }
-    }
-}
-
-// Google sign-in (YouTube, YouTube Music) refuses embedded browsers; switch identity on its pages.
-extension TVController: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        recordPlayerFailure(webView, error: error)
-    }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        recordPlayerFailure(webView, error: error)
-    }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { recordPlayerFailure(webView) }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView === self.webView { playerFailure = nil }
-    }
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard navigationAction.targetFrame?.isMainFrame ?? true, let host = navigationAction.request.url?.host() else { return .allow }
-        let signingIn = host == "accounts.google.com" || host.hasSuffix(".accounts.google.com")
-        var usual = UserAgent.safari
-        if case .player(let service) = mode { usual = service.userAgent }
-        let wanted = signingIn ? UserAgent.googleSignIn : usual
-        if webView.customUserAgent != wanted { webView.customUserAgent = wanted }
-        return .allow
     }
 }
