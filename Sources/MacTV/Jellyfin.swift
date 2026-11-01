@@ -362,12 +362,16 @@ final class JellyfinServers: ObservableObject {
         return request
     }
 
-    private nonisolated static func authorization(token: String?) -> String {
-        let device = (Host.current().localizedName ?? "Mac").replacingOccurrences(of: "\"", with: "")
-        var fields = ["Client=\"Mac TV\"", "Device=\"\(device)\"", "DeviceId=\"\(deviceID)\"",
-                      "Version=\"\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")\""]
-        if let token { fields.append("Token=\"\(token)\"") }
-        return "MediaBrowser " + fields.joined(separator: ", ")
+    /// Values are percent-encoded, as Jellyfin's own apps send them: macOS mangles a header with
+    /// characters like the ’ in "Arun’s MacBook Air", and Jellyfin then finds no device ID.
+    nonisolated static func authorization(token: String?, device: String = Host.current().localizedName ?? "Mac") -> String {
+        var values = [("Client", "Mac TV"), ("Device", device), ("DeviceId", deviceID),
+                      ("Version", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")]
+        if let token { values.append(("Token", token)) }
+        let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~")
+        return "MediaBrowser " + values.map { name, value in
+            "\(name)=\"\(value.addingPercentEncoding(withAllowedCharacters: unreserved) ?? "Mac")\""
+        }.joined(separator: ", ")
     }
 
     /// One ID for this Mac, so the server lists it as a single device.

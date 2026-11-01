@@ -131,6 +131,15 @@ struct JellyfinTests {
     }
 
     @Test
+    func encodesTheSignInHeader() {
+        let header = JellyfinServers.authorization(token: "abc123", device: "Arun’s M1 \"Air\"")
+        #expect(header.hasPrefix("MediaBrowser Client=\"Mac%20TV\", Device=\"Arun%E2%80%99s%20M1%20%22Air%22\""))
+        #expect(header.hasSuffix(", Token=\"abc123\""))
+        let ascii = header.allSatisfy { $0.isASCII }
+        #expect(ascii)
+    }
+
+    @Test
     func explainsFailures() {
         #expect(JellyfinServers.message(for: JellyfinServers.Failure.http(401), signingIn: true) == "Wrong user name or password")
         #expect(JellyfinServers.message(for: JellyfinServers.Failure.http(401), signingIn: false) == "Sign in again")
