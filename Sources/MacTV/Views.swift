@@ -808,10 +808,11 @@ struct WebViewHost: NSViewRepresentable {
 /// Mac TV's motion, built from Apple's system springs so everything moves with one feel.
 /// With Reduce Motion on, views fade instead of moving, scaling or tilting.
 enum Motion {
-    /// Focus moving between tiles, rows and buttons: quick, with a hint of bounce.
-    static let focus = Animation.snappy(duration: 0.28, extraBounce: 0.04)
+    /// Focus moving between tiles, rows and buttons. The same curve and length as `navigate`, so a
+    /// focused tile lifts in step with its row scrolling, instead of moving on its own.
+    static let focus = Animation.smooth(duration: 0.32)
     /// Scrolling between the Top Shelf, dock and grid.
-    static let navigate = Animation.smooth(duration: 0.5)
+    static let navigate = Animation.smooth(duration: 0.32)
     /// Sheets, toasts and pills arriving and leaving.
     static let appear = Animation.smooth(duration: 0.35)
     /// A control pressed: quick, settling without a bounce.

@@ -125,7 +125,7 @@ struct AppOrganizerSheet: View {
 
     private func scrollToSelection(_ proxy: ScrollViewProxy) {
         guard let id = tv.organizer?.selectedID else { return }
-        withAnimation(reduceMotion ? nil : Motion.focus) { proxy.scrollTo(id, anchor: .center) }
+        withAnimation(reduceMotion ? nil : Motion.navigate) { proxy.scrollTo(id, anchor: .center) }
     }
 
     private func appRow(_ service: Service, position: Int) -> some View {
