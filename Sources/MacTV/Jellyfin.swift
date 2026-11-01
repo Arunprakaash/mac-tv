@@ -362,14 +362,31 @@ final class JellyfinServers: ObservableObject {
             return signingIn ? "Wrong user name or password" : "Sign in again"
         case Failure.notJellyfin, is DecodingError, is CocoaError:
             return "Not a Jellyfin server"
-        case let error as URLError where error.code == .secureConnectionFailed || error.code == .serverCertificateUntrusted:
-            return "The server's certificate isn't trusted"
-        case is URLError:
-            return "Server not reachable"
+        case let error as URLError:
+            return message(for: error)
         case Failure.http(let code):
             return "The server answered \(code)"
         default:
             return "Couldn't connect"
+        }
+    }
+
+    /// What went wrong on the way to the server, as exactly as the error says.
+    nonisolated static func message(for error: URLError) -> String {
+        let place = error.failingURL.flatMap { url in url.host.map { host in url.port.map { "\(host):\($0)" } ?? host } } ?? "the server"
+        // macOS reports a refused Local Network permission only in the error's network path.
+        if String(describing: error.userInfo).localizedCaseInsensitiveContains("local network prohibited") {
+            return "Allow Mac TV in System Settings › Privacy & Security › Local Network"
+        }
+        switch error.code {
+        case .cannotFindHost, .dnsLookupFailed: return "Can't find \(place)"
+        case .cannotConnectToHost: return "Nothing is answering at \(place)"
+        case .timedOut: return "No answer from \(place)"
+        case .notConnectedToInternet, .networkConnectionLost: return "This Mac isn't connected"
+        case .appTransportSecurityRequiresSecureConnection: return "Use the server's IP address, or https://"
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot: return "The server's certificate isn't trusted"
+        default: return "Can't reach \(place) (\(error.code.rawValue))"
         }
     }
 

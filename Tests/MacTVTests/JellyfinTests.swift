@@ -119,7 +119,16 @@ struct JellyfinTests {
     func explainsFailures() {
         #expect(JellyfinServers.message(for: JellyfinServers.Failure.http(401), signingIn: true) == "Wrong user name or password")
         #expect(JellyfinServers.message(for: JellyfinServers.Failure.http(401), signingIn: false) == "Sign in again")
-        #expect(JellyfinServers.message(for: URLError(.cannotConnectToHost), signingIn: true) == "Server not reachable")
+        let url = URL(string: "http://100.92.2.111:8096/System/Info/Public")!
+        #expect(JellyfinServers.message(for: URLError(.cannotConnectToHost, userInfo: [NSURLErrorFailingURLErrorKey: url]),
+                                        signingIn: true) == "Nothing is answering at 100.92.2.111:8096")
+        #expect(JellyfinServers.message(for: URLError(.timedOut, userInfo: [NSURLErrorFailingURLErrorKey: url]),
+                                        signingIn: true) == "No answer from 100.92.2.111:8096")
+        #expect(JellyfinServers.message(for: URLError(.notConnectedToInternet,
+                                                      userInfo: ["_NSURLErrorNWPathKey": "unsatisfied (Local network prohibited)"]),
+                                        signingIn: true).contains("Local Network"))
+        #expect(JellyfinServers.message(for: URLError(.appTransportSecurityRequiresSecureConnection), signingIn: true)
+                .contains("IP address"))
         #expect(JellyfinServers.message(for: JellyfinServers.Failure.notJellyfin, signingIn: true) == "Not a Jellyfin server")
     }
 }
