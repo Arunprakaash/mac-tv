@@ -17,7 +17,8 @@ Needs the Swift toolchain (Command Line Tools is enough) on macOS 14 or later.
 ```bash
 ./build.sh                       # builds "build/Mac TV.app" (Apple silicon and Intel)
 open "build/Mac TV.app"
-./scripts/make-dmg.sh            # builds build/MacTV-<version>.dmg
+./scripts/make-dmg.sh            # builds build/MacTV-<version>.dmg (asks once to let your terminal control Finder, to lay out its window)
+swift scripts/make-dmg-background.swift   # redraws the DMG window's background (variants sheet.png shows all designs)
 ./scripts/make-signing-cert.sh   # once: a local signing certificate, so macOS keeps permissions across builds
 swift scripts/make-icon.swift    # redraws Assets/AppIcon.png and .icns
 ```
