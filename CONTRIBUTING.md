@@ -32,6 +32,9 @@ swift scripts/make-icon.swift    # redraws Assets/AppIcon.png and .icns
 swift test --disable-xctest              # Swift tests (Swift 6 or newer)
 node Tests/WebPlayback/bridge.test.cjs   # web player bridge
 node Tests/WebPlayback/touchpad.test.cjs # phone touchpad transport
+node Tests/WebPlayback/address.test.cjs  # phone website address entry
+node Tests/WebPlayback/transport.test.cjs # phone request deadlines and queues
+node Tests/WebPlayback/layout.test.cjs    # phone layout (needs Chrome or Brave, or BROWSER_BIN)
 ```
 
 Some Swift 6.4 Command Line Tools installs have a [TestingMacros loading issue](https://github.com/swiftlang/swift-build/issues/1870). If the plugin is reported missing:
