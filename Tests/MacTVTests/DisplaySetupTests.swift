@@ -64,11 +64,12 @@ import Testing
         }
     }
 
-    @Test func pairingFocusIncludesDoneAndClampsAfterDisplayChanges() {
-        #expect(TVMode.pairingIndex(0, count: 2, step: -1) == 0)
-        #expect(TVMode.pairingIndex(1, count: 2, step: 1) == 2)
-        #expect(TVMode.pairingIndex(2, count: 2, step: 1) == 3)
-        #expect(TVMode.pairingIndex(3, count: 2, step: 1) == 3)
-        #expect(TVMode.pairingIndex(2, count: 0, step: 0) == 1)
+    @Test func displayStepWrapsAroundConnectedDisplays() {
+        let ids = ["mac", "tv", "projector"]
+        #expect(TVMode.steppedDisplay(ids, from: "mac", step: 1) == "tv")
+        #expect(TVMode.steppedDisplay(ids, from: "projector", step: 1) == "mac")
+        #expect(TVMode.steppedDisplay(ids, from: "mac", step: -1) == "projector")
+        #expect(TVMode.steppedDisplay(ids, from: "disconnected", step: 1) == "tv")
+        #expect(TVMode.steppedDisplay([], from: "mac", step: 1) == nil)
     }
 }

@@ -93,24 +93,46 @@ final class TVMode {
         }
     }
 
-    var pairingFocusedIndex: Int { min(pairingFocus, displayOptions.count + 1) }
+    /// The pairing sheet's rows: phone access, the display (only when there's more than one), and Done.
+    enum PairingRow { case access, display, done }
+
+    var pairingRows: [PairingRow] { displayOptions.count > 1 ? [.access, .display, .done] : [.access, .done] }
+    var pairingFocusedRow: PairingRow { pairingRows[min(pairingFocus, pairingRows.count - 1)] }
 
     func resetPairingFocus() { pairingFocus = 0 }
 
-    static func pairingIndex(_ index: Int, count: Int, step: Int) -> Int {
-        min(max(0, index + step), max(0, count) + 1)
+    /// The display after (or before) `current`, wrapping around.
+    static func steppedDisplay(_ ids: [String], from current: String?, step: Int) -> String? {
+        guard !ids.isEmpty else { return nil }
+        let at = current.flatMap { ids.firstIndex(of: $0) } ?? 0
+        return ids[((at + step) % ids.count + ids.count) % ids.count]
+    }
+
+    /// Moves Mac TV to the next connected display.
+    func stepDisplay(_ step: Int) {
+        let options = displayOptions
+        let current = options.first(where: \.current)?.id ?? preferredID
+        if let next = Self.steppedDisplay(options.map(\.id), from: current, step: step) { _ = chooseDisplay(id: next) }
     }
 
     func handlePairing(_ command: RemoteCommand) {
-        let count = displayOptions.count
-        pairingFocus = min(pairingFocus, count + 1)
+        let rows = pairingRows
+        pairingFocus = min(pairingFocus, rows.count - 1)
+        let row = rows[pairingFocus]
         switch command {
-        case .move(.left), .move(.up): pairingFocus = Self.pairingIndex(pairingFocus, count: count, step: -1)
-        case .move(.right), .move(.down): pairingFocus = Self.pairingIndex(pairingFocus, count: count, step: 1)
+        case .move(.up): pairingFocus = max(0, pairingFocus - 1)
+        case .move(.down): pairingFocus = min(rows.count - 1, pairingFocus + 1)
+        // Left and right change the focused row's value, like a Settings row.
+        case .move(let direction) where row == .access && (direction == .left || direction == .right):
+            tv?.pairingGuest.toggle()
+        case .move(.left) where row == .display: stepDisplay(-1)
+        case .move(.right) where row == .display: stepDisplay(1)
         case .select:
-            if pairingFocus == 0 { tv?.pairingGuest.toggle() }
-            else if pairingFocus == count + 1 { tv?.pairing = false }
-            else { _ = chooseDisplay(id: displayOptions[pairingFocus - 1].id) }
+            switch row {
+            case .access: tv?.pairingGuest.toggle()
+            case .display: stepDisplay(1)
+            case .done: tv?.pairing = false
+            }
         case .back: tv?.pairing = false
         default: return
         }
@@ -397,7 +419,9 @@ extension TVController {
     var displaySetup: [[String: Any]] {
         availableTVDisplays.map { ["id": $0.id, "name": $0.name, "current": $0.current, "preferred": $0.preferred] }
     }
-    var pairingFocusedIndex: Int { tvMode?.pairingFocusedIndex ?? 0 }
+    var pairingRows: [TVMode.PairingRow] { tvMode?.pairingRows ?? [.access, .done] }
+    var pairingFocusedRow: TVMode.PairingRow { tvMode?.pairingFocusedRow ?? .access }
+    func stepPairingDisplay() { tvMode?.stepDisplay(1) }
     func handlePairing(_ command: RemoteCommand) { tvMode?.handlePairing(command) }
     @discardableResult func selectTVDisplay(id: String) -> Bool { tvMode?.chooseDisplay(id: id) ?? false }
     var dedicatedTVMode: Bool { tvMode?.enabled ?? false }

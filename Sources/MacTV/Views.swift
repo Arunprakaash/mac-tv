@@ -772,42 +772,20 @@ struct PairSheet: View {
                 }
             }
             VStack(alignment: .leading, spacing: 18) {
-                Text("MAC TV REMOTE").font(.tv(.caption2, emphasized: true)).tracking(2.4).opacity(0.6)
                 Text("Use your phone as a remote").font(.tv(.title3, emphasized: true))
-                Text("Scan with your phone's camera, then add the page to your home screen.")
-                    .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.75))
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(links) { link in Text("\(link.label): \(link.address)") }
-                    Text("Pairing code \(tv.pairingGuest ? tv.remoteGuestToken : tv.remoteToken)")
-                }
-                .font(.tv(.caption2)).monospacedDigit().foregroundStyle(.white.opacity(0.7))
-                VStack(alignment: .leading, spacing: 10) {
-                    pairRow("Phone access", value: tv.pairingGuest ? "Guest" : "Full", focused: tv.pairingFocusedIndex == 0) {
-                        tv.pairingGuest.toggle()
-                    }
-                    // Always one line, so switching access never moves the sheet.
-                    Text(tv.pairingGuest ? "Playback controls only, for 24 hours." : "Controls, settings and Files on Mac.")
-                        .font(.tv(.caption2)).opacity(0.6).padding(.leading, 26)
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("SHOW MAC TV ON").font(.tv(.caption2, emphasized: true)).tracking(2.4).opacity(0.6)
-                        .padding(.leading, 26)
-                    let displays = tv.availableTVDisplays
-                    // A scrolling list only once there are more displays than fit; otherwise rows take just their own height.
-                    if displays.count > 3 {
-                        ScrollViewReader { proxy in
-                            ScrollView { displayRows(displays).padding(.vertical, 6) }
-                                .frame(height: 230)
-                                .onChange(of: tv.pairingFocusedIndex) { _, index in
-                                    if index > 0 && index <= displays.count { proxy.scrollTo(index - 1, anchor: .center) }
-                                }
-                        }
-                    } else {
-                        displayRows(displays)
+                Text("Scan with your phone's camera. Code \(tv.pairingGuest ? tv.remoteGuestToken : tv.remoteToken)")
+                    .font(.tv(.caption2)).monospacedDigit().foregroundStyle(.white.opacity(0.7))
+                VStack(spacing: 10) {
+                    pairRow("Phone access", value: tv.pairingGuest ? "Guest, 24 hours" : "Full",
+                            focused: tv.pairingFocusedRow == .access) { tv.pairingGuest.toggle() }
+                    if tv.pairingRows.contains(.display) {
+                        let displays = tv.availableTVDisplays
+                        pairRow("Display", value: (displays.first(where: \.current) ?? displays.first)?.name,
+                                focused: tv.pairingFocusedRow == .display) { tv.stepPairingDisplay() }
                     }
                 }
-                ShelfButton(title: "Done", focused: tv.pairingFocusedIndex == tv.availableTVDisplays.count + 1,
-                            glass: false) { tv.pairing = false }
+                .padding(.top, 8)
+                ShelfButton(title: "Done", focused: tv.pairingFocusedRow == .done, glass: false) { tv.pairing = false }
                     .padding(.top, 10)
             }
             .frame(maxWidth: 760, alignment: .leading)
@@ -818,18 +796,8 @@ struct PairSheet: View {
         .frame(width: canvas.width, height: canvas.height)
     }
 
-    private func displayRows(_ displays: [TVMode.DisplayOption]) -> some View {
-        VStack(spacing: 10) {
-            ForEach(Array(displays.enumerated()), id: \.element.id) { index, display in
-                pairRow(display.name, value: display.current ? "Current" : nil, checked: display.preferred,
-                        focused: tv.pairingFocusedIndex == index + 1) { _ = tv.selectTVDisplay(id: display.id) }
-                    .id(index)
-            }
-        }
-    }
-
     /// A row on the frosted sheet: a plain fill at rest, the white platter with dark text when focused.
-    private func pairRow(_ title: String, value: String? = nil, checked: Bool = false, focused: Bool,
+    private func pairRow(_ title: String, value: String? = nil, focused: Bool,
                          action: @escaping () -> Void) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         return Button(action: action) {
@@ -837,7 +805,6 @@ struct PairSheet: View {
                 Text(title).lineLimit(1)
                 Spacer(minLength: 16)
                 if let value { Text(value).opacity(0.6) }
-                if checked { Image(systemName: "checkmark") }
             }
             .font(.tv(.callout))
             .padding(.horizontal, 26)
