@@ -111,7 +111,7 @@ struct TopShelfPreferencesSheet: View {
                 }
                 .frame(height: min(600, max(280, canvas.height - 430)))
                 .onAppear { proxy.scrollTo(panel.row, anchor: .center) }
-                .onChange(of: panel.row) { _, row in withAnimation(reduceMotion ? nil : Motion.focus) { proxy.scrollTo(row, anchor: .center) } }
+                .onChange(of: panel.row) { _, row in withAnimation(reduceMotion ? nil : Motion.navigate) { proxy.scrollTo(row, anchor: .center) } }
             }
             Text("↑ ↓ Choose    ← → Change    OK Select    Back Close · Changes refresh the shelf")
                 .font(.system(size: 20)).foregroundStyle(.white.opacity(0.65))

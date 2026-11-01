@@ -288,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var scrollTotal: CGFloat = 0
     private var scrollReadyAt = Date.distantPast
+    private var swipedInGesture = false
 
     /// Arrows, Return and Escape drive the home screen. In a player, keys go to the page.
     /// Trackpad or wheel scrolling moves between the Top Shelf, the dock and the grid.
@@ -296,6 +297,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) { [weak self] event in
             guard let self, event.window === window else { return event }
             let woke = tv.noteActivity()
+            if event.type == .mouseMoved && (abs(event.deltaX) > 0.5 || abs(event.deltaY) > 0.5) {
+                tv.suppressHover = false
+            }
             return woke && event.type == .leftMouseDown ? nil : event
         }
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
@@ -304,15 +308,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard tv.mode == .launcher, !tv.pairing, tv.settings == nil, tv.adder == nil,
                   tv.organizer == nil, tv.playbackCheck == nil, tv.topShelfPreferences == nil,
                   tv.setup == nil, tv.profilePicker == nil, tv.controlCenter == nil else { return event }
+
+            tv.suppressHover = true
+
+            let isTrackpad = event.hasPreciseScrollingDeltas || !event.phase.isEmpty
+
+            if event.phase == .began {
+                scrollTotal = 0
+                swipedInGesture = false
+            } else if event.phase == .ended || event.phase == .cancelled {
+                scrollTotal = 0
+                swipedInGesture = false
+            }
+
             // One move per swipe: ignore momentum, and pause briefly after each move.
             guard event.momentumPhase.isEmpty else { return nil }
-            if event.phase == .began { scrollTotal = 0 }
-            scrollTotal += event.scrollingDeltaY
-            if abs(scrollTotal) > 30, Date() >= scrollReadyAt {
-                // Content follows the fingers: swiping up reveals what's below.
-                tv.handle(.move(scrollTotal < 0 ? .down : .up), from: .trackpad)
-                scrollTotal = 0
-                scrollReadyAt = Date().addingTimeInterval(0.45)
+
+            let delta = isTrackpad ? event.scrollingDeltaY : (event.deltaY != 0 ? event.deltaY : event.scrollingDeltaY)
+
+            if isTrackpad {
+                guard Date() >= scrollReadyAt else { return nil }
+                scrollTotal += delta
+                let threshold: CGFloat = swipedInGesture ? 70 : 28
+                if abs(scrollTotal) >= threshold {
+                    // Content follows the fingers: swiping up reveals what's below.
+                    tv.handle(.move(scrollTotal < 0 ? .down : .up), from: .trackpad)
+                    scrollTotal = 0
+                    swipedInGesture = true
+                    scrollReadyAt = Date().addingTimeInterval(0.32)
+                }
+            } else {
+                guard Date() >= scrollReadyAt else { return nil }
+                scrollTotal += delta
+                if abs(scrollTotal) >= 1.0 {
+                    tv.handle(.move(scrollTotal < 0 ? .down : .up), from: .trackpad)
+                    scrollTotal = 0
+                    scrollReadyAt = Date().addingTimeInterval(0.32)
+                }
             }
             return nil
         }

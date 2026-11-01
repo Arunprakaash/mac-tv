@@ -123,6 +123,8 @@ final class TVController: NSObject, ObservableObject {
 
     @Published private(set) var mode: Mode = .launcher
     @Published private(set) var focus: Focus = .app(0)
+    /// Suppresses mouse hover focus changes during scrolling or keyboard navigation until the pointer actually moves.
+    var suppressHover = false
     /// The top-row app whose content the Top Shelf shows.
     @Published private(set) var shelfAppIndex = 0
     /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
@@ -619,6 +621,7 @@ final class TVController: NSObject, ObservableObject {
     /// under a resting pointer and bounce focus back and forth. Clicks, keys, the remote and
     /// scrolling change rows instead.
     func hover(_ index: Int, tilt: CGSize) {
+        guard !suppressHover else { return }
         switch focus {
         case .shelf, .status: return
         case .app: break
@@ -807,7 +810,9 @@ final class TVController: NSObject, ObservableObject {
 
         switch command {
         case .pointer, .click, .scroll: break
-        default: NSCursor.setHiddenUntilMouseMoves(true)
+        default:
+            NSCursor.setHiddenUntilMouseMoves(true)
+            suppressHover = true
         }
 
         // Commands that mean the same thing everywhere.
