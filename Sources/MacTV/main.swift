@@ -373,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
             // The add-app sheet takes typing: letters, Space, Delete and ⌘V go to its fields.
             // So does naming a new profile.
-            if tv.adder != nil || tv.profilePicker?.naming != nil {
+            if tv.adder != nil || tv.profilePicker?.naming != nil || tv.movies?.shareForm != nil {
                 if mods == [.command], event.charactersIgnoringModifiers == "v",
                    let pasted = NSPasteboard.general.string(forType: .string) {
                     tv.handle(.text(pasted))

@@ -8,9 +8,23 @@ struct MoviesBrowser: Equatable {
     var column = 0
     /// The Folders sheet, and its focused row.
     var folderRow: Int?
+    /// Adding a network share, over the Folders sheet.
+    var shareForm: ShareForm?
     /// Asking Resume or Start Over for this movie; 0 resume, 1 from the beginning.
     var resuming: String?
     var resumeRow = 0
+}
+
+/// The TV's Add Network Share form, typed with the keyboard or the phone's Type on TV.
+struct ShareForm: Equatable {
+    /// 0 address, 1 user name, 2 password, 3 Connect.
+    var row = 0
+    var address = ""
+    var user = ""
+    var password = ""
+    var message: String?
+    var failed = false
+    var connecting = false
 }
 
 enum MovieItem: Hashable {
@@ -62,6 +76,7 @@ extension TVController {
 
     func handleMovies(_ command: RemoteCommand) {
         guard var browser = movies else { return }
+        if browser.shareForm != nil { handleShareForm(command); return }
         if browser.folderRow != nil { handleFolders(command); return }
         if let path = browser.resuming {
             switch command {
@@ -149,9 +164,79 @@ extension TVController {
                 MovieLibrary.shared.toggle(suggested[row])
             }
         } else if row == suggested.count {
-            showToast("Add a network share from your phone: TV controls › Network Shares")
+            movies?.shareForm = ShareForm()
         } else {
             chooseMovieFolder()
+        }
+    }
+
+    // MARK: Network shares
+
+    private func handleShareForm(_ command: RemoteCommand) {
+        guard var form = movies?.shareForm else { return }
+        // While connecting, only Back does anything: it closes the form and the share keeps trying.
+        if form.connecting { if case .back = command { movies?.shareForm = nil }; return }
+        form.message = nil
+        form.failed = false
+        switch command {
+        case .back:
+            movies?.shareForm = nil
+            return
+        case .move(.up): form.row = max(0, form.row - 1)
+        case .move(.down): form.row = min(3, form.row + 1)
+        case .select:
+            if form.row == 3 { movies?.shareForm = form; submitShareForm(); return }
+            form.row += 1
+        case .text(let text):
+            let typed = text.replacingOccurrences(of: "\n", with: "")
+            switch form.row {
+            case 1: form.user += typed
+            case 2: form.password += typed
+            default: form.row = 0; form.address += typed
+            }
+            if text.hasSuffix("\n") { movies?.shareForm = form; handleShareForm(.select); return }
+        case .deleteBackward:
+            switch form.row {
+            case 1: if !form.user.isEmpty { form.user.removeLast() }
+            case 2: if !form.password.isEmpty { form.password.removeLast() }
+            default: if !form.address.isEmpty { form.address.removeLast() }
+            }
+        default: break
+        }
+        movies?.shareForm = form
+    }
+
+    /// Adds the share and waits for it to connect: closes on success, or shows why it didn't.
+    private func submitShareForm() {
+        guard var form = movies?.shareForm else { return }
+        let shares = NetworkShares.shared
+        guard let share = shares.add(address: form.address, user: form.user, password: form.password) else {
+            form.message = form.address.isEmpty ? "Type the shared folder's address first." : "Use an address like nas.local/Movies."
+            form.failed = true
+            movies?.shareForm = form
+            return
+        }
+        form.connecting = true
+        form.message = "Connecting to \(share.host)…"
+        movies?.shareForm = form
+        Task { @MainActor [weak self] in
+            // macOS gives up on an unreachable server after about a minute.
+            for _ in 0..<150 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, self.movies?.shareForm?.connecting == true else { return }
+                switch shares.status[share.id] {
+                case .connected:
+                    self.movies?.shareForm = nil
+                    self.showToast("Connected to \(share.name). Its movies are on the way.")
+                    return
+                case .offline(let reason):
+                    self.movies?.shareForm?.connecting = false
+                    self.movies?.shareForm?.message = reason
+                    self.movies?.shareForm?.failed = true
+                    return
+                default: continue
+                }
+            }
         }
     }
 
@@ -235,6 +320,10 @@ struct MoviesScreen: View {
 
             if let row = browser.folderRow {
                 FoldersSheet(tv: tv, focusedRow: row)
+                    .transition(Motion.sheet(reduceMotion: reduceMotion))
+            }
+            if let form = browser.shareForm {
+                ShareFormSheet(tv: tv, form: form)
                     .transition(Motion.sheet(reduceMotion: reduceMotion))
             }
             if let path = browser.resuming, let resuming = library.movie(path) {
@@ -777,4 +866,43 @@ struct LayerHost: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: Host, context: Context) {}
+}
+
+/// Add Network Share on the TV: the address, an optional user name and password, then Connect.
+struct ShareFormSheet: View {
+    @ObservedObject var tv: TVController
+    let form: ShareForm
+    @Environment(\.canvasSize) private var canvas
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text("Add Network Share").font(.tv(.title3, emphasized: true))
+            AdderField(label: "Shared folder", text: form.address, placeholder: "e.g. nas.local/Movies", focused: form.row == 0) { set(0) }
+            AdderField(label: "User name", text: form.user, placeholder: "Leave empty for guest", focused: form.row == 1) { set(1) }
+            AdderField(label: "Password", text: String(repeating: "•", count: form.password.count), placeholder: "Password",
+                       focused: form.row == 2) { set(2) }
+            ShelfButton(title: form.connecting ? "Connecting…" : "Connect", systemImage: "server.rack", focused: form.row == 3, glass: false) {
+                set(3)
+                tv.handle(.select)
+            }
+            Text(form.message ?? "Type with the keyboard or the remote's typing box. The password stays in this Mac's Keychain.")
+                .font(.tv(.caption2, emphasized: form.message != nil))
+                .foregroundStyle(form.failed ? Color(hex: "#FF8A80") : .white.opacity(form.message == nil ? 0.55 : 0.9))
+                .lineLimit(2)
+                .frame(minHeight: 64, alignment: .topLeading)
+        }
+        .padding(56)
+        .frame(width: 1000, alignment: .leading)
+        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .foregroundStyle(.white)
+        .frame(width: canvas.width, height: canvas.height)
+        .background(Color.black.opacity(0.35))
+        .animation(Motion.focus, value: form)
+    }
+
+    private func set(_ row: Int) {
+        guard tv.movies?.shareForm?.connecting == false else { return }
+        tv.movies?.shareForm?.row = row
+    }
 }
