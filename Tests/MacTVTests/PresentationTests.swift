@@ -20,6 +20,7 @@ import Testing
 
     @Test func nativeSheetsRender() async throws {
         _ = NSApplication.shared
+        AudioCoordinator.readVolume = { VolumeLevel(level: 50, muted: false) }
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let folder = root.appendingPathComponent("work/tests/\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }

@@ -75,7 +75,7 @@ final class AudioCoordinator: ObservableObject {
         var newDevices: [AudioOutputDevice] = []
 
         for id in allAudioDeviceIDs() {
-            guard hasOutputStreams(id) else { continue }
+            guard hasOutputStreams(id), !isHidden(id) else { continue }
             guard let name = deviceName(id) else { continue }
             let transport = transportType(id)
             let isCurrent = (id == defaultID)
@@ -89,18 +89,27 @@ final class AudioCoordinator: ObservableObject {
             newDevices.append(device)
         }
 
+        // The sliders sit under the devices: keep focus on the same slider as the list changes.
+        if let row = tv?.audioPicker?.row {
+            let moved = row >= devices.count ? row + newDevices.count - devices.count : row
+            tv?.audioPicker?.row = max(0, min(moved, newDevices.count + 1))
+        }
         self.devices = newDevices
         self.currentDevice = newDevices.first(where: { $0.id == defaultID })
-        refreshVolume()
+        // Reading the volume runs AppleScript, so only while the picker shows it.
+        if tv?.audioPicker != nil { refreshVolume() }
         tv?.objectWillChange.send()
     }
 
     // MARK: - Volume Controls
 
-    @Published private(set) var currentVolume: VolumeLevel = SystemControl.volume()
+    @Published private(set) var currentVolume = VolumeLevel(level: nil, muted: false)
+
+    /// Reads the Mac's volume. Tests swap it out: the AppleScript behind it ends a test run.
+    static var readVolume: () -> VolumeLevel = SystemControl.volume
 
     func refreshVolume() {
-        currentVolume = SystemControl.volume()
+        currentVolume = Self.readVolume()
         tv?.objectWillChange.send()
     }
 
@@ -108,6 +117,17 @@ final class AudioCoordinator: ObservableObject {
         currentVolume = SystemControl.setVolume(to: level)
         tv?.showVolume(currentVolume)
         tv?.objectWillChange.send()
+    }
+
+    /// Setting the volume runs AppleScript, so a drag sets it only when the level changes,
+    /// at most about twelve times a second.
+    private var lastDragSet: TimeInterval = 0
+
+    func dragVolume(to level: Int) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard level != currentVolume.level || currentVolume.muted, now - lastDragSet >= 0.08 else { return }
+        lastDragSet = now
+        setVolume(level)
     }
 
     func stepVolume(by delta: Int) {
@@ -228,6 +248,19 @@ final class AudioCoordinator: ObservableObject {
         var size: UInt32 = 0
         AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size)
         return size > 0
+    }
+
+    /// Aggregate and helper devices macOS keeps out of its own sound menu.
+    private func isHidden(_ id: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyIsHidden,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var hidden: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(id, &address, 0, nil, &size, &hidden)
+        return status == noErr && hidden != 0
     }
 
     private func deviceName(_ id: AudioDeviceID) -> String? {
@@ -437,6 +470,10 @@ struct AudioVolumeSlider: View {
         tv.audioCoordinator.currentVolume
     }
 
+    static func level(at x: CGFloat, width: CGFloat) -> Int {
+        Int((max(0, min(1, x / width)) * 100).rounded())
+    }
+
     private var symbol: String {
         guard let level = volume.level else { return "tv" }
         if volume.muted || level == 0 { return "speaker.slash.fill" }
@@ -473,8 +510,11 @@ struct AudioVolumeSlider: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                let fraction = max(0, min(1, value.location.x / geo.size.width))
-                                tv.audioCoordinator.setVolume(Int((fraction * 100).rounded()))
+                                tv.audioCoordinator.dragVolume(to: Self.level(at: value.location.x, width: geo.size.width))
+                            }
+                            .onEnded { value in
+                                let level = Self.level(at: value.location.x, width: geo.size.width)
+                                if level != volume.level || volume.muted { tv.audioCoordinator.setVolume(level) }
                             }
                     )
                 }

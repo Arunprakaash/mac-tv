@@ -16,7 +16,7 @@ enum SystemControl {
     static func setVolume(to level: Int) -> VolumeLevel {
         let clamped = max(0, min(100, level))
         runAppleScript("set volume output volume \(clamped)\nset volume output muted false")
-        return volume()
+        return VolumeLevel(level: clamped, muted: false)
     }
 
     static func toggleMute() -> VolumeLevel {
