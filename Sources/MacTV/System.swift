@@ -12,6 +12,13 @@ enum SystemControl {
         return volume()
     }
 
+    /// Sets the volume to an exact percentage (0–100) and unmutes. Returns the new level.
+    static func setVolume(to level: Int) -> VolumeLevel {
+        let clamped = max(0, min(100, level))
+        runAppleScript("set volume output volume \(clamped)\nset volume output muted false")
+        return volume()
+    }
+
     static func toggleMute() -> VolumeLevel {
         runAppleScript("set volume output muted (not (output muted of (get volume settings)))")
         return volume()

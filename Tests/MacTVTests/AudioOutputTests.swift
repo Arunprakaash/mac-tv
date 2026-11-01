@@ -70,6 +70,17 @@ struct AudioOutputTests {
         tv.handleAudioPicker(.move(.up))
         #expect(tv.audioPicker?.row == 0)
 
+        // Volume slider navigation
+        let sliderRow = tv.audioDevices.count
+        tv.audioPicker?.row = sliderRow
+
+        let volBefore = tv.audioCoordinator.currentVolume
+        tv.handleAudioPicker(.move(.left))
+        let volAfter = tv.audioCoordinator.currentVolume
+        if let levelBefore = volBefore.level, let levelAfter = volAfter.level {
+            #expect(levelAfter <= levelBefore)
+        }
+
         // Dismiss with Back
         tv.handleAudioPicker(.back)
         #expect(tv.audioPicker == nil)
