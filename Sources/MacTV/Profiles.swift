@@ -75,6 +75,9 @@ final class ProfileStore {
         save()
         try? FileManager.default.removeItem(at: folder.appendingPathComponent("apps-\(id).json"))
         if let store = profile.store {
+            // WebKit crashes removing a data store before it has started up in this launch (when no
+            // website has been opened yet); asking for the default store starts it.
+            _ = WKWebsiteDataStore.default()
             WKWebsiteDataStore.remove(forIdentifier: store) { _ in }
         }
     }
