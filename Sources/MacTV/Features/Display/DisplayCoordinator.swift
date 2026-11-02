@@ -86,7 +86,6 @@ final class DisplayCoordinator: ObservableObject {
         let now = PowerStatus.current()
         if now != power {
             power = now
-            tv?.objectWillChange.send()
         }
         guard lidSleepOff else { return }
         if let reason = lidOverrideStopReason() {
@@ -117,7 +116,6 @@ final class DisplayCoordinator: ObservableObject {
             releaseLid()
         }
         updateLidTimer()
-        tv?.objectWillChange.send()
     }
 
     /// powerd rewrites the lid switch when power or displays change, and at times of its own, so
@@ -138,7 +136,6 @@ final class DisplayCoordinator: ObservableObject {
         lidGuard?.terminate()
         lidGuard = nil
         lidSleepOff = false
-        tv?.objectWillChange.send()
     }
 
     /// Why the lid override has to stop now, if it does: a closed Mac that never sleeps can run
@@ -156,7 +153,6 @@ final class DisplayCoordinator: ObservableObject {
     func noteDisplaySleep(_ sleeping: Bool) {
         displaysSleeping = sleeping
         if sleeping { tv?.screensaverOff() }
-        tv?.objectWillChange.send()
     }
 
     func wakeDisplays() {

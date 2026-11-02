@@ -10,13 +10,7 @@ final class RemoteCoordinator: ObservableObject {
     @Published private(set) var remoteGuestLinks: [RemoteLink] = []
     @Published private(set) var remoteLinks: [RemoteLink] = []
     var remoteToken = ""
-    var pairingGuest = false {
-        didSet {
-            if pairingGuest != oldValue {
-                tv?.objectWillChange.send()
-            }
-        }
-    }
+    @Published var pairingGuest = false
 
     var remotePort: UInt16 = 0 {
         didSet {
@@ -76,7 +70,6 @@ final class RemoteCoordinator: ObservableObject {
         remoteGuestLinks = addresses.map { label, address in
             RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteGuestToken)"))
         }
-        tv?.objectWillChange.send()
     }
 
     func offerStartupPairing() {
@@ -112,20 +105,7 @@ final class RemoteCoordinator: ObservableObject {
         noteRemoteConnection()
         tv.notePhoneDuringSetup()
 
-        let sheetName: String
-        switch tv.activeSheet {
-        case .setup: sheetName = "setup"
-        case .profilePicker: sheetName = "profiles"
-        case .playbackCheck: sheetName = "playback-check"
-        case .topShelfPreferences: sheetName = "top-shelf"
-        case .addApp: sheetName = "add-app"
-        case .pairing: sheetName = "pairing"
-        case .organizer: sheetName = "arrange-apps"
-        case .settings: sheetName = "settings"
-        case .controlCenter: sheetName = "control-center"
-        case .audioPicker: sheetName = "audio-picker"
-        case nil: sheetName = ""
-        }
+        let sheetName = tv.activeSheet?.remoteName ?? ""
 
         var state: [String: Any] = [
             "device": tv.deviceName,

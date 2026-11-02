@@ -109,13 +109,11 @@ final class AudioCoordinator: ObservableObject {
 
     func refreshVolume() {
         currentVolume = Self.readVolume()
-        tv?.objectWillChange.send()
     }
 
     func setVolume(_ level: Int) {
         currentVolume = SystemControl.setVolume(to: level)
         tv?.showVolume(currentVolume)
-        tv?.objectWillChange.send()
     }
 
     /// A drag sets the volume only when the level changes.
@@ -127,13 +125,11 @@ final class AudioCoordinator: ObservableObject {
     func stepVolume(by delta: Int) {
         currentVolume = SystemControl.changeVolume(by: delta)
         tv?.showVolume(currentVolume)
-        tv?.objectWillChange.send()
     }
 
     func toggleMute() {
         currentVolume = SystemControl.toggleMute()
         tv?.showVolume(currentVolume)
-        tv?.objectWillChange.send()
     }
 
     func selectDevice(_ device: AudioOutputDevice) {

@@ -103,9 +103,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 96)
                 .padding(.top, 56)
-                // Out of the way while the grid, the volume or a controller banner has the corner. It slides up
-                // off the screen rather than fading, so the glass never goes translucent.
-                .offset(y: tv.inGrid || tv.volume != nil || tv.controllerNotice != nil ? -200 : 0)
+                .modifier(ClearsCornerForNotices(notices: tv.notices, inGrid: tv.inGrid))
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .clipped()
@@ -113,6 +111,17 @@ struct HomeView: View {
         .animation(Motion.navigate, value: focusedRow)
         .animation(Motion.navigate, value: shelfFocused)
         .animation(Motion.appear, value: tv.shelfAppIndex)
+    }
+}
+
+/// Slides the status row up off the screen while the grid, the volume or a controller banner has
+/// the corner. It slides rather than fading, so the glass never goes translucent.
+private struct ClearsCornerForNotices: ViewModifier {
+    @ObservedObject var notices: Notices
+    let inGrid: Bool
+
+    func body(content: Content) -> some View {
+        content.offset(y: inGrid || notices.volume != nil || notices.controller != nil ? -200 : 0)
     }
 }
 
