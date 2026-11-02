@@ -43,7 +43,7 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac.
 
 ## Privacy
 
-Mac TV has no account and no servers of its own, and never records what you watch. It asks once whether to share anonymous usage (which features you use) through [TelemetryDeck](https://telemetrydeck.com), and sends nothing unless you say yes. Every event is in [`Analytics.swift`](Sources/MacTV/Analytics.swift). Details: [privacy policy](https://arunprakaash.github.io/mac-tv/privacy.html).
+Mac TV has no account and no servers of its own, and never records what you watch. It asks once whether to share anonymous usage (which features you use) through [TelemetryDeck](https://telemetrydeck.com), and sends nothing unless you say yes. Every event is in [`Analytics.swift`](Sources/MacTV/Core/Analytics.swift). Details: [privacy policy](https://arunprakaash.github.io/mac-tv/privacy.html).
 
 ## Contributing
 

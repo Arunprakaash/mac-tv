@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('Sources/MacTV/RemotePage.swift', 'utf8');
+const source = fs.readFileSync('Sources/MacTV/Features/Remote/RemotePage.swift', 'utf8');
 const start = source.indexOf('    let websiteOpening = false;');
 const end = source.indexOf("    $('#type').onsubmit", start);
 assert.ok(start >= 0 && end > start);

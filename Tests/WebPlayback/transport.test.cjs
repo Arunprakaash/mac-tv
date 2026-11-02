@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('Sources/MacTV/RemotePage.swift', 'utf8');
+const source = fs.readFileSync('Sources/MacTV/Features/Remote/RemotePage.swift', 'utf8');
 const transport = source.slice(source.indexOf('    // A timed-out POST'), source.indexOf('    // State: connection'));
 const refresh = source.slice(source.indexOf('    let stateInFlight = null;'), source.indexOf('    async function readState()'));
 assert.ok(transport.includes('function request') && refresh.includes('function refresh'));

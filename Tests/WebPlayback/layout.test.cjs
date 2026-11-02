@@ -11,7 +11,7 @@ const candidates = [process.env.BROWSER_BIN, '/Applications/Google Chrome.app/Co
 const browser = candidates.find(file => file && fs.existsSync(file));
 if (!browser) { console.log('SKIP remote layout: set BROWSER_BIN or install Chrome/Brave'); process.exit(0); }
 if (!globalThis.WebSocket) { console.error('Remote layout test requires Node 22 or newer'); process.exit(1); }
-const source = fs.readFileSync('Sources/MacTV/RemotePage.swift', 'utf8');
+const source = fs.readFileSync('Sources/MacTV/Features/Remote/RemotePage.swift', 'utf8');
 const match = source.match(/static let html = #"""\n([\s\S]*?)\n    """#/);
 assert.ok(match, 'remote HTML exists');
 const html = match[1].replace(/^    /gm, '');

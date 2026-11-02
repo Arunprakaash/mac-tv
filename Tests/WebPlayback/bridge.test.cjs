@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('Sources/MacTV/WebPlayback.swift', 'utf8').split('static let script = #"""')[1].split('"""#')[0];
+const source = fs.readFileSync('Sources/MacTV/Features/Playback/WebPlayback.swift', 'utf8').split('static let script = #"""')[1].split('"""#')[0];
 let current;
 const style = { display: 'block', visibility: 'visible', opacity: '1' };
 const rect = { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 };

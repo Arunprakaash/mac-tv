@@ -52,6 +52,17 @@ Built-in checks, run on the app's binary:
 - `--export-tiles <folder>` renders the dock tiles, and `--export-home <folder>` the home screen.
 - `--export-remote <file.png> [apps|controls]` renders the phone remote. Needs Mac TV running and `MACTV_REMOTE_CODE` set to its current pairing PIN.
 
+## Project layout
+
+One Swift package, one app target, organised by feature:
+
+- `Sources/MacTV/App`: the entry point, `TVController` (the app's state and input routing), TV mode, `RootView` (which sheet is showing) and the built-in self tests.
+- `Sources/MacTV/Core`: app-wide services with no screen of their own: system controls, sounds, logging and the diagnostics report, analytics and updates.
+- `Sources/MacTV/DesignSystem`: the Apple TV look shared by every screen: type scale, Liquid Glass, motion and the TV canvas.
+- `Sources/MacTV/Features/<Feature>`: everything one feature needs, kept together: its model, its `TVController` extension and its views. Home, Playback, Movies, Remote, Display, Audio, Controllers, Screen Saver, Settings, Profiles and Games.
+
+A feature uses Core and DesignSystem freely, and reaches other features only through `TVController`. New code goes in the folder of the feature it belongs to; something two features need moves to Core or DesignSystem.
+
 ## How some parts work
 
 - **Phone remote:** a web page Mac TV serves only to local and private-network phones (Tailscale included), with limits on connections, request size and time. Trusted and guest phones scan separate rotating codes, exchanged for a per-device credential stored hashed on the Mac. Guests get playback controls only and expire after 24 hours. It's plain HTTP, so use a trusted network or Tailscale, and never expose its port publicly.
