@@ -22,11 +22,19 @@ struct TopShelf: View {
 /// dock brings up Open. Nothing about what was watched ever shows here.
 struct AppBanner: View {
     @ObservedObject var tv: TVController
-    @ObservedObject private var feed = TopShelfFeed.shared
-    @ObservedObject private var movieLibrary = MovieLibrary.shared
+    @ObservedObject private var feed: TopShelfFeed
+    @ObservedObject private var movieLibrary: MovieLibrary
     @Environment(\.canvasSize) private var canvas
     let service: Service
     let expanded: Bool
+
+    init(tv: TVController, service: Service, expanded: Bool) {
+        _tv = ObservedObject(wrappedValue: tv)
+        _feed = ObservedObject(wrappedValue: tv.topShelf)
+        _movieLibrary = ObservedObject(wrappedValue: tv.movieLibrary)
+        self.service = service
+        self.expanded = expanded
+    }
 
     /// What the Top Shelf shows now: the Movies app's own movies, or the app's popular shows.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool)? {

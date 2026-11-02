@@ -222,14 +222,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("MacTVWindow")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        tvMode = TVMode(window: window, tv: tv)
+        tvMode = TVMode(window: window, tv: tv, preferences: tv.preferences)
         tvMode?.start()
 
         startRemoteServer()
         installLauncherKeys()
         tv.startPowerManagement()
         tv.startControllers()
-        TopShelfFeed.shared.start()
+        tv.topShelf.start()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysSlept),
             name: NSWorkspace.screensDidSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysWoke),
@@ -244,12 +244,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--setup` shows first-run setup again.
         // Usage analytics sends nothing unless the user has said yes (Analytics.swift).
         Analytics.start(context: tv.analyticsContext)
-        Updater.shared.onAvailable = { [weak self] version in
+        tv.updater.onAvailable = { [weak self] version in
             self?.tv.showToast("Mac TV \(version) is available in Settings › About")
         }
-        Updater.shared.isIdle = { [weak self] in self?.tv.idleForUpdate ?? false }
-        Updater.shared.start()
-        NetworkShares.shared.start()
+        tv.updater.isIdle = { [weak self] in self?.tv.idleForUpdate ?? false }
+        tv.updater.start()
+        tv.networkShares.start()
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
             return

@@ -188,13 +188,13 @@ extension TVController {
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(forward ? 1 : -1)
         case .saverDelay: ScreenSaverSettings.stepDelay(forward ? 1 : -1)
         case .saverClock: ScreenSaverSettings.showClock = forward
-        case .feedback: Feedback.shared.enabled = forward
+        case .feedback: feedback.enabled = forward
         case .autoSkip: autoSkip = forward
         case .autoNext: autoNext = forward
         case .keepMacAwake: keepMacAwake = forward
         case .lidOverride: lidOverride = forward
         case .analytics: Analytics.setConsent(forward, context: analyticsContext)
-        case .autoUpdate: Updater.shared.automatic = forward
+        case .autoUpdate: updater.automatic = forward
         default: return
         }
     }
@@ -227,7 +227,7 @@ extension TVController {
         case .saverPreview:
             settings = nil
             showScreensaver()
-        case .feedback: Feedback.shared.enabled.toggle()
+        case .feedback: feedback.enabled.toggle()
         case .audioOutput:
             settings = nil
             openAudioPicker()
@@ -243,8 +243,8 @@ extension TVController {
             }
         case .version, .source: break
         case .report: DiagnosticReport.copy(from: self)
-        case .update: Updater.shared.activate()
-        case .autoUpdate: Updater.shared.automatic.toggle()
+        case .update: updater.activate()
+        case .autoUpdate: updater.automatic.toggle()
         case .analytics: Analytics.setConsent(!Analytics.enabled, context: analyticsContext)
         }
     }
@@ -268,15 +268,15 @@ extension TVController {
             return parts.isEmpty ? "Set up" : parts.joined(separator: " · ")
         case .watching: return autoSkip ? "Skips intros" : "Intros play"
         case .screenSaver: return "\(ScreenSaverSettings.wallpaper.title) · \(ScreenSaverSettings.delayMinutes) min"
-        case .sounds: return Feedback.shared.enabled ? "On" : "Off"
+        case .sounds: return feedback.enabled ? "On" : "Off"
         case .apps: return "\(services.filter { $0.kind != .settings && $0.kind != .addApp }.count) on Home"
         case .movies:
-            let count = MovieLibrary.shared.folders.count
+            let count = movieLibrary.folders.count
             return "\(count) folder\(count == 1 ? "" : "s")"
         case .dedicatedTV: return dedicatedTVMode ? "On · \(preferredTVDisplayName)" : "Off"
         case .power: return keepMacAwake ? "Keeps Mac awake" : "Sleeps as usual"
         case .about:
-            if let version = Updater.shared.availableVersion { return "Update to \(version)" }
+            if let version = updater.availableVersion { return "Update to \(version)" }
             return "Version \(Updater.currentVersion)"
         }
     }
@@ -286,9 +286,14 @@ extension TVController {
 
 struct SettingsSheet: View {
     @ObservedObject var tv: TVController
-    @ObservedObject private var updater = Updater.shared
+    @ObservedObject private var updater: Updater
     @Environment(\.canvasSize) private var canvas
     @Namespace private var focusSpace
+
+    init(tv: TVController) {
+        _tv = ObservedObject(wrappedValue: tv)
+        _updater = ObservedObject(wrappedValue: tv.updater)
+    }
 
     var body: some View {
         let panel = tv.settings ?? SettingsPanel()
@@ -446,7 +451,7 @@ struct SettingsSheet: View {
             chevron
         case .feedback:
             title("Sounds and haptics")
-            SettingSwitch(on: Feedback.shared.enabled)
+            SettingSwitch(on: tv.feedback.enabled)
         case .keepMacAwake:
             title("Keep Mac awake while Mac TV is open")
             SettingSwitch(on: tv.keepMacAwake)

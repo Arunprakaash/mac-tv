@@ -308,7 +308,7 @@ extension TVController {
                 audioCoordinator.stepVolume(by: -5)
                 return
             } else if panel.row == soundSliderRow {
-                Feedback.shared.stepVolume(by: -0.05)
+                feedback.stepVolume(by: -0.05)
                 return
             }
         case .move(.right):
@@ -316,7 +316,7 @@ extension TVController {
                 audioCoordinator.stepVolume(by: 5)
                 return
             } else if panel.row == soundSliderRow {
-                Feedback.shared.stepVolume(by: 0.05)
+                feedback.stepVolume(by: 0.05)
                 return
             }
         case .select:
@@ -324,7 +324,7 @@ extension TVController {
                 audioCoordinator.toggleMute()
                 return
             } else if panel.row == soundSliderRow {
-                Feedback.shared.toggleMute()
+                feedback.toggleMute()
                 return
             } else if audioDevices.indices.contains(panel.row) {
                 audioCoordinator.selectDevice(audioDevices[panel.row])

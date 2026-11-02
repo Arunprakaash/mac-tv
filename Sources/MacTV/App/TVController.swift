@@ -32,7 +32,13 @@ final class TVController: NSObject, ObservableObject {
     let displayCoordinator: DisplayCoordinator
     let audioCoordinator: AudioCoordinator
     let idleCoordinator = IdleCoordinator()
-    let preferences = Preferences.shared
+    let preferences: Preferences
+    let movieLibrary: MovieLibrary
+    let jellyfin: JellyfinServers
+    let networkShares: NetworkShares
+    let updater: Updater
+    let topShelf: TopShelfFeed
+    let feedback: Feedback
     private var coordinatorChanges: [AnyCancellable] = []
 
     // MARK: - State
@@ -189,15 +195,23 @@ final class TVController: NSObject, ObservableObject {
         self.init(library: AppLibrary(profileID: store.current.id), profiles: store)
     }
 
-    init(library: AppLibrary, profiles: ProfileStore? = nil, browserPreferences: BrowserPreferences? = nil) {
+    init(library: AppLibrary, profiles: ProfileStore? = nil, browserPreferences: BrowserPreferences? = nil,
+         services appServices: AppServices = AppServices()) {
+        preferences = appServices.preferences
+        movieLibrary = appServices.movieLibrary
+        jellyfin = appServices.jellyfin
+        networkShares = appServices.networkShares
+        updater = appServices.updater
+        topShelf = appServices.topShelf
+        feedback = appServices.feedback
         self.browserPreferences = browserPreferences ?? BrowserPreferences()
         let store = profiles ?? ProfileStore(folder: library.storageFolder)
         self.profiles = store
         self.profile = store.current
         self.library = library
-        let pc = PlaybackCoordinator()
+        let pc = PlaybackCoordinator(jellyfin: appServices.jellyfin)
         let rc = RemoteCoordinator()
-        let dc = DisplayCoordinator()
+        let dc = DisplayCoordinator(preferences: appServices.preferences)
         let ac = AudioCoordinator()
         self.playbackCoordinator = pc
         self.remoteCoordinator = rc
@@ -418,9 +432,9 @@ final class TVController: NSObject, ObservableObject {
             handleInLauncher(command)
             let changed = feedbackState != before
             switch command {
-            case .move where changed: Feedback.shared.play(.move, from: source)
-            case .select: Feedback.shared.play(.select, from: source)
-            case .back where changed: Feedback.shared.play(.back, from: source)
+            case .move where changed: feedback.play(.move, from: source)
+            case .select: feedback.play(.select, from: source)
+            case .back where changed: feedback.play(.back, from: source)
             default: break
             }
         case .player(let service): playbackCoordinator.handleInPlayer(command, service: service)

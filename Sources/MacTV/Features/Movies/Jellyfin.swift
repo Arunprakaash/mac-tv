@@ -474,7 +474,7 @@ extension TVController {
     /// The phone's Jellyfin section. Trusted remotes only: the server turns guests away.
     func handleJellyfinRequest(_ request: HTTPRequest) -> HTTPResponse? {
         guard request.path == "/jellyfin" || request.path.hasPrefix("/jellyfin/") else { return nil }
-        let jellyfin = JellyfinServers.shared
+        let jellyfin = jellyfin
         let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
         switch (request.method, request.path) {
         case ("GET", "/jellyfin"):

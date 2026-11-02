@@ -66,7 +66,7 @@ extension TVController {
     func changeTopShelfPreference(row: Int, direction: Int) {
         guard topShelfPreferences != nil else { return }
         topShelfPreferences?.row = row
-        let feed = TopShelfFeed.shared
+        let feed = topShelf
         var value = feed.preferences
         if row == 0 {
             let regions = ShelfPreferences.regions
@@ -85,9 +85,14 @@ extension TVController {
 
 struct TopShelfPreferencesSheet: View {
     @ObservedObject var tv: TVController
-    @ObservedObject private var feed = TopShelfFeed.shared
+    @ObservedObject private var feed: TopShelfFeed
     @Environment(\.canvasSize) private var canvas
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(tv: TVController) {
+        _tv = ObservedObject(wrappedValue: tv)
+        _feed = ObservedObject(wrappedValue: tv.topShelf)
+    }
 
     var body: some View {
         let panel = tv.topShelfPreferences ?? TopShelfPreferencesPanel()

@@ -53,7 +53,7 @@ enum DiagnosticReport {
         lines += ["", "## Sound", ""]
         add("Output", tv.currentAudioDevice.map { transportName($0.transport) } ?? "none")
         add("Outputs available", "\(tv.audioDevices.count)")
-        add("Navigation sounds", Feedback.shared.enabled ? "on" : "off")
+        add("Navigation sounds", tv.feedback.enabled ? "on" : "off")
 
         lines += ["", "## Remote and power", ""]
         add("Remote page", RemotePage.available ? "found" : "missing")
@@ -64,7 +64,7 @@ enum DiagnosticReport {
         add("Lid", power.lidClosed ? "closed" : "open")
         add("Keep Mac awake", tv.keepMacAwake ? "on" : "off")
         add("Stay awake with lid closed", tv.lidOverride ? "on" : "off")
-        add("Automatic updates", Updater.shared.automatic ? "on" : "off")
+        add("Automatic updates", tv.updater.automatic ? "on" : "off")
 
         let crashes = recentCrashes()
         lines += ["", "## Crashes in the last 14 days", ""]
