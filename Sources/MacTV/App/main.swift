@@ -232,6 +232,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tv.topShelf.start()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysSlept),
             name: NSWorkspace.screensDidSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(macWoke),
+            name: NSWorkspace.didWakeNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysWoke),
             name: NSWorkspace.screensDidWakeNotification, object: nil)
         NotificationCenter.default.addObserver(
@@ -291,6 +293,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func displaysSlept() { tv.noteDisplaySleep(true) }
     @objc private func displaysWoke() { tv.noteDisplaySleep(false) }
+    /// The network can drop the remote's listener while the Mac sleeps; phones must find it again.
+    @objc private func macWoke() { server?.ensureListening() }
 
     @objc private func screensChanged() {
         tvMode?.screensChanged()
@@ -307,7 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state: { [weak self] in self?.tv.remoteState() ?? [:] },
             icon: { [weak self] in self?.tv.iconPNG(for: $0) },
             routes: { [weak self] in self?.tv.handleAppsRequest($0) },
-            onGuestCommand: { [weak self] in self?.tv.handleGuestCommand($0) ?? false })
+            onGuestCommand: { [weak self] in self?.tv.handleGuestCommand($0) ?? false },
+            ownOrigins: { [weak self] in self?.tv.remoteCoordinator.origins ?? [] })
         server.start(ports: Array(8765...8775)) { [weak self] port in self?.tv.remotePort = port }
         self.server = server
     }
