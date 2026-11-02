@@ -113,6 +113,7 @@ final class JellyfinServers: ObservableObject {
             MovieLibrary.shared.refresh()
             return nil
         } catch {
+            Log.movies.failure("Jellyfin sign-in", error)
             return Self.message(for: error, signingIn: true)
         }
     }
@@ -163,6 +164,7 @@ final class JellyfinServers: ObservableObject {
                 movies += items.compactMap { movie(from: $0, server: server) }
                 await shared.update(server.id, .connected)
             } catch {
+                Log.movies.failure("Jellyfin library", error)
                 unreachable.append(scheme + server.id)
                 await shared.update(server.id, .offline(message(for: error, signingIn: false)))
             }
@@ -240,6 +242,7 @@ final class JellyfinServers: ObservableObject {
             guard let url else { return .failure(Problem(message: "\(server.name) can't stream \(movie.title).")) }
             return .success(Stream(url: url, item: ids.item, source: sourceID, session: session, direct: direct))
         } catch {
+            Log.movies.failure("Jellyfin stream", error)
             return .failure(Problem(message: Self.message(for: error, signingIn: false) + ": \(server.name)"))
         }
     }

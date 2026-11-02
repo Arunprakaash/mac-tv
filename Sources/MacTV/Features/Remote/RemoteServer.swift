@@ -84,7 +84,7 @@ final class RemoteServer {
     func start(ports: [UInt16], onReady: @escaping @MainActor (UInt16) -> Void) {
         guard !stopped else { return }
         guard let port = ports.first, let nwPort = NWEndpoint.Port(rawValue: port) else {
-            NSLog("Mac TV: no free port for the phone remote")
+            Log.remote.error("No free port for the phone remote")
             return
         }
         let tryNext = { [weak self] in self?.start(ports: Array(ports.dropFirst()), onReady: onReady) }
@@ -100,6 +100,7 @@ final class RemoteServer {
                 switch state {
                 case .ready:
                     guard self?.stopped == false else { listener?.cancel(); return }
+                    Log.remote.notice("Phone remote listening on port \(port, privacy: .public)")
                     MainActor.assumeIsolated { onReady(port) }
                 case .failed:
                     listener?.cancel()
@@ -247,13 +248,17 @@ final class RemoteServer {
             } else if code == ownerCode || (timestamp < legacyUntil && code == legacyCode) {
                 guest = false
             } else {
+                Log.remote.notice("Pairing refused: wrong or expired code")
                 failedAttempts.append(timestamp)
                 return .json(["error": "Wrong or expired pairing code"], status: "401 Unauthorized")
             }
             do {
                 let token = try pairing.issue(name: object["name"] as? String ?? "Phone", guest: guest)
+                Log.remote.notice("Paired a \(guest ? "guest" : "trusted", privacy: .public) phone")
                 return .json(["token": token])
-            } catch { return .json(["error": "Could not save paired device"], status: "500 Internal Server Error") }
+            } catch {
+                Log.remote.failure("Saving a paired phone", error)
+                return .json(["error": "Could not save paired device"], status: "500 Internal Server Error") }
         }
         guard let device = pairing.authenticate(request.headers["x-couch-key"]) else {
             return .json(["error": "Pair with the TV first"], status: "401 Unauthorized")

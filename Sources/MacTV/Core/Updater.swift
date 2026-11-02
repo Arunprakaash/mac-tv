@@ -21,7 +21,17 @@ final class Updater: ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var state: State = .idle
+    @Published private(set) var state: State = .idle {
+        didSet {
+            switch state {
+            case .failed(let message): Log.updates.error("\(message, privacy: .public)")
+            case .available(let version, _): Log.updates.notice("Version \(version, privacy: .public) available")
+            case .ready(let version, _): Log.updates.notice("Version \(version, privacy: .public) downloaded")
+            case .installing: Log.updates.notice("Installing")
+            default: break
+            }
+        }
+    }
     /// Called once per new version, for the notice on the home screen.
     var onAvailable: ((String) -> Void)?
     /// Whether nothing is being watched or used right now, so restarting Mac TV is fine.

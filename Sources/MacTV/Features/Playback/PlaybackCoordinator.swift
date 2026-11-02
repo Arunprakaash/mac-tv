@@ -223,6 +223,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                     stream = found
                     opened = await AVPlayback.open(found.url).map { $0 as PlaybackEngine }
                 case .failure(let problem):
+                    Log.movies.error("Server movie stream unavailable")
                     guard playbackRequest == request else { return }
                     currentLocalMovie = nil
                     tv?.showToast(problem.message)
@@ -295,6 +296,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     private func openElsewhere(_ movie: Movie) {
         guard !movie.isRemote else {
             currentLocalMovie = nil
+            Log.movies.error("Server movie doesn't play in Mac TV's player")
             tv?.showToast("Mac TV couldn't play \(movie.title) from \(movie.server ?? "the server").")
             tv?.objectWillChange.send()
             return
@@ -347,6 +349,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 return true
             } catch {
                 iinaPlaybackError = error.localizedDescription
+                Log.playback.failure("IINA", error)
                 tv?.showToast(error.localizedDescription)
                 tv?.objectWillChange.send()
                 return false
@@ -367,6 +370,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             session.onError = { [weak self, weak session] error in
                 guard let self, let session, self.iinaSession === session else { return }
                 self.iinaPlaybackError = error.localizedDescription + (session.isRunning ? "" : " Select the movie again in Files.")
+                Log.playback.failure("IINA", error)
                 self.iinaPlaybackStatus = "IINA needs attention"
                 if !session.isRunning { self.tv?.displayCoordinator.releasePlaybackKeepAwake() }
                 self.tv?.showToast(error.localizedDescription)
@@ -387,6 +391,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             iinaSession = nil
             currentLocalMovie = nil
             iinaPlaybackError = error.localizedDescription
+            Log.playback.failure("IINA", error)
             tv?.showToast(error.localizedDescription)
             tv?.objectWillChange.send()
             return false
@@ -411,6 +416,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         do { try session.activate() }
         catch {
             iinaPlaybackError = error.localizedDescription
+            Log.playback.failure("IINA", error)
             tv?.showToast(error.localizedDescription)
             tv?.objectWillChange.send()
         }
@@ -489,7 +495,11 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         guard let browser = externalBrowser else { return }
         externalBrowserService = service
         do { try browser.navigate(to: url) }
-        catch { externalBrowserError = error.localizedDescription; throw error }
+        catch {
+            externalBrowserError = error.localizedDescription
+            Log.playback.failure("Brave", error)
+            throw error
+        }
         externalBrowserError = nil
         tv?.setMode(.player(service))
         tv?.objectWillChange.send()
@@ -521,6 +531,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 self.externalBrowserOpening = false
                 self.tv?.displayCoordinator.releasePlaybackKeepAwake()
                 self.externalBrowserError = error.localizedDescription
+                Log.playback.failure("Brave", error)
                 self.tv?.bringToFront()
                 self.tv?.objectWillChange.send()
             }
@@ -533,6 +544,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             externalBrowserError = nil
         } catch {
             externalBrowserError = error.localizedDescription
+            Log.playback.failure("Brave", error)
             tv?.showToast(error.localizedDescription)
         }
         tv?.objectWillChange.send()
@@ -547,7 +559,10 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         do { try previous?.close() }
         catch BraveSession.SessionError.noWindow {}
         catch BraveSession.SessionError.unavailable {}
-        catch { tv?.showToast("Could not close the Mac TV Brave window. Close it manually in Brave.") }
+        catch {
+            Log.playback.failure("Closing Brave window", error)
+            tv?.showToast("Could not close the Mac TV Brave window. Close it manually in Brave.")
+        }
         tv?.objectWillChange.send()
     }
 
@@ -556,6 +571,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         do { _ = try browser.handle(command) }
         catch {
             externalBrowserError = error.localizedDescription
+            Log.playback.failure("Brave", error)
             tv?.showToast(error.localizedDescription)
             tv?.objectWillChange.send()
         }

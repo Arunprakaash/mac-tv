@@ -16,7 +16,7 @@ struct SettingsPanel: Equatable {
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
         case audioOutput, feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
-        case version, update, autoUpdate, source, analytics
+        case version, update, autoUpdate, source, report, analytics
     }
 
     var section: Section = .profiles
@@ -85,7 +85,7 @@ extension SettingsPanel.Section {
         case .apps: [.addApp, .arrangeApps, .topShelfPreferences]
         case .dedicatedTV: [.dedicatedTV, .preferredDisplay, .launchAtLogin]
         case .power: [.keepMacAwake, .lidOverride, .screenOff, .sleepMac]
-        case .about: Analytics.available ? [.version, .update, .autoUpdate, .source, .analytics] : [.version, .update, .autoUpdate, .source]
+        case .about: [.version, .update, .autoUpdate, .source, .report] + (Analytics.available ? [.analytics] : [])
         case .profiles, .movies: []
         }
     }
@@ -243,6 +243,7 @@ extension TVController {
                 settings?.confirmingSleep = true
             }
         case .version, .source: break
+        case .report: DiagnosticReport.copy(from: self)
         case .update: Updater.shared.activate()
         case .autoUpdate: Updater.shared.automatic.toggle()
         case .analytics: Analytics.setConsent(!Analytics.enabled, context: analyticsContext)
@@ -492,6 +493,9 @@ struct SettingsSheet: View {
         case .source:
             title("Source code")
             value("github.com/Arunprakaash/mac-tv")
+        case .report:
+            title("Copy diagnostics report", "For bug reports. Leaves out what you watch and any names")
+            value("Copy")
         case .analytics:
             title("Share anonymous usage", "Which features you use, never what you watch")
             SettingSwitch(on: Analytics.enabled)
