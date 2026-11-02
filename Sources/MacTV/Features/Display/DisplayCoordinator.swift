@@ -44,12 +44,11 @@ final class DisplayCoordinator: ObservableObject {
     /// One line for the remote about what closing the lid will do.
     var lidStatus: String {
         if lidSleepOff {
-            return power.onAC ? "Lid sleep is off while Mac TV is open. Keep the Mac somewhere ventilated."
-                : "Lid sleep is off while Mac TV is open, on battery. It turns back on below \(Self.lowBattery)%."
+            return power.onAC ? "Stays awake with the lid closed. Keep the Mac ventilated."
+                : "Stays awake with the lid closed until the battery drops below \(Self.lowBattery)%."
         }
-        if power.closedLidModeReady { return "You can close the lid: the TV and power are connected." }
-        if !power.onAC { return "Closing the lid will sleep the Mac. Connect power, or turn on the option below." }
-        return "Closing the lid will sleep the Mac. Connect the TV, or turn on the option below."
+        if power.closedLidModeReady { return "Safe to close the lid: the TV and power are connected." }
+        return "Closing the lid sleeps the Mac."
     }
 
     func startPowerManagement() {

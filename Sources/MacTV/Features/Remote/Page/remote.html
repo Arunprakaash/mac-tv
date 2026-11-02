@@ -23,7 +23,7 @@
     </div>
     <div class="actions">
       <button class="round" id="open-apps" aria-label="Apps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
-      <button class="round" id="open-power" aria-label="Power"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg></button>
+      <button class="round" id="open-power" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
   </header>
 
@@ -157,54 +157,99 @@
 </div>
 
 <div class="scrim" id="power-sheet">
-  <div class="sheet" role="dialog" aria-label="TV controls">
-    <div class="sheet-head"><span>TV controls</span><div><button class="pill" data-close>Done</button></div></div>
-    <div class="group-label">Sleep timer</div>
-    <div class="chips" id="sleep-chips">
-      <button data-m="0">Off</button><button data-m="15">15 min</button><button data-m="30">30 min</button><button data-m="60">1 hour</button><button data-m="90">1½ hours</button>
-    </div>
-    <p class="note" id="sleep-left">When it ends, playback stops and the screen turns off.</p>
-    <div class="group-label">Playback</div>
-    <label class="toggle"><span>Skip intros and recaps</span><input type="checkbox" id="auto-skip"></label>
-    <label class="toggle"><span>Play next episode automatically</span><input type="checkbox" id="auto-next"></label>
-    <p class="note">Applies the next time you open an app.</p>
-    <label class="toggle" for="website-player"><span>Website player</span><select class="field" id="website-player" style="width:auto;max-width:58%"><option value="embedded">Built-in</option><option value="brave">Brave</option></select></label>
-    <p class="note">Brave uses its own sign-ins and Shields. Applies the next time you open a website.</p>
-    <p class="note" id="browser-msg" role="status" aria-live="polite" hidden></p>
-    <div class="group-label">Display</div>
-    <label class="toggle" for="display-select"><span>TV display</span><select class="field" id="display-select" style="width:auto;max-width:60%" disabled><option>Loading…</option></select></label>
-    <p class="note" id="display-msg" role="status" aria-live="polite" hidden></p>
-    <button class="row-btn" id="screen-on">Wake screen</button>
-    <button class="row-btn" id="screen-off">Turn screen off</button>
-    <div class="group-label">Power</div>
-    <p class="note" id="lid-status"></p>
-    <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
-    <label class="toggle"><span>Stay awake with lid closed</span><input type="checkbox" id="lid-override"></label>
-    <p class="note">Works on battery and without the TV connected. Turns off by itself when the battery is low or the Mac gets hot.</p>
-    <div class="group-label">Network shares</div>
-    <div id="shares"></div>
-    <form id="share-form" autocomplete="off">
-      <input class="field" id="share-address" placeholder="Shared folder, e.g. nas.local/Movies" aria-label="Shared folder address" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <input class="field" id="share-user" placeholder="User name (blank for guest)" aria-label="User name" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
-      <input class="field" id="share-password" type="password" placeholder="Password" aria-label="Password" autocomplete="off" style="margin-top:8px">
-      <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Add share</button>
-    </form>
-    <p class="note" id="shares-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. The password stays in the Mac's Keychain.</p>
-    <div class="group-label">Jellyfin servers</div>
-    <div id="jellyfin"></div>
-    <form id="jellyfin-form" autocomplete="off">
-      <input class="field" id="jellyfin-address" placeholder="Server, e.g. 192.168.1.5:8096" aria-label="Jellyfin server address" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <input class="field" id="jellyfin-user" placeholder="User name" aria-label="Jellyfin user name" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
-      <input class="field" id="jellyfin-password" type="password" placeholder="Password" aria-label="Jellyfin password" autocomplete="off" style="margin-top:8px">
-      <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Sign in</button>
-    </form>
-    <p class="note" id="jellyfin-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. Only a sign-in key is kept, in the Mac's Keychain.</p>
-    <div class="group-label">Paired devices</div>
-    <div id="devices"></div>
-    <button class="row-btn danger" id="revoke-all">Remove all paired devices</button>
-    <p class="note" id="devices-msg"></p>
-    <button class="row-btn" id="sleep">Sleep Mac</button>
-    <p class="note">After sleep, wake the Mac with its keyboard or by opening the lid.</p>
+  <div class="sheet settings" role="dialog" aria-label="Settings">
+    <section class="page" id="settings-main">
+      <div class="sheet-head"><span>Settings</span><div><button class="pill" data-close>Done</button></div></div>
+
+      <div class="section-label">Sleep timer</div>
+      <div class="segmented" id="sleep-chips" role="group" aria-label="Sleep timer">
+        <button data-m="0">Off</button><button data-m="15">15m</button><button data-m="30">30m</button><button data-m="60">1h</button><button data-m="90">1½h</button>
+      </div>
+      <p class="footnote" id="sleep-left" hidden></p>
+
+      <div class="section-label">Watching</div>
+      <div class="group">
+        <label class="row"><span>Skip intros and recaps</span><input type="checkbox" class="switch" id="auto-skip"></label>
+        <label class="row"><span>Play next episode</span><input type="checkbox" class="switch" id="auto-next"></label>
+        <button class="row nav" data-page="page-player"><span>Website player</span><span class="value" id="website-player-value">Built-in</span></button>
+      </div>
+
+      <div class="section-label">TV</div>
+      <div class="group">
+        <button class="row nav" data-page="page-display"><span>Display</span><span class="value" id="display-value">Automatic</span></button>
+      </div>
+      <div class="tiles">
+        <button class="tile" id="screen-on">Wake screen</button>
+        <button class="tile" id="screen-off">Screen off</button>
+      </div>
+
+      <div class="section-label">Power</div>
+      <div class="group">
+        <label class="row"><span>Keep Mac awake</span><input type="checkbox" class="switch" id="keep-awake"></label>
+        <label class="row"><span>Awake with lid closed</span><input type="checkbox" class="switch" id="lid-override"></label>
+      </div>
+      <p class="footnote" id="lid-status"></p>
+
+      <div class="section-label">Library</div>
+      <div class="group">
+        <button class="row nav" data-page="page-shares"><span>Network shares</span><span class="value" id="shares-count"></span></button>
+        <button class="row nav" data-page="page-jellyfin"><span>Jellyfin</span><span class="value" id="jellyfin-count"></span></button>
+      </div>
+
+      <div class="section-label">Remotes</div>
+      <div class="group">
+        <button class="row nav" data-page="page-devices"><span>Paired devices</span><span class="value" id="devices-count"></span></button>
+      </div>
+
+      <button class="tile wide" id="sleep">Sleep Mac</button>
+      <p class="footnote">Wake it again with its keyboard or lid.</p>
+    </section>
+
+    <section class="page" id="page-player" hidden>
+      <div class="page-head"><button class="back" data-back>Settings</button><span>Website player</span></div>
+      <div class="group choices" id="website-player"></div>
+      <p class="footnote">Brave keeps its own sign-ins and Shields.</p>
+      <p class="footnote err" id="browser-msg" role="status" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="page" id="page-display" hidden>
+      <div class="page-head"><button class="back" data-back>Settings</button><span>Display</span></div>
+      <div class="group choices" id="display-select"></div>
+      <p class="footnote" id="display-msg" role="status" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="page" id="page-shares" hidden>
+      <div class="page-head"><button class="back" data-back>Settings</button><span>Network shares</span></div>
+      <div class="group" id="shares" hidden></div>
+      <div class="section-label">Add a share</div>
+      <form class="group form" id="share-form" autocomplete="off">
+        <label class="row"><span>Folder</span><input id="share-address" placeholder="nas.local/Movies" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="row"><span>User</span><input id="share-user" placeholder="Guest" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="row"><span>Password</span><input id="share-password" type="password" placeholder="Optional" autocomplete="off"></label>
+      </form>
+      <button class="tile primary" type="submit" form="share-form">Add share</button>
+      <p class="footnote" id="shares-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV.</p>
+    </section>
+
+    <section class="page" id="page-jellyfin" hidden>
+      <div class="page-head"><button class="back" data-back>Settings</button><span>Jellyfin</span></div>
+      <div class="group" id="jellyfin" hidden></div>
+      <div class="section-label">Sign in to a server</div>
+      <form class="group form" id="jellyfin-form" autocomplete="off">
+        <label class="row"><span>Server</span><input id="jellyfin-address" placeholder="192.168.1.5:8096" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="row"><span>User</span><input id="jellyfin-user" placeholder="Name" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+        <label class="row"><span>Password</span><input id="jellyfin-password" type="password" placeholder="Password" autocomplete="off"></label>
+      </form>
+      <button class="tile primary" type="submit" form="jellyfin-form">Sign in</button>
+      <p class="footnote" id="jellyfin-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV.</p>
+    </section>
+
+    <section class="page" id="page-devices" hidden>
+      <div class="page-head"><button class="back" data-back>Settings</button><span>Paired devices</span></div>
+      <div class="group" id="devices"></div>
+      <button class="tile wide danger" id="revoke-all">Remove all</button>
+      <p class="footnote" id="devices-msg"></p>
+    </section>
   </div>
 </div>
 

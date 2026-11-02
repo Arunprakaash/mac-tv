@@ -191,7 +191,7 @@ async function readState() {
     $('#lid-override').checked = s.lidOverride;
     $('#lid-status').textContent = s.lidStatus || '';
     if (!displayChanging) updateDisplays(s.displaySetup);
-    $('#website-player').value = s.websitePlayer === 'brave' ? 'brave' : 'embedded';
+    renderPlayerChoices(s.websitePlayer === 'brave' ? 'brave' : 'embedded', s.braveInstalled === true);
     const player = s.externalPlayer && s.externalPlayer.name === 'IINA' ? s.externalPlayer : null;
     $('#iina-controls').hidden = !player;
     const iinaStatus = player && typeof player.status === 'string' ? player.status : '';
@@ -225,26 +225,34 @@ async function readState() {
   }
 }
 
+// Settings choices: a list with a checkmark, in place of a dropdown.
+function choiceRow(title, detail, selected, disabled, onPick) {
+  const row = document.createElement('button');
+  row.className = 'row';
+  row.setAttribute('aria-pressed', String(selected));
+  row.disabled = disabled;
+  const name = document.createElement('span'); name.textContent = title; row.appendChild(name);
+  if (detail) { const value = document.createElement('span'); value.className = 'value'; value.textContent = detail; row.appendChild(value); }
+  row.onclick = onPick;
+  return row;
+}
+
 function updateDisplays(setup) {
-  const select = $('#display-select');
+  const list = $('#display-select');
   availableDisplays = Array.isArray(setup?.displays) ? setup.displays : [];
-  select.replaceChildren();
-  if (!availableDisplays.length) {
-    const option = document.createElement('option');
-    option.textContent = 'No displays available';
-    select.appendChild(option);
-    select.disabled = true;
-    return;
-  }
-  for (const display of availableDisplays) {
-    const option = document.createElement('option');
-    option.value = String(display.id);
-    option.textContent = display.name + (display.current ? ' · current' : '');
-    select.appendChild(option);
-  }
   const selected = availableDisplays.find(display => display.preferred) || availableDisplays.find(display => display.current);
-  if (selected) select.value = String(selected.id);
-  select.disabled = false;
+  $('#display-value').textContent = selected ? selected.name : 'None';
+  list.replaceChildren(...(availableDisplays.length
+    ? availableDisplays.map(display => choiceRow(display.name, display.current ? 'Showing now' : '', display === selected,
+        displayChanging, () => chooseDisplay(display)))
+    : [choiceRow('No displays available', '', false, true, () => {})]));
+}
+
+function renderPlayerChoices(current, braveInstalled) {
+  $('#website-player-value').textContent = current === 'brave' ? 'Brave' : 'Built-in';
+  $('#website-player').replaceChildren(
+    choiceRow('Built-in', '', current === 'embedded', false, () => choosePlayer('embedded')),
+    choiceRow('Brave', braveInstalled ? '' : 'Not installed', current === 'brave', !braveInstalled && current !== 'brave', () => choosePlayer('brave')));
 }
 
 // Apps sheet: launch tiles, or accessible controls for arranging the same apps.
@@ -604,32 +612,48 @@ $('#pair-btn').onclick = async () => {
   try { await pair($('#code').value.trim(), $('#device-name').value.trim()); haptic('tap'); }
   catch (e) { haptic('error'); $('#pair-err').textContent = e.message; }
 };
+// A list row: a name with a detail under it, and its buttons on the right.
+function itemRow(title, detail, buttons) {
+  const row = document.createElement('div');
+  row.className = 'row item';
+  const text = document.createElement('span'); text.className = 'text';
+  const name = document.createElement('span'); name.textContent = title; text.appendChild(name);
+  if (detail) { const sub = document.createElement('span'); sub.className = 'detail'; sub.textContent = detail; text.appendChild(sub); }
+  const actions = document.createElement('div'); actions.className = 'item-actions';
+  actions.append(...buttons);
+  row.append(text, actions);
+  return row;
+}
+function linkButton(label, onClick, danger = false, aria = '') {
+  const button = document.createElement('button');
+  button.className = danger ? 'link danger' : 'link';
+  button.textContent = label;
+  if (aria) button.setAttribute('aria-label', aria);
+  button.onclick = onClick;
+  return button;
+}
+const countLabel = count => count ? String(count) : 'None';
+
 async function loadDevices() {
-  const box = $('#devices'); box.textContent = '';
+  const box = $('#devices');
   try {
     const devices = await api('/devices');
-    for (const device of devices) {
-      const row = document.createElement('div');
-      row.className = 'sheet-head';
-      const label = document.createElement('span');
-      label.textContent = device.name + (device.current ? ' (this device)' : '') +
-        (device.guest ? ` · guest until ${new Date(device.expiresAt).toLocaleString()}` : '');
-      const remove = document.createElement('button');
-      remove.className = 'pill'; remove.textContent = 'Remove';
-      remove.setAttribute('aria-label', `Remove ${device.name}`);
-      remove.onclick = async () => {
+    box.replaceChildren(...devices.map(device => itemRow(device.name + (device.current ? ' · this phone' : ''),
+      device.guest ? `Guest until ${new Date(device.expiresAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : '',
+      [linkButton('Remove', async () => {
         if (!confirm(`Remove ${device.name}?`)) return;
         try {
           await api('/devices/revoke', { id: device.id });
           if (device.current) { key = ''; store.set(''); closeSheets(); showPair(); }
           else await loadDevices();
         } catch (e) { $('#devices-msg').textContent = e.message; }
-      };
-      row.append(label, remove); box.appendChild(row);
-    }
+      }, true, `Remove ${device.name}`)])));
+    box.hidden = devices.length === 0;
+    $('#devices-count').textContent = countLabel(devices.length);
     $('#revoke-all').hidden = false;
     $('#devices-msg').textContent = '';
   } catch (e) {
+    box.replaceChildren();
     $('#revoke-all').hidden = true;
     $('#devices-msg').textContent = e.message === 'Guests cannot manage devices' ? 'Guest devices cannot manage pairing.' : e.message;
   }
@@ -639,31 +663,22 @@ async function loadShares() {
   const box = $('#shares');
   let list;
   try { list = await api('/shares'); } catch (e) { $('#shares-msg').textContent = e.message; return; }
-  box.textContent = '';
-  for (const share of list) {
-    const row = document.createElement('div');
-    row.className = 'sheet-head';
-    const label = document.createElement('span');
-    label.textContent = `${share.name} · ${share.status}`;
-    label.title = share.address;
-    const buttons = document.createElement('div');
+  box.replaceChildren(...list.map(share => {
+    const buttons = [];
     if (!share.connected && !share.connecting) {
-      const retry = document.createElement('button');
-      retry.className = 'pill'; retry.textContent = 'Connect';
-      retry.onclick = async () => { try { await api('/shares/connect', { id: share.id }); } catch {} watchShares(); };
-      buttons.appendChild(retry);
+      buttons.push(linkButton('Connect', async () => { try { await api('/shares/connect', { id: share.id }); } catch {} watchShares(); }));
     }
-    const remove = document.createElement('button');
-    remove.className = 'pill'; remove.textContent = 'Remove';
-    remove.setAttribute('aria-label', `Remove ${share.name}`);
-    remove.onclick = async () => {
+    buttons.push(linkButton('Remove', async () => {
       if (!confirm(`Remove ${share.name} from Mac TV?`)) return;
       try { await api('/shares/remove', { id: share.id }); } catch (e) { $('#shares-msg').textContent = e.message; }
       loadShares();
-    };
-    buttons.appendChild(remove);
-    row.append(label, buttons); box.appendChild(row);
-  }
+    }, true, `Remove ${share.name}`));
+    const row = itemRow(share.name, share.status, buttons);
+    row.title = share.address || '';
+    return row;
+  }));
+  box.hidden = list.length === 0;
+  $('#shares-count').textContent = countLabel(list.length);
   return list;
 }
 // Connecting takes a few seconds: refresh the list until it settles.
@@ -683,34 +698,28 @@ $('#share-form').onsubmit = async e => {
   try {
     await api('/shares/add', { address, user: $('#share-user').value.trim(), password: $('#share-password').value });
     $('#share-address').value = ''; $('#share-password').value = '';
-    $('#shares-msg').textContent = 'Its movies appear in Movies on the TV. The password stays in the Mac\'s Keychain.';
+    $('#shares-msg').textContent = 'Its movies appear in Movies on the TV.';
     haptic('tap');
   } catch (err) { $('#shares-msg').textContent = err.message; haptic('error'); }
   watchShares();
 };
 let jellyfinPoll = 0;
-const jellyfinNote = 'Its movies appear in Movies on the TV. Only a sign-in key is kept, in the Mac\'s Keychain.';
+const jellyfinNote = 'Its movies appear in Movies on the TV.';
 async function loadJellyfin() {
   const box = $('#jellyfin');
   let reply;
   try { reply = await api('/jellyfin'); } catch (e) { $('#jellyfin-msg').textContent = e.message; return; }
-  box.textContent = '';
-  for (const server of reply.servers) {
-    const row = document.createElement('div');
-    row.className = 'sheet-head';
-    const label = document.createElement('span');
-    label.textContent = `${server.name} · ${server.status}`;
-    label.title = `${server.user} on ${server.address}`;
-    const remove = document.createElement('button');
-    remove.className = 'pill'; remove.textContent = 'Remove';
-    remove.setAttribute('aria-label', `Remove ${server.name}`);
-    remove.onclick = async () => {
+  box.replaceChildren(...reply.servers.map(server => {
+    const row = itemRow(server.name, server.status, [linkButton('Remove', async () => {
       if (!confirm(`Sign out of ${server.name} and remove it from Mac TV?`)) return;
       try { await api('/jellyfin/remove', { id: server.id }); } catch (e) { $('#jellyfin-msg').textContent = e.message; }
       loadJellyfin();
-    };
-    row.append(label, remove); box.appendChild(row);
-  }
+    }, true, `Remove ${server.name}`)]);
+    row.title = `${server.user} on ${server.address}`;
+    return row;
+  }));
+  box.hidden = reply.servers.length === 0;
+  $('#jellyfin-count').textContent = countLabel(reply.servers.length);
   if (reply.signingIn) $('#jellyfin-msg').textContent = 'Signing in…';
   return reply;
 }
@@ -791,70 +800,72 @@ document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', e =
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
 $('#open-text').onclick = () => { haptic('tick'); $('#text-sheet').classList.add('show'); $('#text-sheet [data-close]').focus(); };
 $('#open-apps').onclick = () => { haptic('tick'); refresh(); $('#apps-sheet').classList.add('show'); };
-$('#open-power').onclick = () => { haptic('tick'); resetSleep(); refresh(); loadDevices(); loadShares(); loadJellyfin(); $('#power-sheet').classList.add('show'); };
+$('#open-power').onclick = () => { haptic('tick'); resetSleep(); showPage('settings-main'); refresh(); loadDevices(); loadShares(); loadJellyfin(); $('#power-sheet').classList.add('show'); };
+// Settings opens sub-pages in place, each with a way back.
+function showPage(id) {
+  document.querySelectorAll('#power-sheet .page').forEach(page => { page.hidden = page.id !== id; });
+  $('#power-sheet .sheet').scrollTop = 0;
+}
+document.querySelectorAll('#power-sheet [data-page]').forEach(row => row.onclick = () => { haptic('tick'); showPage(row.dataset.page); });
+document.querySelectorAll('#power-sheet [data-back]').forEach(back => back.onclick = () => { haptic('tick'); showPage('settings-main'); });
 document.querySelectorAll('#sleep-chips button').forEach(b => b.onclick = () => {
   const m = Number(b.dataset.m);
   send('sleeptimer', { m }, 'tap').then(refresh);
   showSleep(m);
 });
-$('#display-select').onchange = async e => {
+async function chooseDisplay(display) {
   if (displayChanging) return;
-  const display = availableDisplays.find(item => String(item.id) === e.target.value);
-  if (!display) return;
   const note = $('#display-msg');
   displayChanging = true;
-  e.target.disabled = true;
   note.hidden = true;
+  updateDisplays({ displays: availableDisplays.map(item => ({ ...item, preferred: item === display })) });
   try {
     await api('/display/select', { id: display.id });
     haptic('tap');
   } catch (error) {
     if (error.message !== 'unpaired') {
       note.textContent = error.message || 'Could not change display.';
-      note.className = 'note err';
+      note.className = 'footnote err';
       note.hidden = false;
       haptic('error');
     }
   } finally {
     displayChanging = false;
-    e.target.disabled = false;
     await refresh();
   }
-};
-$('#website-player').onchange = async e => {
+}
+async function choosePlayer(player) {
   const note = $('#browser-msg');
   note.hidden = true;
   try {
-    await api('/browser/preference', { player: e.target.value });
+    await api('/browser/preference', { player });
     haptic('tap');
   } catch (error) {
     if (error.message !== 'unpaired') {
       note.textContent = error.message || 'Could not change website player.';
-      note.className = 'note err';
       note.hidden = false;
       haptic('error');
     }
   }
   await refresh();
-};
+}
 $('#auto-skip').onchange = e => send('setting', { k: 'autoSkip', v: e.target.checked });
 $('#auto-next').onchange = e => send('setting', { k: 'autoNext', v: e.target.checked });
 $('#keep-awake').onchange = e => send('setting', { k: 'keepMacAwake', v: e.target.checked });
 $('#lid-override').onchange = e => send('setting', { k: 'lidOverride', v: e.target.checked });
 function showSleep(minutes) {
   document.querySelectorAll('#sleep-chips button').forEach(b => b.classList.toggle('on', Number(b.dataset.m) === (minutes ? -1 : 0)));
-  $('#sleep-left').textContent = minutes
-    ? `Turns off in ${minutes} min. Playback stops and the screen turns off.`
-    : 'When it ends, playback stops and the screen turns off.';
+  $('#sleep-left').textContent = minutes ? `Playback stops and the screen turns off in ${minutes} min.` : '';
+  $('#sleep-left').hidden = !minutes;
   if (minutes) document.querySelectorAll('#sleep-chips button').forEach(b => b.classList.toggle('on', b.dataset.m !== '0' && Number(b.dataset.m) >= minutes && Number(b.dataset.m) - minutes < 15));
 }
 $('#screen-on').onclick = () => { closeSheets(); send('screenon', {}, 'tap'); };
 $('#screen-off').onclick = () => { closeSheets(); send('screenoff', {}, 'tap'); };
 
 let sleepArmed = false;
-function resetSleep() { sleepArmed = false; $('#sleep').classList.remove('danger'); $('#sleep').textContent = 'Sleep Mac'; }
+function resetSleep() { sleepArmed = false; $('#sleep').classList.remove('armed'); $('#sleep').textContent = 'Sleep Mac'; }
 $('#sleep').onclick = () => {
-  if (!sleepArmed) { sleepArmed = true; haptic('tick'); $('#sleep').classList.add('danger'); $('#sleep').textContent = 'Tap again to sleep the Mac'; return; }
+  if (!sleepArmed) { sleepArmed = true; haptic('tick'); $('#sleep').classList.add('armed'); $('#sleep').textContent = 'Tap again to sleep the Mac'; return; }
   closeSheets(); send('sleep', {}, 'tap');
 };
 
