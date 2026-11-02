@@ -7,6 +7,9 @@ import Foundation
 enum RemotePage {
     static let html: String = load()
 
+    /// The page's files were found, so phones get the real remote.
+    static var available: Bool { pageFolder != nil }
+
     private static func load() -> String {
         guard let folder = pageFolder,
               let page = try? String(contentsOf: folder.appendingPathComponent("remote.html"), encoding: .utf8),
