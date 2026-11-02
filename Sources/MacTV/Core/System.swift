@@ -1,5 +1,7 @@
 import AppKit
 import ApplicationServices
+import AudioToolbox
+import CoreAudio
 import CoreImage.CIFilterBuiltins
 import IOKit.ps
 import IOKit.pwr_mgt
@@ -7,31 +9,31 @@ import IOKit.pwr_mgt
 enum SystemControl {
     /// Raising the volume also unmutes, like the volume keys. Returns the new level.
     static func changeVolume(by delta: Int) -> VolumeLevel {
-        runAppleScript("set volume output volume ((output volume of (get volume settings)) + \(delta))"
-                       + (delta > 0 ? "\nset volume output muted false" : ""))
+        guard let device = OutputVolume.device, let level = OutputVolume.level(device) else { return volume() }
+        OutputVolume.setLevel(device, level + delta)
+        if delta > 0 { OutputVolume.setMuted(device, false) }
         return volume()
     }
 
     /// Sets the volume to an exact percentage (0–100) and unmutes. Returns the new level.
     static func setVolume(to level: Int) -> VolumeLevel {
-        let clamped = max(0, min(100, level))
-        runAppleScript("set volume output volume \(clamped)\nset volume output muted false")
-        return VolumeLevel(level: clamped, muted: false)
+        guard let device = OutputVolume.device else { return volume() }
+        OutputVolume.setLevel(device, level)
+        OutputVolume.setMuted(device, false)
+        return volume()
     }
 
     static func toggleMute() -> VolumeLevel {
-        runAppleScript("set volume output muted (not (output muted of (get volume settings)))")
+        guard let device = OutputVolume.device else { return volume() }
+        OutputVolume.setMuted(device, !(OutputVolume.muted(device) ?? false))
         return volume()
     }
 
     /// The output's volume and mute state. Outputs macOS can't set the volume of, like most
     /// HDMI TVs, report no level.
     static func volume() -> VolumeLevel {
-        var error: NSDictionary?
-        let script = "set s to get volume settings\nreturn (output volume of s as text) & \",\" & (output muted of s as text)"
-        let parts = NSAppleScript(source: script)?.executeAndReturnError(&error).stringValue?
-            .split(separator: ",").map(String.init) ?? []
-        return VolumeLevel(level: parts.first.flatMap { Int($0) }, muted: parts.count > 1 && parts[1] == "true")
+        guard let device = OutputVolume.device else { return VolumeLevel(level: nil, muted: false) }
+        return VolumeLevel(level: OutputVolume.level(device), muted: OutputVolume.muted(device) ?? false)
     }
 
     /// Turns the displays off; playback and the remote keep working.
@@ -53,17 +55,64 @@ enum SystemControl {
         CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)?.post(tap: .cghidEventTap)
     }
 
-    private static func runAppleScript(_ source: String) {
-        var error: NSDictionary?
-        NSAppleScript(source: source)?.executeAndReturnError(&error)
-        if let error { Log.system.error("AppleScript failed: \((error[NSAppleScript.errorNumber] as? Int) ?? 0, privacy: .public)") }
-    }
-
     private static func pmset(_ argument: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         process.arguments = [argument]
         try? process.run()
+    }
+}
+
+/// The default output's volume through Core Audio, as System Settings and the volume keys set it.
+/// The same 0–100 scale as AppleScript's `output volume`, without Apple Events or their delay.
+private enum OutputVolume {
+    static var device: AudioObjectID? {
+        var id = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id)
+        return status == noErr && id != kAudioObjectUnknown ? id : nil
+    }
+
+    /// 0–100, or nil when the output has no volume the Mac can set.
+    static func level(_ device: AudioObjectID) -> Int? {
+        var address = output(kAudioHardwareServiceDeviceProperty_VirtualMainVolume)
+        var settable: DarwinBoolean = false
+        guard AudioObjectHasProperty(device, &address),
+              AudioObjectIsPropertySettable(device, &address, &settable) == noErr, settable.boolValue else { return nil }
+        var value = Float32(0)
+        var size = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return Int((value * 100).rounded())
+    }
+
+    static func setLevel(_ device: AudioObjectID, _ level: Int) {
+        var address = output(kAudioHardwareServiceDeviceProperty_VirtualMainVolume)
+        var value = Float32(max(0, min(100, level))) / 100
+        let status = AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &value)
+        if status != noErr { Log.audio.error("Couldn't set the volume: \(status, privacy: .public)") }
+    }
+
+    static func muted(_ device: AudioObjectID) -> Bool? {
+        var address = output(kAudioDevicePropertyMute)
+        guard AudioObjectHasProperty(device, &address) else { return nil }
+        var value = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value != 0
+    }
+
+    static func setMuted(_ device: AudioObjectID, _ muted: Bool) {
+        var address = output(kAudioDevicePropertyMute)
+        guard AudioObjectHasProperty(device, &address), self.muted(device) != muted else { return }
+        var value = UInt32(muted ? 1 : 0)
+        AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value)
+    }
+
+    private static func output(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
     }
 }
 

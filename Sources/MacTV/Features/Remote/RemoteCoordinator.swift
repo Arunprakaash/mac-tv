@@ -1,4 +1,5 @@
 import AppKit
+import Network
 
 /// Manages remote server links, pairing tokens, remote state snapshots, and client request routing.
 @MainActor
@@ -20,14 +21,14 @@ final class RemoteCoordinator: ObservableObject {
     var remotePort: UInt16 = 0 {
         didSet {
             refreshRemoteURL()
-            addressTimer?.invalidate()
-            addressTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshRemoteURL() }
-            }
+            watchNetwork()
         }
     }
 
-    private var addressTimer: Timer?
+    /// The links change only when the network does or the pairing code rotates, so Mac TV waits
+    /// for those instead of checking every few seconds.
+    private var pathMonitor: NWPathMonitor?
+    private var codeTimer: Timer?
     private var startupPairingPending = false
     private var startupPairingVisible = false
     private var phoneConnectedThisLaunch = false
@@ -41,10 +42,28 @@ final class RemoteCoordinator: ObservableObject {
         self.tv = tv
     }
 
+    private func watchNetwork() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] _ in
+            // Addresses settle a moment after the path changes.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                MainActor.assumeIsolated { self?.refreshRemoteURL() }
+            }
+        }
+        monitor.start(queue: .main)
+        pathMonitor = monitor
+    }
+
     func refreshRemoteURL() {
         guard remotePort != 0 else { return }
         let code = RemoteServer.pairingCode()
         let guestCode = RemoteServer.guestPairingCode()
+        codeTimer?.invalidate()
+        codeTimer = Timer.scheduledTimer(withTimeInterval: max(1, RemoteServer.pairingCodeExpires.timeIntervalSinceNow + 0.5),
+                                         repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshRemoteURL() }
+        }
         let codeChanged = code != remoteToken || guestCode != remoteGuestToken
         remoteToken = code
         remoteGuestToken = guestCode

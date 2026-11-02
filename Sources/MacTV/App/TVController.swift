@@ -158,8 +158,13 @@ final class TVController: NSObject, ObservableObject {
     var suppressHover = false
     /// The top-row app whose content the Top Shelf shows.
     @Published private(set) var shelfAppIndex = 0
-    /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt.
-    @Published var tilt: CGSize = .zero
+    /// Pointer position over the focused tile, -0.5…0.5 on each axis, for the parallax tilt. Kept
+    /// in its own object, so the pointer moving redraws the tiles, not every view watching the TV.
+    let pointerTilt = PointerTilt()
+    var tilt: CGSize {
+        get { pointerTilt.value }
+        set { if pointerTilt.value != newValue { pointerTilt.value = newValue } }
+    }
     @Published var pairing = false {
         didSet {
             if pairing {

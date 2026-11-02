@@ -60,6 +60,8 @@ final class RemoteServer {
     private static var currentCode = ""
     private static var currentGuestCode = ""
     private static var codeExpires = Date.distantPast
+    /// When the current pairing codes stop being accepted.
+    static var pairingCodeExpires: Date { codeExpires }
     static func pairingCode(now: Date = Date()) -> String {
         if now >= codeExpires {
             var next: String
