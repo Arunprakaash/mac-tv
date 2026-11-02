@@ -5,6 +5,7 @@ import Foundation
 /// They're published, so a screen showing a setting redraws when it changes, wherever it was
 /// changed: the TV, the phone remote or Control Center. Features keep their own rules on top, like
 /// which screen saver delays are allowed; this only stores the values.
+@MainActor
 final class Preferences: ObservableObject {
     static let shared = Preferences()
 

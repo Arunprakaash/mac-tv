@@ -2,25 +2,31 @@ import IOKit.pwr_mgt
 import Testing
 @testable import MacTV
 
+/// Holds what a test's closures record. They run on the test's own thread, one at a time.
+private final class Record<Value>: @unchecked Sendable {
+    var value: Value
+    init(_ value: Value) { self.value = value }
+}
+
 @Suite struct DisplayPowerTests {
     @Test func successfulWakeReleasesTheAcquiredAssertion() {
-        var released: IOPMAssertionID?
-        var scheduled: (() -> Void)?
+        let released = Record<IOPMAssertionID?>(nil)
+        var scheduled: (@Sendable () -> Void)?
         let result = DisplayPower.wake(declare: { id in id = 73; return kIOReturnSuccess },
-                                       release: { released = $0 }, schedule: { scheduled = $0 })
+                                       release: { released.value = $0 }, schedule: { scheduled = $0 })
         #expect(result)
-        #expect(released == nil)
+        #expect(released.value == nil)
         scheduled?()
-        #expect(released == 73)
+        #expect(released.value == 73)
     }
 
     @Test func failedWakeDoesNotReleaseOrSchedule() {
         var scheduled = false
-        var released = false
+        let released = Record(false)
         let result = DisplayPower.wake(declare: { _ in IOReturn(-1) },
-                                       release: { _ in released = true }, schedule: { _ in scheduled = true })
+                                       release: { _ in released.value = true }, schedule: { _ in scheduled = true })
         #expect(!result)
         #expect(!scheduled)
-        #expect(!released)
+        #expect(!released.value)
     }
 }

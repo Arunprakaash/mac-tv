@@ -49,11 +49,13 @@ final class ControllerInput {
     func start() {
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] note in
-            let controller = note.object as? GCController
+            // Delivered on the main queue, which is where the controller is used.
+            nonisolated(unsafe) let controller = note.object as? GCController
             MainActor.assumeIsolated { self?.connect(controller) }
         })
         observers.append(center.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] note in
-            let controller = note.object as? GCController
+            // Delivered on the main queue, which is where the controller is used.
+            nonisolated(unsafe) let controller = note.object as? GCController
             MainActor.assumeIsolated { self?.disconnect(controller) }
         })
         GCController.controllers().forEach(connect)

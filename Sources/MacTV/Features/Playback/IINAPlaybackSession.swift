@@ -233,6 +233,8 @@ final class IINAPlaybackSession {
         let ownedProcess = cleanup ? process : nil
         let deadline = cleanup ? Date().addingTimeInterval(6) : (startupDeadline ?? Date().addingTimeInterval(6))
         pendingCommands += 1
+        // mpv commands are plain strings and numbers, built here and only read on the queue.
+        nonisolated(unsafe) let command = command
         queue.async { [weak self] in
             defer {
                 if cleanup {
