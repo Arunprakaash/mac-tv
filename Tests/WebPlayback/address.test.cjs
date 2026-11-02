@@ -2,9 +2,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('Sources/MacTV/Features/Remote/RemotePage.swift', 'utf8');
-const start = source.indexOf('    let websiteOpening = false;');
-const end = source.indexOf("    $('#type').onsubmit", start);
+const { script: source } = require('./page.cjs');
+const start = source.indexOf('let websiteOpening = false;');
+const end = source.indexOf("$('#type').onsubmit", start);
 assert.ok(start >= 0 && end > start);
 const elements = Object.fromEntries(['open-website', 'website-address', 'website-go', 'website-open-error']
   .map(id => [id, { value: '', textContent: '', hidden: true, disabled: false }]));

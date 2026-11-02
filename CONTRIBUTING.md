@@ -63,6 +63,8 @@ One Swift package, one app target, organised by feature:
 - `Sources/MacTV/DesignSystem`: the Apple TV look shared by every screen: type scale, Liquid Glass, motion and the TV canvas.
 - `Sources/MacTV/Features/<Feature>`: everything one feature needs, kept together: its model, its `TVController` extension and its views. Home, Playback, Movies, Remote, Display, Audio, Controllers, Screen Saver, Settings, Profiles and Games.
 
+The phone remote is ordinary web files in `Features/Remote/Page` (`remote.html`, `remote.css`, `remote.js`), bundled as a package resource and served as one page with the stylesheet and script inline. The web tests read the same files.
+
 A feature with state of its own keeps it in a coordinator that publishes it (`PlaybackCoordinator`, `RemoteCoordinator`, `DisplayCoordinator`, `AudioCoordinator`, `IdleCoordinator`), rather than in `TVController`. A feature uses Core and DesignSystem freely, and reaches other features only through `TVController`. New code goes in the folder of the feature it belongs to; something two features need moves to Core or DesignSystem.
 
 ## How some parts work

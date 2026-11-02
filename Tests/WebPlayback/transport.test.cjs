@@ -3,9 +3,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('Sources/MacTV/Features/Remote/RemotePage.swift', 'utf8');
-const transport = source.slice(source.indexOf('    // A timed-out POST'), source.indexOf('    // State: connection'));
-const refresh = source.slice(source.indexOf('    let stateInFlight = null;'), source.indexOf('    async function readState()'));
+const { script: source } = require('./page.cjs');
+const transport = source.slice(source.indexOf('// A timed-out POST'), source.indexOf('// State: connection'));
+const refresh = source.slice(source.indexOf('let stateInFlight = null;'), source.indexOf('async function readState()'));
 assert.ok(transport.includes('function request') && refresh.includes('function refresh'));
 const requests = [], calls = [], errors = [], storage = [];
 let readCount = 0, finishRead, finishFetch;
@@ -65,7 +65,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   assert.deepEqual(calls, ['pair']);
   await run('refresh()');
   assert.equal(readCount, 2, 'unpaired polling never contacts state');
-  const pairSource = source.slice(source.indexOf('    function showPair()'), source.indexOf('    async function pair(', source.indexOf('    function showPair()')));
+  const pairSource = source.slice(source.indexOf('function showPair()'), source.indexOf('async function pair(', source.indexOf('function showPair()')));
   let shown = false, focuses = 0, scheduled = 0;
   const pairElements = { '#pair': { classList: { contains: () => shown, add: () => { shown = true; } } }, '#code': { focus: () => { focuses++; } } };
   const pairContext = vm.createContext({ $: s => pairElements[s], setTimeout: fn => { scheduled++; fn(); } });
@@ -74,8 +74,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   assert.equal(scheduled, 1, 'pairing focus is scheduled only on transition');
   assert.equal(focuses, 1);
 
-  const start = source.indexOf('    // Clickpad:');
-  const end = source.indexOf('    // Touchpad:', start);
+  const start = source.indexOf('// Clickpad:');
+  const end = source.indexOf('// Touchpad:', start);
   const listeners = {}, documentListeners = {}, repeats = [];
   let intervalCallback, intervalCleared = false;
   const pad = { querySelectorAll: () => [], setPointerCapture() {},
