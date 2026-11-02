@@ -5,7 +5,7 @@ import ApplicationServices
 /// A private mpv IPC endpoint for one IINA launch; never sends keys to another app.
 @MainActor
 final class IINAPlaybackSession {
-    enum PlaybackError: LocalizedError {
+    enum PlaybackError: PublicError {
         case unavailable, invalidFile, noDisplay, accessibility, socketDirectory, launch(String), control(String)
         var errorDescription: String? {
             switch self {

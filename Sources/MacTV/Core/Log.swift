@@ -23,6 +23,10 @@ extension Logger {
     /// Logs a failure with its error domain and code public and its description private, since
     /// descriptions often carry file paths or addresses.
     func failure(_ what: String, _ error: Error) {
+        if let error = error as? PublicError {
+            self.error("\(what, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return
+        }
         let error = error as NSError
         self.error("\(what, privacy: .public): \(error.domain, privacy: .public) \(error.code, privacy: .public) \(error.localizedDescription)")
     }
@@ -37,3 +41,7 @@ extension Logger {
         }
     }
 }
+
+/// An error of Mac TV's own whose messages are fixed text with nothing personal in them, so the
+/// log can show them in full.
+protocol PublicError: LocalizedError {}
