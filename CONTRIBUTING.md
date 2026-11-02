@@ -7,7 +7,7 @@ Thanks for helping. Bug reports and ideas go to [GitHub issues](https://github.c
 - Keep each pull request to one change, and describe what it does and how you checked it.
 - `main` is protected: the **macos** check (Swift tests and the universal build) must pass.
 - Match the surrounding code and the Apple TV look: Liquid Glass only over real content, a white platter for focus, the `Font.tv` type scale, and SF Symbols in one colour.
-- Settings rows are one line: a title and, on the right, a value, switch or chevron. No second line under the title.
+- Settings and Arrange Apps rows are one line: a title and, on the right, a value, switch, chevron or buttons. No second line under the title. Control Center tiles keep their status line.
 - Mac TV opens official services only. Don't add, suggest or document sites that host pirated content.
 - Analytics events live only in `Analytics.swift`. Never send what anyone watches, titles, addresses, file names or profile names.
 
