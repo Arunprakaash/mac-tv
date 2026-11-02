@@ -1,0 +1,136 @@
+  :root {
+    --bg:#07080b; --glass:rgba(255,255,255,.09); --line:rgba(255,255,255,.14);
+    /* Apple TV's Liquid Glass: blur and saturate what's behind, with a bright top edge. */
+    --blur:blur(28px) saturate(170%); --sheen:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 1px rgba(255,255,255,.05);
+    /* Soft colour behind everything, so the glass has something to show. */
+    --ambient:radial-gradient(70vmax 60vmax at 10% 0%, rgba(70,110,255,.30), transparent 70%),
+              radial-gradient(60vmax 60vmax at 100% 55%, rgba(170,80,255,.20), transparent 70%),
+              radial-gradient(60vmax 50vmax at 20% 100%, rgba(0,190,170,.14), transparent 70%), #07080b;
+    --fg:#fff; --dim:rgba(255,255,255,.62); --ok:#3ddc84; --warn:#ff6b6b;
+    /* Controls size with the phone: round keys from 52 to 68px, spacing from the screen height. */
+    --key:clamp(52px, 16vw, 68px); --gap:clamp(10px, 1.7dvh, 16px);
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; }
+  html, body { margin:0; height:100%; color:var(--fg); font:16px/1.3 -apple-system, system-ui, Roboto, sans-serif; background:var(--bg); overscroll-behavior:none; }
+  body { background:var(--ambient); background-attachment:fixed; }
+  main { width:100%; max-width:460px; min-height:100dvh; margin:0 auto; padding:calc(env(safe-area-inset-top) + 14px) clamp(14px, 5vw, 22px) calc(env(safe-area-inset-bottom) + 18px); display:flex; flex-direction:column; gap:var(--gap); touch-action:manipulation; }
+  button { font:inherit; color:inherit; cursor:pointer; transition:transform .08s, background-color .08s; }
+  .pressed { transform:scale(.93); }
+  .round { width:44px; height:44px; border-radius:50%; border:1px solid var(--line); background:var(--glass); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); display:grid; place-items:center; }
+  /* tvOS focus: a press lights the control up as a white platter. */
+  .round.pressed, .key.pressed, .pill.pressed, .row-btn.pressed { background:#fff; color:#000; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  header h1 { margin:0; font-size:20px; font-weight:800; letter-spacing:-.02em; line-height:0; }
+  /* The app icon stands in for the name at the top of the remote. */
+  header h1 img { width:44px; height:44px; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,.35)); }
+  .status[hidden] { display:none; }
+  .status { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none; }
+  .actions { display:flex; gap:10px; flex:none; }
+  /* A segmented pill: the selected pill sits inside the track with the same inset on every side. */
+  .tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; height:46px; flex:none; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); }
+  .tabs button { height:100%; padding:0; border:0; border-radius:999px; background:transparent; color:rgba(255,255,255,.75); font-size:14px; font-weight:600; transition:background-color .2s, color .2s; }
+  .tabs button.on { background:#fff; color:#000; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  /* The touch surface takes whatever height is left, so the remote fills any phone. */
+  .surface { position:relative; flex:1 1 auto; min-height:210px; max-height:440px; border-radius:34px; background:rgba(255,255,255,.06); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); overflow:hidden; touch-action:none; }
+  /* The ring is centred and sized to fit the surface; arrows and OK sit on it. */
+  #clickpad .ring { position:absolute; left:50%; top:50%; height:min(260px, 70vw, 86%); aspect-ratio:1; transform:translate(-50%, -50%); border-radius:50%; border:1.5px solid rgba(255,255,255,.14); pointer-events:none; }
+  #clickpad .chev { background:none; border:0; padding:0; min-width:44px; min-height:44px; position:absolute; width:40px; height:40px; display:grid; place-items:center; color:rgba(255,255,255,.55); transition:color .12s, scale .12s; }
+  #clickpad .chev.hit { color:#fff; scale:1.25; }
+  #clickpad .up { left:50%; top:4%; translate:-50% 0; } #clickpad .down { left:50%; bottom:4%; translate:-50% 0; }
+  #clickpad .left { top:50%; left:4%; translate:0 -50%; } #clickpad .right { top:50%; right:4%; translate:0 -50%; }
+  #clickpad .ok { position:absolute; left:50%; top:50%; width:38%; aspect-ratio:1; translate:-50% -50%; border-radius:50%; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.1); box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 10px 24px rgba(0,0,0,.35); display:grid; place-items:center; font-weight:700; font-size:15px; transition:background .12s, scale .12s; }
+  #clickpad .ok.hit { background:#fff; color:#000; scale:.94; }
+  #touchpad { display:none; }
+  #touchpad .hint { position:absolute; left:0; right:0; bottom:18px; text-align:center; font-size:13px; font-weight:500; color:rgba(255,255,255,.55); pointer-events:none; padding:0 16px; }
+  .keys { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--gap) 8px; justify-items:center; flex:none; }
+  .key { width:var(--key); height:var(--key); border-radius:50%; border:1px solid var(--line); background:var(--glass); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); display:grid; place-items:center; box-shadow:var(--sheen); }
+  .key.home { display:flex; flex-direction:column; justify-content:center; gap:1px; }
+  .key.home svg { width:20px; height:20px; }
+  .key.home span { font-size:10px; font-weight:700; line-height:1; }
+  .key.primary { background:#fff; color:#000; }
+  .key.primary.pressed { background:#d9d9d9; }
+  .key svg, .round svg { width:22px; height:22px; }
+  .type { display:flex; align-items:center; gap:8px; height:52px; flex:none; padding:0 6px 0 16px; border-radius:999px; background:var(--glass); border:1px solid var(--line); -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur); box-shadow:var(--sheen); color:var(--dim); }
+  .type input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:#fff; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; }
+  .type button { width:44px; height:44px; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:#fff; }
+  .text-tools { min-height:44px; width:100%; text-align:center; }
+  .website-form button { width:auto; min-width:48px; padding:0 12px; font-weight:700; }
+  .website-form button:disabled { opacity:.45; }
+  /* Short phones: a smaller touch surface so the controls fit without scrolling. */
+  @media (max-height: 640px) { .surface { min-height:180px; } }
+
+  .scrim { position:fixed; inset:0; background:rgba(0,0,0,.5); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); display:none; flex-direction:column; justify-content:flex-end; z-index:5; }
+  .scrim.show { display:flex; }
+  .sheet { max-width:460px; width:100%; max-height:88dvh; overflow-y:auto; margin:0 auto; padding:20px 18px calc(env(safe-area-inset-bottom) + 24px); border-radius:28px 28px 0 0; background:rgba(28,30,40,.86); -webkit-backdrop-filter:blur(40px) saturate(180%); backdrop-filter:blur(40px) saturate(180%); border-top:1px solid rgba(255,255,255,.18); box-shadow:var(--sheen); display:flex; flex-direction:column; gap:14px; }
+  .sheet > * { flex-shrink:0; }
+  .sheet-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .sheet-head > span { font-size:18px; font-weight:800; }
+  .sheet-head > div { display:flex; gap:8px; }
+  .pill { height:44px; padding:0 14px; border:0; border-radius:999px; background:rgba(255,255,255,.12); font-size:14px; font-weight:600; }
+  .pill.on { background:#fff; color:#000; }
+  .apps { display:grid; grid-template-columns:repeat(auto-fill, minmax(72px, 1fr)); gap:16px 12px; }
+  .app { position:relative; border:0; background:none; padding:0; display:flex; flex-direction:column; gap:6px; align-items:center; font-size:12px; font-weight:600; color:var(--dim); text-align:center; }
+  .app .art { width:100%; aspect-ratio:1; border-radius:23%; background:#2a2d36; display:grid; place-items:center; font-size:26px; font-weight:800; color:#fff; overflow:hidden; box-shadow:0 0 0 1px rgba(255,255,255,.08); }
+  .app .art img { width:100%; height:100%; display:block; }
+  .app .favourite { position:absolute; top:-6px; right:-6px; width:24px; height:24px; border-radius:50%; background:#ffd60a; color:#241d00; display:grid; place-items:center; font-size:15px; line-height:1; box-shadow:0 2px 6px rgba(0,0,0,.4); }
+  .apps.editing { grid-template-columns:1fr; gap:12px; }
+  .app-editor { padding:12px; border:1px solid var(--line); border-radius:20px; background:rgba(255,255,255,.05); }
+  .app-editor-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; min-width:0; }
+  .app-editor-head .app { width:48px; flex:none; }
+  .app-editor-name { font-size:16px; font-weight:650; overflow-wrap:anywhere; }
+  .app-actions { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+  .app-actions button { min-height:44px; min-width:44px; padding:10px 8px; border:0; border-radius:12px; background:rgba(255,255,255,.1); font-size:14px; font-weight:600; }
+  .app-actions .pin[aria-pressed="true"] { color:#ffe991; background:rgba(255,214,10,.13); }
+  .app-actions .remove { color:#ffd0d0; background:rgba(255,107,107,.13); }
+  .app-actions button:disabled, #edit-apps:disabled, #restore:disabled { opacity:.4; cursor:default; }
+  #apps-sheet button:focus-visible { outline:3px solid #8ec7ff; outline-offset:3px; }
+  #apps-sheet .pill { min-height:44px; }
+  .app.add .art { background:transparent; border:2px dashed rgba(255,255,255,.25); box-shadow:none; color:var(--dim); font-weight:400; font-size:34px; }
+  .editing .app.add { display:none; }
+  .row-btn { height:52px; border:0; border-radius:16px; background:rgba(255,255,255,.1); font-size:16px; font-weight:600; text-align:left; padding:0 18px; }
+  .browser-controls { display:flex; gap:8px; flex-wrap:wrap; }
+  .browser-controls[hidden] { display:none; }
+  .browser-controls button { flex:1; min-width:100px; min-height:44px; padding:8px; border:1px solid var(--line); border-radius:14px; background:var(--glass); font-size:13px; font-weight:600; }
+  .row-btn.danger { background:rgba(255,107,107,.22); color:#ffd0d0; }
+  .note { font-size:13px; color:var(--dim); line-height:1.4; margin:0; padding:0 4px; }
+  .note.ok { color:var(--ok); } .note.err { color:var(--warn); }
+  .group-label { font-size:12px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--dim); margin:6px 4px -4px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips button { min-height:44px; padding:0 16px; border:0; border-radius:999px; background:rgba(255,255,255,.1); font-size:14px; font-weight:600; }
+  .chips button.on { background:#fff; color:#000; }
+  .toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:54px; padding:0 14px 0 16px; border-radius:16px; background:rgba(255,255,255,.07); font-size:15px; font-weight:600; }
+  .toggle input { appearance:none; -webkit-appearance:none; flex:none; position:relative; width:48px; height:28px; margin:0; border-radius:999px; background:rgba(255,255,255,.22); transition:background .15s; cursor:pointer; }
+  .toggle input::before { content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:transform .15s; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+  .toggle input:checked { background:var(--ok); }
+  .toggle input:checked::before { transform:translateX(20px); }
+  .cancel { height:50px; border:0; border-radius:999px; background:#fff; color:#000; font-weight:700; }
+  .field { width:100%; height:50px; border-radius:14px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#fff; padding:0 14px; font:500 16px -apple-system, system-ui, sans-serif; -webkit-user-select:text; user-select:text; outline:0; }
+  .field:focus { border-color:rgba(255,255,255,.4); }
+  .sheet form { display:flex; flex-direction:column; gap:10px; margin:0; }
+  .sheet form.type { flex-direction:row; }
+  #text-sheet .pill { min-height:44px; }
+  .list { display:flex; flex-direction:column; gap:6px; }
+  .list button { display:flex; align-items:center; justify-content:space-between; gap:10px; height:50px; border:0; border-radius:14px; background:rgba(255,255,255,.07); padding:0 16px; font-size:15px; font-weight:600; text-align:left; }
+  .list button span:last-child { font-size:12px; color:var(--dim); font-weight:600; }
+  .list button[disabled] { opacity:.5; }
+  .file-path { color:var(--dim); font-size:13px; overflow-wrap:anywhere; }
+  .file-list button { min-height:50px; height:auto; padding:12px 16px; }
+  .file-list button span:first-child { overflow-wrap:anywhere; min-width:0; }
+  .file-actions { display:grid; gap:8px; }
+  .file-actions button { min-height:48px; }
+  #files-sheet button:focus-visible { outline:3px solid #8ec7ff; outline-offset:3px; }
+  #pair { position:fixed; inset:0; background:var(--ambient); display:none; flex-direction:column; justify-content:center; gap:14px; padding:24px; text-align:center; z-index:9; }
+  #pair.show { display:flex; }
+  #pair h1 { margin:0; font-size:26px; }
+  #pair p { margin:0; color:var(--dim); }
+  #pair input:not([type="checkbox"]) { font:600 30px -apple-system, system-ui, Roboto, sans-serif; font-variant-numeric:tabular-nums; letter-spacing:.3em; text-align:center; background:var(--glass); color:#fff; border:1px solid rgba(255,255,255,.2); border-radius:14px; height:64px; -webkit-user-select:text; user-select:text; }
+  #pair #device-name { font-size:16px; letter-spacing:normal; height:48px; }
+  #pair label { color:var(--dim); font-size:14px; }
+  #pair button { height:52px; border:0; border-radius:999px; background:#fff; color:#000; font-weight:700; }
+  #guest-note { display:none; }
+  body.guest #guest-note { display:block; }
+  body.guest .actions, body.guest .tabs, body.guest .surface, body.guest #open-text,
+  body.guest .keys [data-a="back"], body.guest #browser-controls [data-a="previouscontrol"],
+  body.guest #browser-controls [data-a="nextcontrol"], body.guest #browser-retry,
+  body.guest .scrim { display:none !important; }

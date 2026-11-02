@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mac TV">
+<meta name="theme-color" content="#0a0b0e">
+<title>Mac TV Remote</title>
+<link rel="apple-touch-icon" href="/appicon.png">
+<link rel="icon" type="image/png" href="/appicon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="remote.css">
+</head>
+<body>
+<main>
+  <header>
+    <div style="min-width:0">
+      <h1><img src="/appicon.png" alt="Mac TV"></h1>
+      <div class="status" hidden><span class="dot" id="dot"></span><span id="status"></span></div>
+    </div>
+    <div class="actions">
+      <button class="round" id="open-apps" aria-label="Apps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
+      <button class="round" id="open-power" aria-label="Power"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg></button>
+    </div>
+  </header>
+
+  <p class="note" id="guest-note">Guest remote · playback controls only</p>
+  <div class="tabs" role="tablist" aria-label="Remote mode">
+    <button role="tab" id="tab-click" class="on">Clickpad</button>
+    <button role="tab" id="tab-touch">Touchpad</button>
+  </div>
+
+  <div class="surface" id="clickpad" aria-label="Swipe or tap an arrow to move, tap the middle to select">
+    <div class="ring">
+    <button type="button" class="chev up" data-dir="up" aria-label="Move up"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button>
+    <button type="button" class="chev down" data-dir="down" aria-label="Move down"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button type="button" class="chev left" data-dir="left" aria-label="Move left"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <button type="button" class="chev right" data-dir="right" aria-label="Move right"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+    <button type="button" class="ok" id="ok" aria-label="Select">OK</button>
+    </div>
+  </div>
+  <div class="surface" id="touchpad"><div class="hint">Drag to move · tap to click · two fingers to scroll</div></div>
+
+  <div class="keys">
+    <button class="key" data-a="back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <button class="key home" data-a="home" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span>Home</span></button>
+    <button class="key primary" data-a="playpause" data-h="tap" aria-label="Play or pause"><svg viewBox="0 0 24 24" fill="#000"><path d="M3 5v14l8-7z"/><rect x="14" y="5" width="3" height="14" rx="1"/><rect x="19" y="5" width="3" height="14" rx="1"/></svg></button>
+    <button class="key" data-a="mute" aria-label="Mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/></svg></button>
+    <button class="key" data-a="rewind" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6v12l-8-6z"/><path d="M21 6v12l-8-6z"/></svg></button>
+    <button class="key" data-a="voldown" aria-label="Volume down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 12h5"/></svg></button>
+    <button class="key" data-a="volup" aria-label="Volume up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 12h5M18.5 9.5v5"/></svg></button>
+    <button class="key" data-a="forward" aria-label="Forward 10 seconds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6v12l8-6z"/><path d="M3 6v12l8-6z"/></svg></button>
+  </div>
+
+  <div id="browser-controls" class="browser-controls" hidden aria-label="Brave controls">
+    <button type="button" data-a="previouscontrol">Previous control</button>
+    <button type="button" data-a="nextcontrol">Next control</button>
+    <button type="button" data-a="activatebrowser">Return to Brave</button>
+    <button type="button" data-a="browserfullscreen">Full screen on/off</button>
+    <button type="button" id="browser-retry" hidden>Retry</button>
+    <p class="note err" id="browser-error" role="status" hidden></p>
+    <p class="note" id="browser-control-note" role="status"></p>
+  </div>
+
+  <div id="iina-controls" class="browser-controls" hidden aria-label="IINA controls">
+    <button type="button" data-a="activatebrowser">Return to IINA</button>
+    <button type="button" data-a="browserfullscreen">Full screen on/off</button>
+    <p class="note" id="iina-status" role="status" aria-live="polite" hidden></p>
+    <p class="note err" id="iina-error" role="status" aria-live="polite" hidden></p>
+  </div>
+
+  <button class="row-btn text-tools" id="open-text" aria-label="Open website or type on TV">Open website or type</button>
+</main>
+
+<div class="scrim" id="text-sheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Open website or type on TV">
+    <div class="sheet-head"><span>Website and keyboard</span><div><button class="pill" data-close>Done</button></div></div>
+    <div class="group-label">Open a website</div>
+  <form class="type website-form" id="open-website" autocomplete="off">
+    <input id="website-address" type="text" inputmode="url" placeholder="Open a website…" aria-label="Website address" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button type="submit" id="website-go">Go</button>
+  </form>
+  <p class="note err" id="website-open-error" role="status" aria-live="polite" hidden></p>
+
+  <div class="group-label">Type on TV</div>
+  <form class="type" id="type" autocomplete="off">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    <input id="typed" placeholder="Type on the TV…" aria-label="Type on the TV" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button type="button" data-a="backspace" aria-label="Delete"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H8l-6 7 6 7h13z"/><path d="M17 9l-6 6M11 9l6 6"/></svg></button>
+  </form>
+  </div>
+</div>
+
+<div class="scrim" id="apps-sheet">
+  <div class="sheet" role="dialog" aria-label="Apps">
+    <div class="sheet-head"><span id="apps-title">Open on TV</span><div><button class="pill" id="edit-apps">Edit</button><button class="pill" data-close>Done</button></div></div>
+    <button class="row-btn" id="open-files">📁  Files on Mac</button>
+    <div class="apps" id="apps"></div>
+    <p class="note" id="edit-note" hidden>Pinned favourites appear first. Move apps within favourites or other apps. Removed built-in apps can be restored.</p>
+    <p class="note" id="apps-msg" role="status" aria-live="polite" hidden></p>
+    <button class="row-btn" id="restore" hidden>Restore built-in apps</button>
+  </div>
+</div>
+
+<div class="scrim" id="files-sheet">
+  <div class="sheet" role="dialog" aria-label="Files on Mac">
+    <div class="sheet-head"><span>Files on Mac</span><div><button class="pill" id="files-back">Back</button><button class="pill" data-close>Done</button></div></div>
+    <div class="file-path" id="files-path"></div>
+    <input class="field" id="files-filter" placeholder="Filter filenames" aria-label="Filter filenames" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <p class="note" id="files-msg" role="status" aria-live="polite"></p>
+    <div class="list file-list" id="files-list"></div>
+    <button class="row-btn" id="files-more" hidden>Load more</button>
+    <div id="movie-options" hidden>
+      <div class="group-label">Selected video</div>
+      <p id="movie-name"></p>
+      <div class="file-actions">
+        <button class="row-btn" id="play-native">Play on Mac TV</button>
+        <button class="row-btn" id="play-iina">Play in IINA</button>
+        <button class="row-btn" id="subtitle-options">Subtitle options</button>
+      </div>
+    </div>
+    <div id="subtitle-panel" hidden>
+      <div class="group-label">Subtitles</div>
+      <p class="note">Choose a subtitle from this folder or upload a UTF-8 .srt file from your phone (up to 256 KB). Applying a subtitle opens the video in IINA.</p>
+      <div class="list file-list" id="subtitle-list"></div>
+      <input id="subtitle-upload" type="file" accept=".srt,text/plain" aria-label="Upload subtitle file">
+      <div class="file-actions">
+        <button class="row-btn" id="subtitle-search-iina">Search in IINA</button>
+        <button class="row-btn" id="subtitle-search-web">Search subtitles on phone</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="add-sheet">
+  <div class="sheet" role="dialog" aria-label="Add an app">
+    <div class="sheet-head"><span>Add an app</span><div><button class="pill" data-close>Cancel</button></div></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="add-web-tab" class="on">Website</button>
+      <button role="tab" id="add-mac-tab">Mac app</button>
+    </div>
+    <form id="web-form" autocomplete="off">
+      <input class="field" id="web-url" inputmode="url" placeholder="Website, e.g. crunchyroll.com" aria-label="Website address" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input class="field" id="web-name" placeholder="Name (optional)" aria-label="Name">
+      <button class="cancel" type="submit">Add to TV</button>
+      <p class="note">Mac TV looks up the app's official icon for you.</p>
+    </form>
+    <div id="mac-form" hidden>
+      <input class="field" id="mac-q" placeholder="Search apps on the Mac" aria-label="Search apps on the Mac" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <div class="list" id="mac-list" style="margin-top:10px"></div>
+    </div>
+    <p class="note" id="add-msg"></p>
+  </div>
+</div>
+
+<div class="scrim" id="power-sheet">
+  <div class="sheet" role="dialog" aria-label="TV controls">
+    <div class="sheet-head"><span>TV controls</span><div><button class="pill" data-close>Done</button></div></div>
+    <div class="group-label">Sleep timer</div>
+    <div class="chips" id="sleep-chips">
+      <button data-m="0">Off</button><button data-m="15">15 min</button><button data-m="30">30 min</button><button data-m="60">1 hour</button><button data-m="90">1½ hours</button>
+    </div>
+    <p class="note" id="sleep-left">When it ends, playback stops and the screen turns off.</p>
+    <div class="group-label">Playback</div>
+    <label class="toggle"><span>Skip intros and recaps</span><input type="checkbox" id="auto-skip"></label>
+    <label class="toggle"><span>Play next episode automatically</span><input type="checkbox" id="auto-next"></label>
+    <p class="note">Applies the next time you open an app.</p>
+    <label class="toggle" for="website-player"><span>Website player</span><select class="field" id="website-player" style="width:auto;max-width:58%"><option value="embedded">Built-in</option><option value="brave">Brave</option></select></label>
+    <p class="note">Brave uses its own sign-ins and Shields. Applies the next time you open a website.</p>
+    <p class="note" id="browser-msg" role="status" aria-live="polite" hidden></p>
+    <div class="group-label">Display</div>
+    <label class="toggle" for="display-select"><span>TV display</span><select class="field" id="display-select" style="width:auto;max-width:60%" disabled><option>Loading…</option></select></label>
+    <p class="note" id="display-msg" role="status" aria-live="polite" hidden></p>
+    <button class="row-btn" id="screen-on">Wake screen</button>
+    <button class="row-btn" id="screen-off">Turn screen off</button>
+    <div class="group-label">Power</div>
+    <p class="note" id="lid-status"></p>
+    <label class="toggle"><span>Keep Mac awake while Mac TV is open</span><input type="checkbox" id="keep-awake"></label>
+    <label class="toggle"><span>Stay awake with lid closed</span><input type="checkbox" id="lid-override"></label>
+    <p class="note">Works on battery and without the TV connected. Turns off by itself when the battery is low or the Mac gets hot.</p>
+    <div class="group-label">Network shares</div>
+    <div id="shares"></div>
+    <form id="share-form" autocomplete="off">
+      <input class="field" id="share-address" placeholder="Shared folder, e.g. nas.local/Movies" aria-label="Shared folder address" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input class="field" id="share-user" placeholder="User name (blank for guest)" aria-label="User name" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
+      <input class="field" id="share-password" type="password" placeholder="Password" aria-label="Password" autocomplete="off" style="margin-top:8px">
+      <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Add share</button>
+    </form>
+    <p class="note" id="shares-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. The password stays in the Mac's Keychain.</p>
+    <div class="group-label">Jellyfin servers</div>
+    <div id="jellyfin"></div>
+    <form id="jellyfin-form" autocomplete="off">
+      <input class="field" id="jellyfin-address" placeholder="Server, e.g. 192.168.1.5:8096" aria-label="Jellyfin server address" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input class="field" id="jellyfin-user" placeholder="User name" aria-label="Jellyfin user name" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
+      <input class="field" id="jellyfin-password" type="password" placeholder="Password" aria-label="Jellyfin password" autocomplete="off" style="margin-top:8px">
+      <button class="row-btn" type="submit" style="margin-top:8px;width:100%">Sign in</button>
+    </form>
+    <p class="note" id="jellyfin-msg" role="status" aria-live="polite">Its movies appear in Movies on the TV. Only a sign-in key is kept, in the Mac's Keychain.</p>
+    <div class="group-label">Paired devices</div>
+    <div id="devices"></div>
+    <button class="row-btn danger" id="revoke-all">Remove all paired devices</button>
+    <p class="note" id="devices-msg"></p>
+    <button class="row-btn" id="sleep">Sleep Mac</button>
+    <p class="note">After sleep, wake the Mac with its keyboard or by opening the lid.</p>
+  </div>
+</div>
+
+<div id="pair">
+  <h1>Pair with your TV</h1>
+  <p>Enter the 6-digit code chosen on the TV. It determines this phone’s access.</p>
+  <input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" aria-label="Pairing code">
+  <input id="device-name" maxlength="60" placeholder="Device name (optional)" aria-label="Device name">
+  <button id="pair-btn">Pair</button>
+  <p id="pair-err"></p>
+</div>
+
+<script src="remote.js"></script>
+</body>
+</html>
