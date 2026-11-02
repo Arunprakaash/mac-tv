@@ -7,7 +7,8 @@ struct PairSheet: View {
     var body: some View {
         let links = tv.pairingGuest ? tv.remoteGuestLinks : tv.remoteLinks
         HStack(alignment: .center, spacing: 52) {
-            HStack(spacing: 24) {
+            // Top-aligned, so the codes stay level when one has an address to type under it.
+            HStack(alignment: .top, spacing: 24) {
                 if links.isEmpty {
                     RoundedRectangle(cornerRadius: 28).fill(.white.opacity(0.1))
                         .frame(width: 300, height: 300)
