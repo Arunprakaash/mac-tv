@@ -5,8 +5,24 @@ import VideoToolbox
 
 /// Plays an MKV file with macOS's own decoders: MatroskaReader pulls the frames out and they go
 /// straight to a sample-buffer video layer and audio renderer, kept in step by one clock.
-final class MatroskaPlayback: NSObject, PlaybackEngine {
-    let videoLayer = AVSampleBufferDisplayLayer()
+///
+/// Threading: the PlaybackEngine methods are called on the main thread; reading and decoding run
+/// on `queue`, and only `queue` touches the state marked below; subtitle cues are guarded by
+/// `cueLock`. The compiler can't see a serial queue's confinement, hence `@unchecked Sendable`.
+final class MatroskaPlayback: NSObject, @unchecked Sendable {
+    /// What opening a file found. It's handed from the task that opened it to the main actor
+    /// once, and the playback made from it takes the reader over.
+    struct Opened: @unchecked Sendable {
+        fileprivate let reader: MatroskaReader
+        fileprivate let video: MatroskaReader.Track
+        fileprivate let videoFormat: CMVideoFormatDescription
+        fileprivate let audio: [(MatroskaReader.Track, CMAudioFormatDescription)]
+        fileprivate let subtitles: [MatroskaReader.Track]
+    }
+
+    let videoLayer: AVSampleBufferDisplayLayer
+    /// The layer's renderer, held directly so the decoding queue never goes through the layer.
+    private let videoRenderer: AVSampleBufferVideoRenderer
     var layer: CALayer { videoLayer }
     private(set) var duration: Double
     private(set) var failure: String?
@@ -38,8 +54,9 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
     private var cues: [SubtitleCue] = []
     private var endedFlag = false
 
-    /// Opens the file, or says why it can't play here (another app can take it).
-    static func open(_ url: URL) -> Result<MatroskaPlayback, PlaybackProblem> {
+    /// Opens the file, or says why it can't play here (another app can take it). It reads the
+    /// headers, so call it off the main thread; make the playback from the result on the main actor.
+    static func open(_ url: URL) -> Result<Opened, PlaybackProblem> {
         guard let reader = try? MatroskaReader(url: url) else { return .failure(.unreadable) }
         guard let video = reader.tracks.first(where: { $0.kind == .video }) else { return .failure(.unsupported("no video")) }
         guard !video.unsupportedEncoding, let videoFormat = videoFormat(for: video) else {
@@ -51,11 +68,15 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
             return .failure(.unsupported(reader.tracks.first { $0.kind == .audio }?.codec ?? "audio"))
         }
         let subtitles = reader.tracks.filter { $0.kind == .subtitle && SubtitleCue.isText(codec: $0.codec) }
-        return .success(MatroskaPlayback(reader: reader, video: video, videoFormat: videoFormat, audio: audio, subtitles: subtitles))
+        return .success(Opened(reader: reader, video: video, videoFormat: videoFormat, audio: audio, subtitles: subtitles))
     }
 
-    private init(reader: MatroskaReader, video: MatroskaReader.Track, videoFormat: CMVideoFormatDescription,
-                 audio: [(MatroskaReader.Track, CMAudioFormatDescription)], subtitles: [MatroskaReader.Track]) {
+    @MainActor
+    init(_ opened: Opened) {
+        let (reader, video, videoFormat, audio, subtitles) = (opened.reader, opened.video, opened.videoFormat,
+                                                              opened.audio, opened.subtitles)
+        videoLayer = AVSampleBufferDisplayLayer()
+        videoRenderer = videoLayer.sampleBufferRenderer
         self.reader = reader
         self.video = video
         self.videoFormat = videoFormat
@@ -70,7 +91,7 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
         super.init()
         videoLayer.videoGravity = .resizeAspect
         videoLayer.backgroundColor = CGColor.black
-        clock.addRenderer(videoLayer.sampleBufferRenderer)
+        clock.addRenderer(videoRenderer)
         clock.addRenderer(audioRenderer)
         reader.wanted = wantedTracks()
     }
@@ -130,15 +151,15 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
     func stop() {
         clock.setRate(0, time: .zero)
         queue.sync {
-            videoLayer.sampleBufferRenderer.stopRequestingMediaData()
+            videoRenderer.stopRequestingMediaData()
             audioRenderer.stopRequestingMediaData()
-            videoLayer.sampleBufferRenderer.flush()
+            videoRenderer.flush()
             audioRenderer.flush()
         }
     }
 
     var renderFailure: String? {
-        if videoLayer.sampleBufferRenderer.status == .failed { return "video" }
+        if videoRenderer.status == .failed { return "video" }
         if audioRenderer.status == .failed { return "audio" }
         return nil
     }
@@ -159,7 +180,7 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
         let time = CMTime(value: target, timescale: 1_000_000_000)
         clock.setRate(0, time: time)
         queue.async { [self] in
-            let renderer = videoLayer.sampleBufferRenderer
+            let renderer = videoRenderer
             renderer.stopRequestingMediaData()
             audioRenderer.stopRequestingMediaData()
             renderer.flush()
@@ -200,7 +221,7 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
     }
 
     private func feedVideo() {
-        let renderer = videoLayer.sampleBufferRenderer
+        let renderer = videoRenderer
         while renderer.isReadyForMoreMediaData {
             guard let block = next(for: video.number) else {
                 renderer.stopRequestingMediaData()
@@ -453,7 +474,8 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
                                            imageBufferAttributes: attributes, outputCallback: nil,
                                            decompressionSessionOut: &session) == noErr, let session else { return nil }
         defer { VTDecompressionSessionInvalidate(session) }
-        var image: CGImage?
+        // The frame decodes synchronously (no asynchronous flag), so the handler runs before this returns.
+        nonisolated(unsafe) var image: CGImage?
         VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, buffer, _, _ in
             guard status == noErr, let buffer else { return }
             VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
@@ -462,3 +484,6 @@ final class MatroskaPlayback: NSObject, PlaybackEngine {
         return image
     }
 }
+
+// Declared apart from the class, so the protocol's main-actor isolation isn't inferred for all of it.
+extension MatroskaPlayback: PlaybackEngine {}

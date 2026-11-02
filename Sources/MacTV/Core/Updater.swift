@@ -1,5 +1,5 @@
 import AppKit
-import Security
+@preconcurrency import Security // SecRequirement is immutable, so passing it to the install queue is safe.
 
 /// Keeps Mac TV up to date from its GitHub releases. It checks at launch and once a day. With
 /// automatic updates on (the default), a new version downloads straight away and installs only while

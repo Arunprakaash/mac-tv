@@ -282,7 +282,7 @@ final class JellyfinServers: ObservableObject {
 
     /// What Mac TV's player opens itself; Jellyfin converts the rest to HLS in fragmented MP4,
     /// copying the picture and sound when it can.
-    nonisolated static let profile: [String: Any] = [
+    nonisolated static var profile: [String: Any] { [
         "Name": "Mac TV",
         "MaxStreamingBitrate": 120_000_000,
         "MaxStaticBitrate": 120_000_000,
@@ -292,7 +292,7 @@ final class JellyfinServers: ObservableObject {
                                  "VideoCodec": "hevc,h264", "AudioCodec": "aac,ac3,eac3", "MaxAudioChannels": "6",
                                  "MinSegments": 1, "BreakOnNonKeyFrames": true]],
         "SubtitleProfiles": [["Format": "vtt", "Method": "Hls"]],
-    ]
+    ] }
 
     // MARK: Requests
 
@@ -336,7 +336,7 @@ final class JellyfinServers: ObservableObject {
                     getnameinfo($0, socklen_t(MemoryLayout<sockaddr_in>.size), &name, socklen_t(name.count), nil, 0, NI_NAMEREQD)
                 }
             }
-            return found == 0 ? String(cString: name) : nil
+            return found == 0 ? String(cBuffer: name) : nil
         }.value
         guard let name = name?.trimmingCharacters(in: CharacterSet(charactersIn: ".")), name.hasSuffix(".ts.net"),
               var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }

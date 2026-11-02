@@ -274,7 +274,7 @@ enum LAN {
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             guard getnameinfo(addr, socklen_t(addr.pointee.sa_len), &host, socklen_t(host.count),
                               nil, 0, NI_NUMERICHOST) == 0 else { continue }
-            let address = String(cString: host)
+            let address = String(cBuffer: host)
             if address.hasPrefix("169.254.") { continue }
             found.append((String(cString: entry.pointee.ifa_name), address))
         }
@@ -291,5 +291,12 @@ enum QRCode {
               let cgImage = CIContext().createCGImage(output, from: output.extent)
         else { return nil }
         return NSImage(cgImage: cgImage, size: output.extent.size)
+    }
+}
+
+extension String {
+    /// A C string from a fixed-size buffer, up to its first zero byte.
+    init(cBuffer buffer: [CChar]) {
+        self.init(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 }

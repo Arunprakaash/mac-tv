@@ -226,7 +226,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 }
             } else if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
                 opened = await Task.detached(priority: .userInitiated) { MatroskaPlayback.open(movie.url) }.value
-                    .map { $0 as PlaybackEngine }
+                    .map { MatroskaPlayback($0) as PlaybackEngine }
             } else {
                 opened = await AVPlayback.open(movie.url).map { $0 as PlaybackEngine }
             }

@@ -2,7 +2,8 @@ import Foundation
 import Network
 
 /// A tiny HTTP server on the LAN: serves the phone remote page and accepts its commands.
-/// Everything runs on the main queue.
+/// Everything runs on the main queue, so the Network framework's callbacks hop onto the main actor.
+@MainActor
 final class RemoteServer {
     typealias CommandHandler = @MainActor (RemoteCommand) -> Void
     typealias GuestCommandHandler = @MainActor (RemoteCommand) -> Bool
@@ -27,7 +28,7 @@ final class RemoteServer {
         var headerSeconds: TimeInterval = 15
         var bodySeconds: TimeInterval = 30
     }
-    private final class Client {
+    @MainActor private final class Client {
         let connection: NWConnection
         var timer: DispatchWorkItem?
         var requestStarted = Date()
@@ -89,32 +90,36 @@ final class RemoteServer {
             Log.remote.error("No free port for the phone remote")
             return
         }
-        let tryNext = { [weak self] in self?.start(ports: Array(ports.dropFirst()), onReady: onReady) }
+        let next = Array(ports.dropFirst())
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             let listener = try NWListener(using: params, on: nwPort)
             listener.newConnectionHandler = { [weak self] connection in
-                guard let self else { connection.cancel(); return }
-                self.accept(connection)
+                MainActor.assumeIsolated {
+                    guard let self else { connection.cancel(); return }
+                    self.accept(connection)
+                }
             }
             listener.stateUpdateHandler = { [weak self, weak listener] state in
-                switch state {
-                case .ready:
-                    guard self?.stopped == false else { listener?.cancel(); return }
-                    Log.remote.notice("Phone remote listening on port \(port, privacy: .public)")
-                    MainActor.assumeIsolated { onReady(port) }
-                case .failed:
-                    listener?.cancel()
-                    guard self?.stopped == false else { return }
-                    tryNext()
-                default: break
+                MainActor.assumeIsolated {
+                    switch state {
+                    case .ready:
+                        guard self?.stopped == false else { listener?.cancel(); return }
+                        Log.remote.notice("Phone remote listening on port \(port, privacy: .public)")
+                        onReady(port)
+                    case .failed:
+                        listener?.cancel()
+                        guard self?.stopped == false else { return }
+                        self?.start(ports: next, onReady: onReady)
+                    default: break
+                    }
                 }
             }
             listener.start(queue: .main)
             self.listener = listener
         } catch {
-            tryNext()
+            start(ports: next, onReady: onReady)
         }
     }
 
@@ -147,8 +152,10 @@ final class RemoteServer {
     private func armCloseDeadline(_ client: Client) {
         client.timer?.cancel()
         let timer = DispatchWorkItem { [weak self, weak client] in
-            guard let self, let client else { return }
-            self.discard(client)
+            MainActor.assumeIsolated {
+                guard let self, let client else { return }
+                self.discard(client)
+            }
         }
         client.timer = timer
         DispatchQueue.main.asyncAfter(deadline: .now() + limits.idleSeconds, execute: timer)
@@ -161,44 +168,50 @@ final class RemoteServer {
         let total = hasHeader ? limits.bodySeconds : limits.headerSeconds
         let remaining = max(0, total - Date().timeIntervalSince(client.requestStarted))
         let timer = DispatchWorkItem { [weak self, weak client] in
-            guard let self, let client else { return }
-            self.discard(client)
+            MainActor.assumeIsolated {
+                guard let self, let client else { return }
+                self.discard(client)
+            }
         }
         client.timer = timer
         DispatchQueue.main.asyncAfter(deadline: .now() + min(limits.idleSeconds, remaining), execute: timer)
         client.connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self, weak client] data, _, isComplete, error in
-            guard let self, let client, self.clients[ObjectIdentifier(client.connection)] != nil else { return }
-            client.timer?.cancel()
-            var buffer = buffer
-            if let data { buffer.append(data) }
-            while true {
-                switch HTTPRequest.parseResult(buffer) {
-                case .invalid(let status):
-                    let response = HTTPResponse.json(["error": "Invalid HTTP request"], status: status)
-                    self.armCloseDeadline(client)
-                    client.connection.send(content: response.serialized(keepAlive: false), completion: .contentProcessed { [weak self, weak client] _ in
-                        if let self, let client { self.discard(client) }
-                    })
-                    return
-                case .incomplete:
-                    if isComplete || error != nil { self.discard(client) }
-                    else { self.read(client, buffer: buffer) }
-                    return
-                case .complete(let request, let consumed):
-                    buffer = Data(buffer.dropFirst(consumed))
-                    client.requestStarted = Date()
-                    let response = MainActor.assumeIsolated { self.respond(to: request) }
-                    // One outstanding request per connection limits queued responses.
-                    // Close after a pipelined request; ordinary browser keep-alive remains supported.
-                    let keepAlive = request.keepAlive && buffer.isEmpty
-                    self.armCloseDeadline(client)
-                    let remaining = buffer
-                    client.connection.send(content: response.serialized(keepAlive: keepAlive), completion: .contentProcessed { [weak self, weak client] sendError in
-                        guard let self, let client else { return }
-                        if !keepAlive || sendError != nil { self.discard(client) }
-                        else { self.read(client, buffer: remaining) }
-                    })
-                    return
+            MainActor.assumeIsolated {
+                guard let self, let client, self.clients[ObjectIdentifier(client.connection)] != nil else { return }
+                client.timer?.cancel()
+                var buffer = buffer
+                if let data { buffer.append(data) }
+                while true {
+                    switch HTTPRequest.parseResult(buffer) {
+                    case .invalid(let status):
+                        let response = HTTPResponse.json(["error": "Invalid HTTP request"], status: status)
+                        self.armCloseDeadline(client)
+                        client.connection.send(content: response.serialized(keepAlive: false), completion: .contentProcessed { [weak self, weak client] _ in
+                            MainActor.assumeIsolated { if let self, let client { self.discard(client) } }
+                        })
+                        return
+                    case .incomplete:
+                        if isComplete || error != nil { self.discard(client) }
+                        else { self.read(client, buffer: buffer) }
+                        return
+                    case .complete(let request, let consumed):
+                        buffer = Data(buffer.dropFirst(consumed))
+                        client.requestStarted = Date()
+                        let response = self.respond(to: request)
+                        // One outstanding request per connection limits queued responses.
+                        // Close after a pipelined request; ordinary browser keep-alive remains supported.
+                        let keepAlive = request.keepAlive && buffer.isEmpty
+                        self.armCloseDeadline(client)
+                        let remaining = buffer
+                        client.connection.send(content: response.serialized(keepAlive: keepAlive), completion: .contentProcessed { [weak self, weak client] sendError in
+                            MainActor.assumeIsolated {
+                                guard let self, let client else { return }
+                                if !keepAlive || sendError != nil { self.discard(client) }
+                                else { self.read(client, buffer: remaining) }
+                            }
+                        })
+                        return
+                    }
                 }
             }
         }

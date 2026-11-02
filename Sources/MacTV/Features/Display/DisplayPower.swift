@@ -4,8 +4,8 @@ import IOKit.pwr_mgt
 /// Reports nearby user activity to power management without injecting input into an app.
 enum DisplayPower {
     typealias Declare = (inout IOPMAssertionID) -> IOReturn
-    typealias Release = (IOPMAssertionID) -> Void
-    typealias Schedule = (@escaping () -> Void) -> Void
+    typealias Release = @Sendable (IOPMAssertionID) -> Void
+    typealias Schedule = (@escaping @Sendable () -> Void) -> Void
 
     /// Success means macOS accepted the request, not that an external display powered on.
     /// The short-lived assertion is released after the wake request has had time to propagate.

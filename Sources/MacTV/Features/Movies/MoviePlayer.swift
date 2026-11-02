@@ -3,6 +3,7 @@ import SwiftUI
 
 /// What plays a movie: AVFoundation for the files macOS opens itself (MP4, MOV, M4V), or
 /// MatroskaPlayback for MKV. Used from the main thread.
+@MainActor
 protocol PlaybackEngine: AnyObject {
     var layer: CALayer { get }
     /// Seconds; 0 until known.
@@ -124,12 +125,14 @@ struct SubtitleCue {
 }
 
 /// Plays what AVFoundation can open. It draws the file's own subtitles itself.
+@MainActor
 final class AVPlayback: NSObject, PlaybackEngine {
     private let player: AVPlayer
     private let playerLayer: AVPlayerLayer
     private let audible: AVMediaSelectionGroup?
     private let legible: AVMediaSelectionGroup?
-    private var endObserver: NSObjectProtocol?
+    /// Set once in init and removed in deinit; NotificationCenter is safe to use from any thread.
+    nonisolated(unsafe) private var endObserver: NSObjectProtocol?
     var layer: CALayer { playerLayer }
     let duration: Double
     let audioOptions: [MediaOption]
@@ -144,9 +147,8 @@ final class AVPlayback: NSObject, PlaybackEngine {
         let duration = (try? await asset.load(.duration))?.seconds ?? 0
         let audible = try? await asset.loadMediaSelectionGroup(for: .audible)
         let legible = try? await asset.loadMediaSelectionGroup(for: .legible)
-        return .success(await MainActor.run {
-            AVPlayback(item: AVPlayerItem(asset: asset), duration: duration.isFinite ? duration : 0, audible: audible, legible: legible)
-        })
+        return .success(AVPlayback(item: AVPlayerItem(asset: asset), duration: duration.isFinite ? duration : 0,
+                                   audible: audible, legible: legible))
     }
 
     private init(item: AVPlayerItem, duration: Double, audible: AVMediaSelectionGroup?, legible: AVMediaSelectionGroup?) {
@@ -169,7 +171,9 @@ final class AVPlayback: NSObject, PlaybackEngine {
         }
         if let legible { item.select(nil, in: legible) }
         endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item,
-                                                             queue: .main) { [weak self] _ in self?.ended = true }
+                                                             queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.ended = true }
+        }
     }
 
     deinit { endObserver.map(NotificationCenter.default.removeObserver) }

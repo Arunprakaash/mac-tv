@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         for _ in 0..<500 { guard let block = reader.nextBlock() else { break }; counts[block.track, default: 0] += block.frames.count }
                         print("first 500 blocks, frames per track: \(counts)")
                     }
-                    switch MatroskaPlayback.open(url) {
+                    switch MatroskaPlayback.open(url).map(MatroskaPlayback.init) {
                     case .success(let engine): print("plays here: audio \(engine.audioOptions.map(\.title)), subtitles \(engine.subtitleOptions.map(\.title))")
                     case .failure(let problem): print("doesn't play here: \(problem)")
                     }
