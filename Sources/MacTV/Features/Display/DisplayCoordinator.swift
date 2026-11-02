@@ -22,20 +22,23 @@ final class DisplayCoordinator: ObservableObject {
     @Published private(set) var displaysSleeping = false
     private var lastDisplayWakeRequest = -Double.infinity
 
-    init(tv: TVController? = nil) {
+    private let preferences: Preferences
+
+    init(tv: TVController? = nil, preferences: Preferences = .shared) {
         self.tv = tv
+        self.preferences = preferences
     }
 
     /// Prevent the Mac from sleeping automatically while Mac TV is open so the remote remains responsive.
     var keepMacAwake: Bool {
-        get { Preferences.shared.keepMacAwake }
-        set { Preferences.shared.keepMacAwake = newValue; applyPower() }
+        get { preferences.keepMacAwake }
+        set { preferences.keepMacAwake = newValue; applyPower() }
     }
 
     /// Keep running with the lid closed even on battery or without a TV connected.
     var lidOverride: Bool {
-        get { Preferences.shared.lidOverride }
-        set { Preferences.shared.lidOverride = newValue; applyPower() }
+        get { preferences.lidOverride }
+        set { preferences.lidOverride = newValue; applyPower() }
     }
 
     /// One line for the remote about what closing the lid will do.
@@ -103,13 +106,13 @@ final class DisplayCoordinator: ObservableObject {
 
         if lidOverride, lidSleepOff == false {
             if let reason = lidOverrideStopReason() {
-                Preferences.shared.lidOverride = false
+                preferences.lidOverride = false
                 tv?.showToast(reason)
             } else if LidSleep.setPrevented(true) {
                 lidSleepOff = true
                 lidGuard = LidSleep.startGuard()
             } else {
-                Preferences.shared.lidOverride = false
+                preferences.lidOverride = false
                 tv?.showToast("This Mac doesn't allow staying awake with the lid closed")
             }
         } else if !lidOverride, lidSleepOff {

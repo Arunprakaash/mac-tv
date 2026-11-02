@@ -65,6 +65,8 @@ One Swift package, one app target, organised by feature:
 
 The phone remote is ordinary web files in `Features/Remote/Page` (`remote.html`, `remote.css`, `remote.js`), bundled as a package resource and served as one page with the stylesheet and script inline. The web tests read the same files.
 
+App-wide services (preferences, the movie library, Jellyfin, network shares, updates, Top Shelf, sounds) come in through `AppServices` and are held by `TVController`; feature code uses `tv.movieLibrary` and the like rather than `.shared`, so tests can hand in their own. The package builds in the Swift 6 language mode, so the compiler checks thread safety.
+
 A feature with state of its own keeps it in a coordinator that publishes it (`PlaybackCoordinator`, `RemoteCoordinator`, `DisplayCoordinator`, `AudioCoordinator`, `IdleCoordinator`), rather than in `TVController`. A feature uses Core and DesignSystem freely, and reaches other features only through `TVController`. New code goes in the folder of the feature it belongs to; something two features need moves to Core or DesignSystem.
 
 ## How some parts work

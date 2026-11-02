@@ -109,7 +109,7 @@ extension TVController {
             includingPropertiesForKeys: [.volumeIsInternalKey], options: .skipsHiddenFiles)) ?? []
         roots += volumes.filter { (try? $0.resourceValues(forKeys: [.volumeIsInternalKey]).volumeIsInternal) == false }
             .map { .init(name: $0.lastPathComponent, url: $0) }
-        roots += MovieLibrary.shared.folders.map { .init(name: $0.lastPathComponent, url: $0) }
+        roots += movieLibrary.folders.map { .init(name: $0.lastPathComponent, url: $0) }
         var seen = Set<String>()
         return PhoneFiles(roots: roots.filter { seen.insert($0.url.resolvingSymlinksInPath().standardizedFileURL.path).inserted })
     }

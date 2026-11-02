@@ -18,7 +18,7 @@ extension TVController {
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
         switch shelfService.kind {
-        case .web, .app, .steam, .movies: return TopShelfFeed.shared.searchURL(for: shelfService) == nil ? 1 : 2
+        case .web, .app, .steam, .movies: return topShelf.searchURL(for: shelfService) == nil ? 1 : 2
         case .addApp, .settings: return 0
         }
     }
@@ -30,7 +30,7 @@ extension TVController {
         case .app: break
         }
         guard (index >= columns) == inGrid else { return }
-        if focus != .app(index) { Feedback.shared.play(.move, from: .pointer) }
+        if focus != .app(index) { feedback.play(.move, from: .pointer) }
         setFocus(.app(index))
         self.tilt = tilt
     }
@@ -88,7 +88,7 @@ extension TVController {
     }
 
     func activateShelf(_ index: Int) {
-        if index == 0, let url = TopShelfFeed.shared.searchURL(for: shelfService) {
+        if index == 0, let url = topShelf.searchURL(for: shelfService) {
             playbackCoordinator.playWeb(shelfService, url: url)
         } else {
             open(shelfService)

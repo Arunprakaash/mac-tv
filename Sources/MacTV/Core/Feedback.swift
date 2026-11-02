@@ -23,16 +23,16 @@ final class Feedback: ObservableObject {
 
     /// Sounds and haptics, on unless turned off in Settings.
     var enabled: Bool {
-        get { Preferences.shared.navigationSounds }
-        set { Preferences.shared.navigationSounds = newValue }
+        get { preferences.navigationSounds }
+        set { preferences.navigationSounds = newValue }
     }
 
     /// Volume for navigation sounds (0.0 to 1.0, defaults to 0.70).
     var volume: Float {
-        get { Preferences.shared.navigationSoundVolume }
+        get { preferences.navigationSoundVolume }
         set {
             let clamped = max(0, min(1, newValue))
-            Preferences.shared.navigationSoundVolume = clamped
+            preferences.navigationSoundVolume = clamped
             engine.mainMixerNode.outputVolume = clamped
         }
     }
@@ -78,7 +78,10 @@ final class Feedback: ObservableObject {
     private var controllerEngine: CHHapticEngine?
     private weak var hapticController: GCController?
 
-    private init() {
+    private let preferences: Preferences
+
+    init(preferences: Preferences = .shared) {
+        self.preferences = preferences
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
         for cue in Cue.allCases { buffers[cue] = Self.synthesize(cue, format: format) }
         engine.mainMixerNode.outputVolume = volume

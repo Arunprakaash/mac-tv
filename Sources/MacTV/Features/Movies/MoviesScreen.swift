@@ -44,7 +44,7 @@ extension TVController {
     static let movieColumns = 7
 
     var movieRows: [MovieRow] {
-        let library = MovieLibrary.shared
+        let library = movieLibrary
         var rows: [MovieRow] = []
         let started = library.continueWatching.prefix(Self.movieColumns)
         if !started.isEmpty {
@@ -73,7 +73,7 @@ extension TVController {
 
     func openMovies() {
         movies = MoviesBrowser()
-        MovieLibrary.shared.refresh()
+        movieLibrary.refresh()
     }
 
     func handleMovies(_ command: RemoteCommand) {
@@ -87,7 +87,7 @@ extension TVController {
             case .back: browser.resuming = nil
             case .select, .playPause:
                 movies?.resuming = nil
-                if let movie = MovieLibrary.shared.movie(path) {
+                if let movie = movieLibrary.movie(path) {
                     playMovie(movie, from: browser.resumeRow == 0 ? max(0, (movie.position ?? 0) - 5) : 0)
                 }
                 return
@@ -130,7 +130,7 @@ extension TVController {
         case .folders:
             movies?.folderRow = 0
         case .movie(let path):
-            guard let movie = MovieLibrary.shared.movie(path) else { return }
+            guard let movie = movieLibrary.movie(path) else { return }
             if movie.inProgress {
                 movies?.resuming = path
                 movies?.resumeRow = 0
@@ -144,7 +144,7 @@ extension TVController {
 
     private func handleFolders(_ command: RemoteCommand) {
         guard let row = movies?.folderRow else { return }
-        let count = MovieLibrary.shared.suggestedFolders.count + JellyfinServers.shared.servers.count + 3
+        let count = movieLibrary.suggestedFolders.count + jellyfin.servers.count + 3
         switch command {
         case .back: movies?.folderRow = nil
         case .move(.up): movies?.folderRow = max(0, row - 1)
@@ -156,19 +156,19 @@ extension TVController {
 
     func activateFolderRow(_ row: Int) {
         movies?.folderRow = row
-        let suggested = MovieLibrary.shared.suggestedFolders
-        let servers = JellyfinServers.shared.servers
+        let suggested = movieLibrary.suggestedFolders
+        let servers = jellyfin.servers
         let extras = suggested.count + servers.count
         if suggested.indices.contains(row) {
             // An offline share reconnects; anything else switches on or off.
-            let shares = NetworkShares.shared
+            let shares = networkShares
             if let share = shares.share(for: suggested[row]), shares.status[share.id] != .connected {
                 shares.connect(share, addToMovies: false)
             } else {
-                MovieLibrary.shared.toggle(suggested[row])
+                movieLibrary.toggle(suggested[row])
             }
         } else if row < extras {
-            JellyfinServers.shared.activate(servers[row - suggested.count])
+            jellyfin.activate(servers[row - suggested.count])
         } else if row == extras {
             movies?.shareForm = ShareForm()
         } else if row == extras + 1 {
@@ -221,7 +221,7 @@ extension TVController {
     /// Adds the share and waits for it to connect: closes on success, or shows why it didn't.
     private func submitShareForm() {
         guard var form = movies?.shareForm else { return }
-        let shares = NetworkShares.shared
+        let shares = networkShares
         guard let share = shares.add(address: form.address, user: form.user, password: form.password) else {
             form.message = form.address.isEmpty ? "Type the shared folder's address first." : "Use an address like nas.local/Movies."
             form.failed = true
@@ -258,8 +258,9 @@ extension TVController {
         form.connecting = true
         form.message = "Signing in…"
         movies?.shareForm = form
+        let jellyfin = jellyfin
         Task { @MainActor [weak self] in
-            let error = await JellyfinServers.shared.signIn(address: form.address, user: form.user, password: form.password)
+            let error = await jellyfin.signIn(address: form.address, user: form.user, password: form.password)
             guard let self, self.movies?.shareForm?.connecting == true else { return }
             if let error {
                 self.movies?.shareForm?.connecting = false
@@ -267,7 +268,7 @@ extension TVController {
                 self.movies?.shareForm?.failed = true
             } else {
                 self.movies?.shareForm = nil
-                let name = JellyfinServers.shared.servers.last?.name ?? "the server"
+                let name = jellyfin.servers.last?.name ?? "the server"
                 self.showToast("Signed in to \(name). Its movies are on the way.")
             }
         }
@@ -284,7 +285,7 @@ extension TVController {
         guard let window else { return }
         panel.beginSheetModal(for: window) { response in
             guard response == .OK else { return }
-            MainActor.assumeIsolated { panel.urls.forEach(MovieLibrary.shared.add) }
+            MainActor.assumeIsolated { panel.urls.forEach(self.movieLibrary.add) }
         }
     }
 }
@@ -301,9 +302,14 @@ private enum PosterLayout {
 
 struct MoviesScreen: View {
     @ObservedObject var tv: TVController
-    @ObservedObject private var library = MovieLibrary.shared
+    @ObservedObject private var library: MovieLibrary
     @Environment(\.canvasSize) private var canvas
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(tv: TVController) {
+        _tv = ObservedObject(wrappedValue: tv)
+        _library = ObservedObject(wrappedValue: tv.movieLibrary)
+    }
 
     var body: some View {
         let rows = tv.movieRows
@@ -337,7 +343,7 @@ struct MoviesScreen: View {
                         HStack(spacing: PosterLayout.spacing) {
                             ForEach(Array(row.items.enumerated()), id: \.element) { column, item in
                                 PosterTile(item: item, progress: row.progress,
-                                           focused: focus.row == rowIndex && focus.column == column)
+                                           focused: focus.row == rowIndex && focus.column == column, library: library)
                                     .onTapGesture {
                                         tv.movies?.row = rowIndex
                                         tv.movies?.column = column
@@ -454,7 +460,7 @@ struct PosterTile: View {
     let item: MovieItem
     let progress: Bool
     let focused: Bool
-    @ObservedObject private var library = MovieLibrary.shared
+    @ObservedObject var library: MovieLibrary
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -526,11 +532,19 @@ struct PosterTile: View {
 struct FoldersSheet: View {
     @ObservedObject var tv: TVController
     let focusedRow: Int
-    @ObservedObject private var library = MovieLibrary.shared
-    @ObservedObject private var shares = NetworkShares.shared
-    @ObservedObject private var jellyfin = JellyfinServers.shared
+    @ObservedObject private var library: MovieLibrary
+    @ObservedObject private var shares: NetworkShares
+    @ObservedObject private var jellyfin: JellyfinServers
     @Environment(\.canvasSize) private var canvas
     @Namespace private var focusSpace
+
+    init(tv: TVController, focusedRow: Int) {
+        _tv = ObservedObject(wrappedValue: tv)
+        self.focusedRow = focusedRow
+        _library = ObservedObject(wrappedValue: tv.movieLibrary)
+        _shares = ObservedObject(wrappedValue: tv.networkShares)
+        _jellyfin = ObservedObject(wrappedValue: tv.jellyfin)
+    }
 
     var body: some View {
         let folders = library.suggestedFolders

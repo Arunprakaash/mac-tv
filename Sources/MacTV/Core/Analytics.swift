@@ -105,7 +105,7 @@ extension TVController {
             "phonePaired": String(phonePaired),
             "controllerConnected": String(controller != nil),
             "screenSaver": ScreenSaverSettings.wallpaper.rawValue,
-            "sounds": String(Feedback.shared.enabled),
+            "sounds": String(feedback.enabled),
             "keepMacAwake": String(keepMacAwake),
             "lidOverride": String(lidOverride),
             "autoSkip": String(autoSkip),

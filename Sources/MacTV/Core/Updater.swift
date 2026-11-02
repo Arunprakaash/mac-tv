@@ -11,6 +11,12 @@ import AppKit
 final class Updater: ObservableObject {
     static let shared = Updater()
 
+    private let preferences: Preferences
+
+    init(preferences: Preferences = .shared) {
+        self.preferences = preferences
+    }
+
     enum State: Equatable {
         case idle, checking, upToDate
         case available(version: String, download: URL)
@@ -39,9 +45,9 @@ final class Updater: ObservableObject {
 
     /// Install new versions on their own while Mac TV is idle. On unless turned off.
     var automatic: Bool {
-        get { Preferences.shared.automaticUpdates }
+        get { preferences.automaticUpdates }
         set {
-            Preferences.shared.automaticUpdates = newValue
+            preferences.automaticUpdates = newValue
             if newValue, case .available(_, let url) = state { install(from: url, now: false) }
         }
     }
@@ -75,11 +81,11 @@ final class Updater: ObservableObject {
             try? await Task.sleep(for: .seconds(20))
             self.check()
         }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { _ in
-            MainActor.assumeIsolated { Updater.shared.check() }
+        timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.check() }
         }
-        idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
-            MainActor.assumeIsolated { Updater.shared.installIfIdle() }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.installIfIdle() }
         }
     }
 
@@ -111,10 +117,10 @@ final class Updater: ObservableObject {
         state = .checking
         var request = URLRequest(url: Self.latestRelease, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
             let release = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             Task { @MainActor in
-                let shared = Updater.shared
+                guard let shared = self else { return }
                 guard let release, let tag = release["tag_name"] as? String else {
                     shared.state = .failed(error == nil ? "Couldn't read the latest release." : "Couldn't reach GitHub.")
                     return
@@ -165,7 +171,7 @@ final class Updater: ObservableObject {
             return
         }
         state = .downloading(0)
-        let task = URLSession.shared.downloadTask(with: url) { file, response, error in
+        let task = URLSession.shared.downloadTask(with: url) { [weak self] file, response, error in
             let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
             // The downloaded file is removed when this returns, so move it somewhere of our own first.
             var kept: URL?
@@ -179,24 +185,25 @@ final class Updater: ObservableObject {
                 }
             }
             Task { @MainActor in
-                Updater.shared.progress = nil
+                guard let self else { return }
+                self.progress = nil
                 guard let kept else {
-                    Updater.shared.state = .failed(error == nil ? "The download didn't finish." : "Couldn't download the update.")
+                    self.state = .failed(error == nil ? "The download didn't finish." : "Couldn't download the update.")
                     return
                 }
                 if now {
-                    Updater.shared.state = .installing
-                    Updater.shared.installDiskImage(kept)
+                    self.state = .installing
+                    self.installDiskImage(kept)
                 } else {
-                    Updater.shared.state = .ready(version: version, image: kept)
-                    Updater.shared.installIfIdle()
+                    self.state = .ready(version: version, image: kept)
+                    self.installIfIdle()
                 }
             }
         }
-        progress = task.progress.observe(\.fractionCompleted) { progress, _ in
+        progress = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
             let fraction = progress.fractionCompleted
             Task { @MainActor in
-                if case .downloading = Updater.shared.state { Updater.shared.state = .downloading(fraction) }
+                if let self, case .downloading = self.state { self.state = .downloading(fraction) }
             }
         }
         download = task
@@ -208,7 +215,7 @@ final class Updater: ObservableObject {
         let bundle = Bundle.main.bundleURL
         let work = image.deletingLastPathComponent()
         let requirement = Self.ownRequirement()
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Self.replaceApp(at: bundle, withAppIn: image, work: work, requirement: requirement)
             try? FileManager.default.removeItem(at: work)
             Task { @MainActor in
@@ -217,7 +224,7 @@ final class Updater: ObservableObject {
                     Self.relaunch(bundle)
                 case .failure(let error):
                     UserDefaults.standard.removeObject(forKey: "restartedForUpdate")
-                    Updater.shared.state = .failed(error.message)
+                    self?.state = .failed(error.message)
                 }
             }
         }

@@ -63,14 +63,14 @@ final class NetworkShares: ObservableObject {
 
     func start() {
         connectAll()
-        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { _ in
-            MainActor.assumeIsolated { NetworkShares.shared.connectAll() }
+        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.connectAll() }
         }
         let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { path in
+        monitor.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == .satisfied
             Task { @MainActor in
-                let shares = NetworkShares.shared
+                guard let shares = self else { return }
                 // The network just came back: give it a moment, then reconnect.
                 if satisfied && !shares.lastPathSatisfied {
                     try? await Task.sleep(for: .seconds(3))
@@ -81,10 +81,10 @@ final class NetworkShares: ObservableObject {
         }
         monitor.start(queue: .main)
         self.monitor = monitor
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(5))
-                NetworkShares.shared.connectAll()
+                self?.connectAll()
             }
         }
     }
@@ -171,10 +171,10 @@ final class NetworkShares: ObservableObject {
         status[share.id] = .connecting
         let password = share.user.isEmpty ? nil : ShareKeychain.read(host: share.host, user: share.user)
         let user = share.user
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             let result = Self.mount(url, user: user, password: password)
             Task { @MainActor in
-                let shares = NetworkShares.shared
+                guard let shares = self else { return }
                 guard shares.shares.contains(where: { $0.id == share.id }) else { return }
                 if let path = result.path ?? Self.mountedPath(host: share.host, share: share.share) {
                     shares.connected(share.id, at: path, addToMovies: addToMovies)
@@ -275,7 +275,7 @@ extension TVController {
     /// The phone's Network Shares section. Trusted remotes only: the server turns guests away.
     func handleSharesRequest(_ request: HTTPRequest) -> HTTPResponse? {
         guard request.path == "/shares" || request.path.hasPrefix("/shares/") else { return nil }
-        let shares = NetworkShares.shared
+        let shares = networkShares
         let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
         switch (request.method, request.path) {
         case ("GET", "/shares"):

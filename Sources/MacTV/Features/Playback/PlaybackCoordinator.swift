@@ -29,8 +29,11 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
 
     private var playbackRequest = UUID()
 
-    init(tv: TVController? = nil) {
+    private let jellyfin: JellyfinServers
+
+    init(tv: TVController? = nil, jellyfin: JellyfinServers = .shared) {
         self.tv = tv
+        self.jellyfin = jellyfin
         super.init()
     }
 
@@ -213,7 +216,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             let opened: Result<PlaybackEngine, PlaybackProblem>
             var stream: JellyfinServers.Stream?
             if movie.isRemote {
-                switch await JellyfinServers.shared.stream(for: movie) {
+                switch await jellyfin.stream(for: movie) {
                 case .success(let found):
                     stream = found
                     opened = await AVPlayback.open(found.url).map { $0 as PlaybackEngine }
@@ -237,7 +240,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             let format = movie.isRemote ? "jellyfin" : movie.url.pathExtension.lowercased()
             switch opened {
             case .success(let engine):
-                if let stream { JellyfinServers.shared.started(stream, movie: movie, at: seconds) }
+                if let stream { jellyfin.started(stream, movie: movie, at: seconds) }
                 Analytics.send(.moviePlayed, ["format": format, "player": engine is AVPlayback ? "system" : "matroska",
                                               "resumed": String(seconds > 0)])
                 startMovie(movie, engine: engine, from: seconds)
@@ -271,7 +274,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     func closeMovie() {
         playbackRequest = UUID()
         currentLocalMovie = nil
-        if let player = moviePlayer { JellyfinServers.shared.stopped(player.movie, at: player.engine.currentTime) }
+        if let player = moviePlayer { jellyfin.stopped(player.movie, at: player.engine.currentTime) }
         moviePlayer?.stop()
         if let path = moviePlayer?.movie.path {
             tv?.reconcileMovieBrowserPosition(for: path)
