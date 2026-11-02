@@ -4,99 +4,6 @@ import SwiftUI
 import IOKit.pwr_mgt
 import WebKit
 
-enum RemoteCommand {
-    enum Direction: String { case up, down, left, right }
-
-    case move(Direction), select, back, home
-    case playPause, seek(forward: Bool)
-    case volume(Int), mute
-    case text(String), deleteBackward
-    case pointer(dx: Double, dy: Double), click, scroll(dy: Double)
-    case launch(String), openInBrowser
-    case screenOff, screenOn, sleepMac
-    case sleepTimer(minutes: Int)
-    case controlCenter
-    case nextControl, previousControl, activateBrowser, browserFullscreen, retryBrowser
-    case setting(String, Bool)
-
-    init?(json: [String: Any]) {
-        guard let action = json["a"] as? String else { return nil }
-        switch action {
-        case "up", "down", "left", "right": self = .move(Direction(rawValue: action)!)
-        case "ok": self = .select
-        case "back": self = .back
-        case "home": self = .home
-        case "playpause": self = .playPause
-        case "rewind": self = .seek(forward: false)
-        case "forward": self = .seek(forward: true)
-        case "volup": self = .volume(6)
-        case "voldown": self = .volume(-6)
-        case "mute": self = .mute
-        case "text":
-            guard let text = json["t"] as? String, !text.isEmpty else { return nil }
-            self = .text(String(text.prefix(500)))
-        case "backspace": self = .deleteBackward
-        case "pointer": self = .pointer(dx: json["dx"] as? Double ?? 0, dy: json["dy"] as? Double ?? 0)
-        case "click": self = .click
-        case "scroll": self = .scroll(dy: json["dy"] as? Double ?? 0)
-        case "launch":
-            guard let id = json["id"] as? String else { return nil }
-            self = .launch(id)
-        case "browser": self = .openInBrowser
-        case "screenoff": self = .screenOff
-        case "screenon": self = .screenOn
-        case "sleep": self = .sleepMac
-        case "sleeptimer": self = .sleepTimer(minutes: json["m"] as? Int ?? 0)
-        case "controlcenter": self = .controlCenter
-        case "nextcontrol": self = .nextControl
-        case "previouscontrol": self = .previousControl
-        case "activatebrowser": self = .activateBrowser
-        case "browserfullscreen": self = .browserFullscreen
-        case "retrybrowser": self = .retryBrowser
-        case "setting":
-            guard let key = json["k"] as? String, let value = json["v"] as? Bool else { return nil }
-            self = .setting(key, value)
-        default: return nil
-        }
-    }
-}
-
-/// A key press delivered to the web view as if typed on the Mac's keyboard.
-struct Key {
-    let code: UInt16
-    let chars: String
-    var flags: NSEvent.ModifierFlags = []
-
-    private static func arrow(_ code: UInt16, _ scalar: Int) -> Key {
-        Key(code: code, chars: String(UnicodeScalar(UInt32(scalar))!), flags: [.numericPad, .function])
-    }
-
-    static let left = arrow(123, NSLeftArrowFunctionKey)
-    static let right = arrow(124, NSRightArrowFunctionKey)
-    static let down = arrow(125, NSDownArrowFunctionKey)
-    static let up = arrow(126, NSUpArrowFunctionKey)
-    static let enter = Key(code: 36, chars: "\r")
-    static let escape = Key(code: 53, chars: "\u{1b}")
-    static let space = Key(code: 49, chars: " ")
-    static let delete = Key(code: 51, chars: "\u{7f}")
-
-    static func direction(_ d: RemoteCommand.Direction) -> Key {
-        switch d {
-        case .up: up
-        case .down: down
-        case .left: left
-        case .right: right
-        }
-    }
-}
-
-struct RemoteLink: Identifiable {
-    let label: String
-    let address: String
-    let qr: NSImage?
-    var id: String { address }
-}
-
 @MainActor
 final class TVController: NSObject, ObservableObject {
     enum Mode: Equatable {
@@ -123,25 +30,6 @@ final class TVController: NSObject, ObservableObject {
         (lidSleepOff ? [.lid] : []) + [.controlCenter, .profile]
     }
 
-    enum SheetDestination: Int, Identifiable, Equatable, Comparable, CaseIterable {
-        case controlCenter = 0
-        case settings
-        case organizer
-        case pairing
-        case addApp
-        case topShelfPreferences
-        case playbackCheck
-        case profilePicker
-        case setup
-        case audioPicker
-
-        var id: Int { rawValue }
-
-        static func < (lhs: SheetDestination, rhs: SheetDestination) -> Bool {
-            lhs.rawValue < rhs.rawValue
-        }
-    }
-
     // MARK: - Dedicated Coordinators
 
     let playbackCoordinator: PlaybackCoordinator
@@ -165,39 +53,13 @@ final class TVController: NSObject, ObservableObject {
         get { pointerTilt.value }
         set { if pointerTilt.value != newValue { pointerTilt.value = newValue } }
     }
-    @Published var pairing = false {
-        didSet {
-            if pairing {
-                if !oldValue {
-                    remoteCoordinator.pairingGuest = false
-                    displayCoordinator.resetPairingFocus()
-                }
-                refreshRemoteURL()
-            } else {
-                remoteCoordinator.notePairingDismissed()
-            }
-        }
+    /// The sheets open over the home screen.
+    @Published var sheets = SheetStack() {
+        didSet { if sheets.pairing != oldValue.pairing { pairingChanged() } }
     }
-
-    /// The Settings sheet on the TV, while it's open.
-    @Published var settings: SettingsPanel?
-    /// Arrange apps with the keyboard, game controller or phone's D-pad.
-    @Published var organizer: AppOrganizer?
-    @Published var playbackCheck: PlaybackDiagnostics?
-    @Published var topShelfPreferences: TopShelfPreferencesPanel?
     @Published var playerFailure: PlayerFailure?
-    /// The add-app sheet on the TV, while it's open.
-    @Published var adder: AppAdder?
     /// The Movies app's screen, while it's open.
     @Published var movies: MoviesBrowser?
-    /// First-run setup, while it's showing.
-    @Published var setup: SetupFlow?
-    /// Control Center, while it's open.
-    @Published var controlCenter: ControlCenterPanel?
-    /// The "Who's watching?" screen, while it's showing.
-    @Published var profilePicker: ProfilePicker?
-    /// Audio output picker sheet, while it's open.
-    @Published var audioPicker: AudioPickerPanel?
     /// Who's watching: their apps and their sign-ins.
     @Published var profile: Profile
 
@@ -207,13 +69,10 @@ final class TVController: NSObject, ObservableObject {
     /// The focused button on Mac TV's own Brave screen.
     @Published var browserFocus = 0
     let browserPreferences: BrowserPreferences
-    @Published private(set) var toast: String?
-    /// The volume indicator, shown for a moment after the remote changes the volume.
-    @Published private(set) var volume: VolumeLevel?
+    /// Toasts, the volume indicator and controller banners.
+    let notices = Notices()
     /// The connected game controller, if any.
     @Published var controller: ControllerInfo?
-    /// A controller connecting or disconnecting, shown for a moment.
-    @Published private(set) var controllerNotice: ControllerNotice?
 
     /// The home screen's apps, in order; changes when the user adds or removes apps.
     @Published private(set) var services: [Service] = []
@@ -317,31 +176,8 @@ final class TVController: NSObject, ObservableObject {
     func activateExternalBrowser() { playbackCoordinator.activateExternalBrowser() }
     func closeExternalBrowser() { playbackCoordinator.closeExternalBrowser() }
 
-    // MARK: - Sheet Router State
-
-    var activeSheet: SheetDestination? {
-        if setup != nil { return .setup }
-        if profilePicker != nil { return .profilePicker }
-        if audioPicker != nil { return .audioPicker }
-        if playbackCheck != nil { return .playbackCheck }
-        if topShelfPreferences != nil { return .topShelfPreferences }
-        if adder != nil { return .addApp }
-        if pairing { return .pairing }
-        if organizer != nil { return .organizer }
-        if settings != nil { return .settings }
-        if controlCenter != nil { return .controlCenter }
-        return nil
-    }
-
-    func isTopSheet(_ destination: SheetDestination) -> Bool {
-        activeSheet == destination && !screensaver
-    }
-
     // MARK: - Private State
 
-    private var toastTask: Task<Void, Never>?
-    private var volumeTask: Task<Void, Never>?
-    private var noticeTask: Task<Void, Never>?
     private var controllerInput: ControllerInput?
     private var launchedAppID: String?
     /// A Steam game just launched from Mac TV: watched so Mac TV comes back when it quits.
@@ -668,16 +504,21 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
-        if setup != nil { handleSetup(command); return }
-        if profilePicker != nil { handleProfiles(command); return }
-        if audioPicker != nil { handleAudioPicker(command); return }
-        if playbackCheck != nil { switch command { case .back, .select: playbackCheck = nil; default: break }; return }
-        if topShelfPreferences != nil { handleTopShelfPreferences(command); return }
-        if adder != nil { handleAdder(command); return }
-        if pairing { handlePairing(command); return }
-        if organizer != nil { handleOrganizer(command); return }
-        if settings != nil { handleSettings(command); return }
-        if controlCenter != nil { handleControlCenter(command); return }
+        switch sheets.top {
+        case .setup: handleSetup(command); return
+        case .profilePicker: handleProfiles(command); return
+        case .audioPicker: handleAudioPicker(command); return
+        case .playbackCheck:
+            switch command { case .back, .select: playbackCheck = nil; default: break }
+            return
+        case .topShelfPreferences: handleTopShelfPreferences(command); return
+        case .addApp: handleAdder(command); return
+        case .pairing: handlePairing(command); return
+        case .organizer: handleOrganizer(command); return
+        case .settings: handleSettings(command); return
+        case .controlCenter: handleControlCenter(command); return
+        case nil: break
+        }
         if movies != nil {
             handleMovies(command)
             return
@@ -703,7 +544,7 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private var feedbackState: String {
-        String(describing: (focus, setup, profilePicker, audioPicker, controlCenter, settings, organizer, playbackCheck, topShelfPreferences, adder, movies, pairing, mode == .launcher))
+        String(describing: (focus, sheets, movies, mode == .launcher))
     }
 
     func iconPNG(for id: String) -> Data? {
@@ -780,13 +621,7 @@ final class TVController: NSObject, ObservableObject {
                 controlCenter = nil
             } else {
                 if mode != .launcher || movies != nil { goHome() }
-                settings = nil
-                audioPicker = nil
-                organizer = nil
-                playbackCheck = nil
-                topShelfPreferences = nil
-                pairing = false
-                adder = nil
+                sheets.closeDismissible()
                 openControlCenter()
             }
             return
@@ -845,13 +680,7 @@ final class TVController: NSObject, ObservableObject {
         if case .web = service.kind { opened["player"] = browserPreferences.choice(for: profile.id).rawValue }
         Analytics.send(.appOpened, opened)
         playbackCoordinator.resetPlaybackRequest()
-        settings = nil
-        audioPicker = nil
-        pairing = false
-        adder = nil
-        organizer = nil
-        playbackCheck = nil
-        topShelfPreferences = nil
+        sheets.closeDismissible()
         switch service.kind {
         case .web(let url):
             playbackCoordinator.playWeb(service, url: url)
@@ -882,13 +711,8 @@ final class TVController: NSObject, ObservableObject {
         movies = nil
         playbackCoordinator.closeWebPlayback()
         mode = .launcher
-        pairing = false
-        settings = nil
-        organizer = nil
-        playbackCheck = nil
-        topShelfPreferences = nil
+        sheets.closeDismissible()
         playerFailure = nil
-        controlCenter = nil
         pointer = nil
         launchedAppID = nil
         displayCoordinator.releasePlaybackKeepAwake()
@@ -913,6 +737,16 @@ final class TVController: NSObject, ObservableObject {
     func stepWebsitePlayer() {
         let next = browserPreferences.choice(for: profile.id) == .embedded ? BrowserChoice.brave : .embedded
         if !setWebsitePlayer(next.rawValue) { showToast("Install Brave Browser to select it.") }
+    }
+
+    private func pairingChanged() {
+        if sheets.pairing {
+            remoteCoordinator.pairingGuest = false
+            displayCoordinator.resetPairingFocus()
+            refreshRemoteURL()
+        } else {
+            remoteCoordinator.notePairingDismissed()
+        }
     }
 
     // MARK: - Helpers for Coordinators
@@ -999,14 +833,7 @@ final class TVController: NSObject, ObservableObject {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func showVolume(_ level: VolumeLevel) {
-        withAnimation(.smooth(duration: 0.3)) { volume = level }
-        volumeTask?.cancel()
-        volumeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.volume = nil } }
-        }
-    }
+    func showVolume(_ level: VolumeLevel) { notices.showVolume(level) }
 
     func startControllers() {
         controllerInput = ControllerInput(tv: self)
@@ -1017,21 +844,7 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    func showControllerNotice(_ notice: ControllerNotice) {
-        withAnimation(.smooth(duration: 0.35)) { controllerNotice = notice }
-        noticeTask?.cancel()
-        noticeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled { withAnimation(.smooth(duration: 0.4)) { self?.controllerNotice = nil } }
-        }
-    }
+    func showControllerNotice(_ notice: ControllerNotice) { notices.showController(notice) }
 
-    func showToast(_ text: String) {
-        toast = text
-        toastTask?.cancel()
-        toastTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled { self?.toast = nil }
-        }
-    }
+    func showToast(_ text: String) { notices.showToast(text) }
 }

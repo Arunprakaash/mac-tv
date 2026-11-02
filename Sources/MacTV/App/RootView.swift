@@ -39,152 +39,54 @@ struct RootView: View {
                 }
             }
 
-            if let notice = tv.controllerNotice {
-                TVCanvas {
-                    GlassGroup { ControllerBanner(notice: notice).tvGlassTransition() }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .padding(.trailing, 96)
-                        .padding(.top, 43)
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-            }
-
-            if let volume = tv.volume {
-                TVCanvas {
-                    GlassGroup {
-                        VolumeHUD(volume: volume).tvGlassTransition()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.trailing, 96)
-                    .padding(.top, 52)
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-            }
-
-            // Always in place, so the toast's glass materializes in and out rather than fading.
-            TVCanvas {
-                GlassGroup {
-                    if let toast = tv.toast {
-                        Text(toast)
-                            .font(.tv(.callout))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 34).padding(.vertical, 18)
-                            .tvGlass(in: Capsule())
-                            .tvGlassTransition()
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, 52)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+            NoticesOverlay(notices: tv.notices)
         }
         .environment(\.colorScheme, .dark)
         .background(Color.black.ignoresSafeArea())
-        .animation(Motion.appear, value: tv.toast)
-        .animation(Motion.appear, value: tv.audioPicker != nil)
-        .animation(Motion.appear, value: tv.pairing)
-        .animation(Motion.appear, value: tv.settings != nil)
-        .animation(Motion.appear, value: tv.organizer != nil)
-        .animation(Motion.appear, value: tv.topShelfPreferences != nil)
-        .animation(Motion.appear, value: tv.playbackCheck != nil)
-        .animation(Motion.appear, value: tv.setup != nil)
-        .animation(Motion.appear, value: tv.profilePicker != nil)
-        .animation(Motion.appear, value: tv.controlCenter != nil)
-        .animation(Motion.appear, value: tv.adder != nil)
+        .animation(Motion.appear, value: tv.sheets.open)
         .animation(Motion.appear, value: tv.movies != nil)
         .animation(.easeInOut(duration: 1.2), value: tv.screensaver)
     }
 }
 
-/// Routes modal sheets with top-level focus gating and transition animations.
+/// Draws the open sheets, bottom to top. Only the top one takes the pointer and VoiceOver.
 struct ModalSheetRouter: View {
     @ObservedObject var tv: TVController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
-            if tv.controlCenter != nil {
-                TVCanvas { ControlCenterView(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.controlCenter))
-                    .accessibilityHidden(!tv.isTopSheet(.controlCenter))
-                    .transition(.move(edge: .top))
-            }
-            if tv.settings != nil {
-                TVCanvas { SettingsSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.settings))
-                    .accessibilityHidden(!tv.isTopSheet(.settings))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.organizer != nil {
-                TVCanvas { AppOrganizerSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.organizer))
-                    .accessibilityHidden(!tv.isTopSheet(.organizer))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.pairing {
-                TVCanvas { PairSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.pairing))
-                    .accessibilityHidden(!tv.isTopSheet(.pairing))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.adder != nil {
-                TVCanvas { AddAppSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.addApp))
-                    .accessibilityHidden(!tv.isTopSheet(.addApp))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.topShelfPreferences != nil {
-                TVCanvas { TopShelfPreferencesSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.topShelfPreferences))
-                    .accessibilityHidden(!tv.isTopSheet(.topShelfPreferences))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.playbackCheck != nil {
-                TVCanvas { PlaybackCheckSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.playbackCheck))
-                    .accessibilityHidden(!tv.isTopSheet(.playbackCheck))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.audioPicker != nil {
-                TVCanvas { AudioPickerSheet(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.audioPicker))
-                    .accessibilityHidden(!tv.isTopSheet(.audioPicker))
-                    .background { SheetBackdrop() }
-                    .transition(Motion.sheet(reduceMotion: reduceMotion))
-            }
-            if tv.profilePicker != nil {
-                TVCanvas { ProfilesScreen(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.profilePicker))
-                    .accessibilityHidden(!tv.isTopSheet(.profilePicker))
-                    .background { SheetBackdrop() }
-                    .transition(.opacity)
-            }
-            if tv.setup != nil {
-                TVCanvas { SetupScreen(tv: tv) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(tv.isTopSheet(.setup))
-                    .accessibilityHidden(!tv.isTopSheet(.setup))
-                    .background { SheetBackdrop() }
-                    .transition(.opacity)
-            }
+        ForEach(tv.sheets.open, id: \.self) { layer in
+            TVCanvas { sheet(layer) }
+                .ignoresSafeArea()
+                .allowsHitTesting(tv.isTopSheet(layer))
+                .accessibilityHidden(!tv.isTopSheet(layer))
+                .background { if layer != .controlCenter { SheetBackdrop() } }
+                .transition(transition(layer))
+        }
+    }
+
+    @ViewBuilder
+    private func sheet(_ layer: SheetStack.Layer) -> some View {
+        switch layer {
+        case .controlCenter: ControlCenterView(tv: tv)
+        case .settings: SettingsSheet(tv: tv)
+        case .organizer: AppOrganizerSheet(tv: tv)
+        case .pairing: PairSheet(tv: tv)
+        case .addApp: AddAppSheet(tv: tv)
+        case .topShelfPreferences: TopShelfPreferencesSheet(tv: tv)
+        case .playbackCheck: PlaybackCheckSheet(tv: tv)
+        case .audioPicker: AudioPickerSheet(tv: tv)
+        case .profilePicker: ProfilesScreen(tv: tv)
+        case .setup: SetupScreen(tv: tv)
+        }
+    }
+
+    /// Control Center drops from the top like tvOS's; full-screen flows fade; the rest settle in.
+    private func transition(_ layer: SheetStack.Layer) -> AnyTransition {
+        switch layer {
+        case .controlCenter: .move(edge: .top)
+        case .profilePicker, .setup: .opacity
+        default: Motion.sheet(reduceMotion: reduceMotion)
         }
     }
 }

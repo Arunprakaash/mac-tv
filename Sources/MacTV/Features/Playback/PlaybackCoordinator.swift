@@ -14,10 +14,10 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     // Native Movie Playback
     @Published private(set) var moviePlayer: MoviePlayer?
     @Published private(set) var currentLocalMovie: Movie?
-    private(set) var localMoviePlayer = "native"
+    @Published private(set) var localMoviePlayer = "native"
 
     // IINA Playback
-    private var iinaSession: IINAPlaybackSession?
+    @Published private var iinaSession: IINAPlaybackSession?
     @Published private(set) var iinaPlaybackError: String?
     @Published private(set) var iinaPlaybackStatus = ""
 
@@ -49,14 +49,12 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
 
     func clearCurrentLocalMovie() {
         currentLocalMovie = nil
-        tv?.objectWillChange.send()
     }
 
     func stopMoviePlayer() {
         if let player = moviePlayer {
             player.stop()
             moviePlayer = nil
-            tv?.objectWillChange.send()
         }
     }
 
@@ -79,7 +77,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         tv?.bringToFront()
         Task { @MainActor [weak self] in self?.tv?.window?.makeFirstResponder(web) }
         tv?.showToast("Home on your phone remote, or ⌘⇧H, comes back here")
-        tv?.objectWillChange.send()
     }
 
     func closeWebPlayback() {
@@ -90,7 +87,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         webView = nil
         closePopups()
         tv?.displayCoordinator.releasePlaybackKeepAwake()
-        tv?.objectWillChange.send()
     }
 
     private func closePopups() {
@@ -213,7 +209,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         playbackRequest = request
         currentLocalMovie = movie
         localMoviePlayer = "native"
-        tv?.objectWillChange.send()
         Task { @MainActor in
             let opened: Result<PlaybackEngine, PlaybackProblem>
             var stream: JellyfinServers.Stream?
@@ -227,7 +222,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                     guard playbackRequest == request else { return }
                     currentLocalMovie = nil
                     tv?.showToast(problem.message)
-                    tv?.objectWillChange.send()
                     return
                 }
             } else if ["mkv", "webm"].contains(movie.url.pathExtension.lowercased()) {
@@ -272,7 +266,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(movie.title) in Mac TV")
         tv?.bringToFront()
         player.start(at: seconds)
-        tv?.objectWillChange.send()
     }
 
     func closeMovie() {
@@ -290,7 +283,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             tv?.setMode(.launcher)
         }
         tv?.displayCoordinator.releasePlaybackKeepAwake()
-        tv?.objectWillChange.send()
     }
 
     private func openElsewhere(_ movie: Movie) {
@@ -298,7 +290,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             currentLocalMovie = nil
             Log.movies.error("Server movie doesn't play in Mac TV's player")
             tv?.showToast("Mac TV couldn't play \(movie.title) from \(movie.server ?? "the server").")
-            tv?.objectWillChange.send()
             return
         }
         let iina = "com.colliderli.iina", vlc = "org.videolan.vlc"
@@ -351,7 +342,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 iinaPlaybackError = error.localizedDescription
                 Log.playback.failure("IINA", error)
                 tv?.showToast(error.localizedDescription)
-                tv?.objectWillChange.send()
                 return false
             }
         }
@@ -374,17 +364,14 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 self.iinaPlaybackStatus = "IINA needs attention"
                 if !session.isRunning { self.tv?.displayCoordinator.releasePlaybackKeepAwake() }
                 self.tv?.showToast(error.localizedDescription)
-                self.tv?.objectWillChange.send()
             }
             session.onReady = { [weak self, weak session] in
                 guard let self, let session, self.iinaSession === session else { return }
                 self.iinaPlaybackError = nil
                 self.iinaPlaybackStatus = "IINA on \(screen.localizedName)"
-                self.tv?.objectWillChange.send()
             }
             try session.launch(file: movie.url, subtitle: subtitle, position: pos, screen: screen)
             tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching a movie in IINA")
-            tv?.objectWillChange.send()
             return true
         } catch {
             launched?.close()
@@ -393,7 +380,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             iinaPlaybackError = error.localizedDescription
             Log.playback.failure("IINA", error)
             tv?.showToast(error.localizedDescription)
-            tv?.objectWillChange.send()
             return false
         }
     }
@@ -404,7 +390,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         iinaPlaybackError = nil
         iinaPlaybackStatus = ""
         previous?.close(immediate: terminating)
-        tv?.objectWillChange.send()
     }
 
     func handleIINACommand(_ command: RemoteCommand) {
@@ -418,7 +403,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             iinaPlaybackError = error.localizedDescription
             Log.playback.failure("IINA", error)
             tv?.showToast(error.localizedDescription)
-            tv?.objectWillChange.send()
         }
     }
 
@@ -482,7 +466,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         tv?.setMode(.player(service))
         tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(service.name) in Brave")
         openExternalBrowser(session, url: url)
-        tv?.objectWillChange.send()
     }
 
     func retryExternalBrowser() {
@@ -502,7 +485,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         }
         externalBrowserError = nil
         tv?.setMode(.player(service))
-        tv?.objectWillChange.send()
     }
 
     private func openExternalBrowser(_ session: BraveSession, url: URL) {
@@ -510,7 +492,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         playbackRequest = request
         externalBrowserError = nil
         externalBrowserOpening = true
-        tv?.objectWillChange.send()
         Task { @MainActor [weak self] in
             do {
                 try await session.open(url)
@@ -525,7 +506,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 }
                 try session.activate()
                 self.externalBrowserOpening = false
-                self.tv?.objectWillChange.send()
             } catch {
                 guard let self, self.playbackRequest == request, self.externalBrowser === session else { return }
                 self.externalBrowserOpening = false
@@ -533,7 +513,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 self.externalBrowserError = error.localizedDescription
                 Log.playback.failure("Brave", error)
                 self.tv?.bringToFront()
-                self.tv?.objectWillChange.send()
             }
         }
     }
@@ -547,7 +526,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             Log.playback.failure("Brave", error)
             tv?.showToast(error.localizedDescription)
         }
-        tv?.objectWillChange.send()
     }
 
     func closeExternalBrowser() {
@@ -563,7 +541,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             Log.playback.failure("Closing Brave window", error)
             tv?.showToast("Could not close the Mac TV Brave window. Close it manually in Brave.")
         }
-        tv?.objectWillChange.send()
     }
 
     func handleExternalBrowserCommand(_ command: RemoteCommand) {
@@ -573,7 +550,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             externalBrowserError = error.localizedDescription
             Log.playback.failure("Brave", error)
             tv?.showToast(error.localizedDescription)
-            tv?.objectWillChange.send()
         }
     }
 }
@@ -620,7 +596,6 @@ extension PlaybackCoordinator: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if webView === self.webView {
             tv?.playerFailure = nil
-            tv?.objectWillChange.send()
         }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
