@@ -23,37 +23,37 @@ enum ScreenSaverSettings {
 
     /// Which live wallpapers Aerials plays: a category's id, or nil for all of them.
     static var aerialCategory: String? {
-        get { UserDefaults.standard.string(forKey: "saverAerialCategory") }
-        set { UserDefaults.standard.set(newValue, forKey: "saverAerialCategory") }
+        get { Preferences.shared.saverAerialCategory }
+        set { Preferences.shared.saverAerialCategory = newValue }
     }
     /// The pictures the screen saver showing now plays, picked when it starts.
     static var playing: [URL] = []
 
     static var wallpaper: Wallpaper {
         get {
-            UserDefaults.standard.string(forKey: "saverWallpaper").flatMap(Wallpaper.init(rawValue:))
+            Preferences.shared.saverWallpaper.flatMap(Wallpaper.init(rawValue:))
                 ?? (Aerials.available ? .aerials : .topShelf)
         }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "saverWallpaper") }
+        set { Preferences.shared.saverWallpaper = newValue.rawValue }
     }
 
     static var delayMinutes: Int {
-        get { (UserDefaults.standard.object(forKey: "saverDelay") as? Int).flatMap { delays.contains($0) ? $0 : nil } ?? 5 }
-        set { UserDefaults.standard.set(newValue, forKey: "saverDelay") }
+        get { Preferences.shared.saverDelay.flatMap { delays.contains($0) ? $0 : nil } ?? 5 }
+        set { Preferences.shared.saverDelay = newValue }
     }
 
     static var showClock: Bool {
-        get { UserDefaults.standard.object(forKey: "saverClock") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "saverClock") }
+        get { Preferences.shared.saverClock }
+        set { Preferences.shared.saverClock = newValue }
     }
 
     /// The folder Your Photos plays from; the Pictures folder until the user picks another.
     static var photosFolder: URL {
         get {
-            UserDefaults.standard.string(forKey: "saverPhotos").map { URL(fileURLWithPath: $0) }
+            Preferences.shared.saverPhotos.map { URL(fileURLWithPath: $0) }
                 ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]
         }
-        set { UserDefaults.standard.set(newValue.path, forKey: "saverPhotos") }
+        set { Preferences.shared.saverPhotos = newValue.path }
     }
 
     static func step(_ by: Int) {

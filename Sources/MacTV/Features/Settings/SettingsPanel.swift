@@ -197,7 +197,6 @@ extension TVController {
         case .autoUpdate: Updater.shared.automatic = forward
         default: return
         }
-        objectWillChange.send()
     }
 
     func activateSetting(_ row: SettingsPanel.Row) {
@@ -248,7 +247,6 @@ extension TVController {
         case .autoUpdate: Updater.shared.automatic.toggle()
         case .analytics: Analytics.setConsent(!Analytics.enabled, context: analyticsContext)
         }
-        objectWillChange.send()
     }
 
     /// Moves the sleep timer to the next or previous step: Off, 15, 30, 60, 90 minutes.
@@ -384,26 +382,28 @@ struct SettingsSheet: View {
     private func content(_ row: SettingsPanel.Row, panel: SettingsPanel) -> some View {
         switch row {
         case .phoneRemote:
-            title("Show QR Code", "Same Wi-Fi, or Tailscale away from home")
+            title("Show QR Code")
             chevron
         case .pairingCode:
             title("Pairing code")
             value(tv.remoteToken)
         case .controller:
             if let controller = tv.controller {
-                title(controller.name, controller.battery.map { "Battery \(Int($0 * 100))%" } ?? "Connected")
+                title(controller.name)
+                value(controller.battery.map { "Battery \(Int($0 * 100))%" } ?? "Connected")
                 Image(systemName: controller.batterySymbol).font(.system(size: 26))
             } else {
-                title("Game controller", "Pair one in System Settings › Bluetooth")
+                title("Game controller")
+                value("Not connected")
             }
         case .addApp:
-            title("Add App", "Add a website, Mac app or Steam game")
+            title("Add App")
             chevron
         case .arrangeApps:
-            title("Arrange Apps", "Order and favourites")
+            title("Arrange Apps")
             chevron
         case .topShelfPreferences:
-            title("Top Shelf", "Choose sources")
+            title("Top Shelf")
             chevron
         case .playbackCheck:
             title("Playback check")
@@ -441,11 +441,11 @@ struct SettingsSheet: View {
             title("Preview")
             chevron
         case .audioOutput:
-            title("Audio output", "Speakers, headphones or connected displays")
+            title("Audio output")
             value(tv.currentAudioDevice?.name ?? "Speakers")
             chevron
         case .feedback:
-            title("Sounds and haptics", "Clicks as you move, and taps on the trackpad and controller")
+            title("Sounds and haptics")
             SettingSwitch(on: Feedback.shared.enabled)
         case .keepMacAwake:
             title("Keep Mac awake while Mac TV is open")
@@ -463,13 +463,13 @@ struct SettingsSheet: View {
         case .update:
             switch updater.state {
             case .failed(let message):
-                title("Software update", message)
-                value("Try again")
+                title("Software update")
+                value(message)
             case .available(let version, _):
-                title("Software update", "Mac TV restarts to finish")
+                title("Software update")
                 value("Install \(version)")
             case .ready(let version, _):
-                title("Software update", updater.automatic ? "Installs when Mac TV isn't in use" : "Mac TV restarts to finish")
+                title("Software update")
                 value("Install \(version)")
             case .downloading(let fraction):
                 title("Software update")
@@ -494,10 +494,10 @@ struct SettingsSheet: View {
             title("Source code")
             value("github.com/Arunprakaash/mac-tv")
         case .report:
-            title("Copy diagnostics report", "For bug reports. Leaves out what you watch and any names")
+            title("Copy diagnostics report")
             value("Copy")
         case .analytics:
-            title("Share anonymous usage", "Which features you use, never what you watch")
+            title("Share anonymous usage")
             SettingSwitch(on: Analytics.enabled)
         case .wallpaper, .aerialCategory:
             EmptyView()
@@ -538,7 +538,6 @@ struct SettingsSheet: View {
                         tv.settings?.row = 0
                         if selected, wallpaper == .photos { ScreenSaverSettings.choosePhotosFolder() }
                         ScreenSaverSettings.wallpaper = wallpaper
-                        tv.objectWillChange.send()
                     }
                 }
             }
@@ -576,7 +575,6 @@ struct SettingsSheet: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     ScreenSaverSettings.aerialCategory = choice.id
-                    tv.objectWillChange.send()
                 }
             }
         }
@@ -590,12 +588,9 @@ struct SettingsSheet: View {
         Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold)).opacity(0.4)
     }
 
-    private func title(_ text: String, _ detail: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(text).font(.tv(.body))
-            if let detail { Text(detail).font(.tv(.caption2)).opacity(0.55) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// A row's title: one line, never a second line under it.
+    private func title(_ text: String) -> some View {
+        Text(text).font(.tv(.body)).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func value(_ text: String) -> some View {

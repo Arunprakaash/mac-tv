@@ -547,7 +547,9 @@ struct AudioVolumeSlider: View {
 }
 
 struct NavigationSoundSlider: View {
-    @ObservedObject private var feedback = Feedback.shared
+    /// The navigation sound settings live in Preferences, so watching it redraws the slider.
+    @ObservedObject private var preferences = Preferences.shared
+    private var feedback: Feedback { .shared }
     let focused: Bool
     var onSelect: () -> Void = {}
 

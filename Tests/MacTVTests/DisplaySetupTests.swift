@@ -19,7 +19,7 @@ import Testing
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         tv.window = window
-        let mode = TVMode(window: window, tv: tv, defaults: defaults)
+        let mode = TVMode(window: window, tv: tv, preferences: Preferences(defaults: defaults))
         #expect(!mode.enabled)
         let initial = window.frame
         #expect(!tv.selectTVDisplay(id: "disconnected-display"))

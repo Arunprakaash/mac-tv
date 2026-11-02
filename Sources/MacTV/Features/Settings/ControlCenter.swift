@@ -104,7 +104,6 @@ extension TVController {
             controlCenter = nil
             openSettings()
         }
-        objectWillChange.send()
     }
 }
 

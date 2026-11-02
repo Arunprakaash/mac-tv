@@ -37,8 +37,8 @@ enum Analytics {
     static var available: Bool { !appID.isEmpty }
 
     static var consent: Consent {
-        get { UserDefaults.standard.string(forKey: "analyticsConsent").flatMap(Consent.init(rawValue:)) ?? .unasked }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "analyticsConsent") }
+        get { Preferences.shared.analyticsConsent.flatMap(Consent.init(rawValue:)) ?? .unasked }
+        set { Preferences.shared.analyticsConsent = newValue.rawValue }
     }
 
     static var enabled: Bool { available && consent == .granted }
