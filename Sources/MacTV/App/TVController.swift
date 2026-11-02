@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import SwiftUI
-import IOKit.pwr_mgt
 import WebKit
 
 @MainActor
@@ -26,16 +25,13 @@ final class TVController: NSObject, ObservableObject {
         case lid, controlCenter, profile
     }
 
-    var statusItems: [StatusItem] {
-        (lidSleepOff ? [.lid] : []) + [.controlCenter, .profile]
-    }
-
     // MARK: - Dedicated Coordinators
 
     let playbackCoordinator: PlaybackCoordinator
     let remoteCoordinator: RemoteCoordinator
     let displayCoordinator: DisplayCoordinator
     let audioCoordinator: AudioCoordinator
+    let idleCoordinator = IdleCoordinator()
     private var coordinatorChanges: [AnyCancellable] = []
 
     // MARK: - State
@@ -63,9 +59,6 @@ final class TVController: NSObject, ObservableObject {
     /// Who's watching: their apps and their sign-ins.
     @Published var profile: Profile
 
-    /// Shown after a few idle minutes on the home screen; any input dismisses it.
-    @Published private(set) var screensaver = false
-    @Published private(set) var sleepAt: Date?
     /// The focused button on Mac TV's own Brave screen.
     @Published var browserFocus = 0
     let browserPreferences: BrowserPreferences
@@ -187,9 +180,6 @@ final class TVController: NSObject, ObservableObject {
     var openedSteam = false
     var steamObservers: [NSObjectProtocol] = []
     var pointer: CGPoint?
-    private var sleepTimer: Timer?
-    private var idleTimer: Timer?
-    private var lastActivity = Date()
 
     // MARK: - Lifecycle
 
@@ -217,64 +207,25 @@ final class TVController: NSObject, ObservableObject {
         rc.tv = self
         dc.tv = self
         ac.tv = self
+        idleCoordinator.tv = self
         // Views watch this controller, so any change a coordinator publishes redraws them.
-        coordinatorChanges = [pc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
-                              rc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
-                              dc.objectWillChange.sink { [weak self] in self?.objectWillChange.send() },
-                              ac.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }]
+        coordinatorChanges = [pc.objectWillChange, rc.objectWillChange, dc.objectWillChange, ac.objectWillChange,
+                              idleCoordinator.objectWillChange].map {
+            $0.sink { [weak self] in self?.objectWillChange.send() }
+        }
         UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
-        idleTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkIdle() }
-        }
     }
 
     // MARK: - Screensaver and sleep timer
 
-    /// Any keyboard, mouse or remote input. Returns true when it only woke the screensaver.
+    var screensaver: Bool { idleCoordinator.screensaver }
+    var sleepAt: Date? { idleCoordinator.sleepAt }
     @discardableResult
-    func noteActivity() -> Bool {
-        lastActivity = Date()
-        guard screensaver else { return false }
-        screensaver = false
-        return true
-    }
-
-    private func checkIdle() {
-        if mode == .launcher, !playbackCoordinator.isAnyPlaybackActive, !displaysSleeping,
-           activeSheet == nil, movies == nil, !screensaver,
-           Date().timeIntervalSince(lastActivity) > TimeInterval(ScreenSaverSettings.delayMinutes * 60) {
-            showScreensaver()
-        }
-    }
-
-    func showScreensaver() {
-        guard !displaysSleeping else { return }
-        Analytics.send(.screenSaverStarted, ["wallpaper": ScreenSaverSettings.wallpaper.rawValue])
-        ScreenSaverSettings.playing = ScreenSaverSettings.pictures(for: ScreenSaverSettings.wallpaper)
-        lastActivity = Date()
-        screensaver = true
-    }
-
-    /// Stops playback, goes home and turns the screen off after `minutes`; 0 cancels.
-    func setSleepTimer(minutes: Int) {
-        sleepTimer?.invalidate()
-        guard minutes > 0 else {
-            sleepAt = nil
-            showToast("Sleep timer off")
-            return
-        }
-        sleepAt = Date().addingTimeInterval(TimeInterval(minutes * 60))
-        sleepTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.sleepAt = nil
-                self.goHome()
-                SystemControl.displayOff()
-            }
-        }
-        showToast("Sleep timer: \(minutes) minutes")
-    }
+    func noteActivity() -> Bool { idleCoordinator.noteActivity() }
+    func showScreensaver() { idleCoordinator.showScreensaver() }
+    func screensaverOff() { idleCoordinator.hideScreensaver() }
+    func setSleepTimer(minutes: Int) { idleCoordinator.setSleepTimer(minutes: minutes) }
 
     // MARK: - Adding and removing apps
 
@@ -305,202 +256,13 @@ final class TVController: NSObject, ObservableObject {
         reconcileOrganizerSelection()
     }
 
-    var arrangedServices: [Service] { services.filter { $0.kind != .addApp && $0.kind != .settings } }
-
-    func isPinned(_ id: String) -> Bool { library.isPinned(id) }
-
-    @discardableResult
-    func setPinned(_ id: String, _ pinned: Bool) -> Bool {
-        guard library.setPinned(id, pinned) else { showToast("Couldn't save favourites. Check available storage and folder permissions."); return false }
-        reloadServices()
-        return true
-    }
-
-    func canMoveApp(_ id: String, by offset: Int) -> Bool {
-        guard offset == -1 || offset == 1 else { return false }
-        let group = arrangedServices.filter { isPinned($0.id) == isPinned(id) }
-        guard let index = group.firstIndex(where: { $0.id == id }) else { return false }
-        return group.indices.contains(index + offset)
-    }
-
-    @discardableResult
-    func moveApp(_ id: String, by offset: Int) -> Bool {
-        guard library.move(id, by: offset) else { showToast("Couldn't save that app's position."); return false }
-        reloadServices()
-        return true
-    }
-
-    /// Adds a website. Its tile appears at once; the official icon follows when found.
-    func addWebsite(name: String?, address: String) -> AddedApp? {
-        var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.contains("://") { text = "https://" + text }
-        guard let url = URL(string: text), let host = url.host(), host.contains(".") else { return nil }
-        let fallbackName = host.replacingOccurrences(of: "www.", with: "").split(separator: ".").first.map {
-            $0.prefix(1).uppercased() + $0.dropFirst()
-        } ?? host
-        let trimmed = name?.trimmingCharacters(in: .whitespaces) ?? ""
-        let app = library.add(name: trimmed.isEmpty ? fallbackName : trimmed, url: url, bundleID: nil)
-        reloadServices()
-        showToast("Added \(app.name)")
-        let origin = library
-        Task { [weak self] in
-            let png = await IconFinder.icon(forSite: url, name: app.name)
-            await MainActor.run { self?.useIcon(png, for: app.id, in: origin) }
-        }
-        return app
-    }
-
-    func addMacApp(bundleID: String) -> AddedApp? {
-        guard let installed = InstalledApps.all.first(where: { $0.bundleID == bundleID }) else { return nil }
-        if let existing = services.first(where: { $0.kind == .app(bundleID: bundleID) }) {
-            showToast("\(existing.name) is already on the home screen")
-            return nil
-        }
-        let app = library.add(name: installed.name, url: nil, bundleID: bundleID)
-        useIcon(IconFinder.icon(forAppAt: installed.path), for: app.id)
-        showToast("Added \(app.name)")
-        return app
-    }
-
-    /// Adds a Steam game (or Steam Big Picture). Its tile appears at once; Steam's artwork follows.
-    func addSteamGame(_ game: SteamLibrary.Game) -> AddedApp? {
-        if let existing = services.first(where: { $0.kind == .steam(appID: game.appID) }) {
-            showToast("\(existing.name) is already on the home screen")
-            return nil
-        }
-        let app = library.add(name: game.name, url: nil, bundleID: nil, steamID: game.appID)
-        reloadServices()
-        showToast("Added \(app.name)")
-        if game == SteamLibrary.bigPicture {
-            useIcon(SteamLibrary.appURL.flatMap { IconFinder.icon(forAppAt: $0.path) }, for: app.id)
-        } else {
-            let origin = library
-            Task { [weak self] in
-                let png = await SteamLibrary.tile(for: game.appID)
-                await MainActor.run { self?.useIcon(png, for: app.id, in: origin) }
-            }
-        }
-        return app
-    }
-
-    func useIcon(_ png: Data?, for id: String, in origin: AppLibrary? = nil) {
-        let target = origin ?? library
-        guard target.containsAddedApp(id) else { return }
-        if let png, let image = NSImage(data: png)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            target.setIcon(png, accent: TileArt.brandColor(from: image), for: id)
-        }
-        Icons.forget(id)
-        if target === library { reloadServices() }
-    }
-
-    func removeApp(_ id: String) {
-        guard let service = services.first(where: { $0.id == id }), service.kind != .settings, service.kind != .addApp else { return }
-        library.remove(id)
-        Icons.forget(id)
-        reloadServices()
-        showToast("Removed \(service.name)")
-    }
-
-    func restoreBuiltInApps() {
-        library.restoreBuiltIns()
-        reloadServices()
-    }
-
     // MARK: - Home screen focus
-
-    var shelfService: Service { services.indices.contains(shelfAppIndex) ? services[shelfAppIndex] : services[0] }
-
-    /// True when focus is below the top row; the Top Shelf scrolls away.
-    var inGrid: Bool {
-        if case .app(let index) = focus { return index >= columns }
-        return false
-    }
-
-    /// How many things in the Top Shelf can take focus: its Open button, for apps.
-    var shelfCount: Int {
-        switch shelfService.kind {
-        case .web, .app, .steam, .movies: return TopShelfFeed.shared.searchURL(for: shelfService) == nil ? 1 : 2
-        case .addApp, .settings: return 0
-        }
-    }
 
     func setFocus(_ newFocus: Focus) {
         guard newFocus != focus else { return }
         focus = newFocus
         tilt = .zero
         if case .app(let index) = newFocus, index < columns { shelfAppIndex = index }
-    }
-
-    func hover(_ index: Int, tilt: CGSize) {
-        guard !suppressHover else { return }
-        switch focus {
-        case .shelf, .status: return
-        case .app: break
-        }
-        guard (index >= columns) == inGrid else { return }
-        if focus != .app(index) { Feedback.shared.play(.move, from: .pointer) }
-        setFocus(.app(index))
-        self.tilt = tilt
-    }
-
-    private func moveFocus(_ direction: RemoteCommand.Direction) {
-        switch focus {
-        case .app(let index):
-            let row = index / columns, column = index % columns
-            switch direction {
-            case .left:
-                if column > 0 { setFocus(.app(index - 1)) }
-            case .right:
-                if column < columns - 1, index + 1 < services.count { setFocus(.app(index + 1)) }
-            case .down:
-                if index + columns < services.count {
-                    setFocus(.app(index + columns))
-                } else if (row + 1) * columns < services.count {
-                    setFocus(.app(services.count - 1))
-                }
-            case .up:
-                if row > 0 {
-                    setFocus(.app(index - columns))
-                } else if shelfCount > 0 {
-                    setFocus(.shelf(0))
-                } else {
-                    setFocus(.status(.controlCenter))
-                }
-            }
-        case .shelf(let index):
-            switch direction {
-            case .left: if index > 0 { setFocus(.shelf(index - 1)) }
-            case .right: if index + 1 < shelfCount { setFocus(.shelf(index + 1)) }
-            case .down: setFocus(.app(shelfAppIndex))
-            case .up: setFocus(.status(.controlCenter))
-            }
-        case .status(let item):
-            let items = statusItems
-            let index = items.firstIndex(of: item) ?? items.firstIndex(of: .controlCenter) ?? 0
-            switch direction {
-            case .left: setFocus(.status(items[max(0, index - 1)]))
-            case .right: setFocus(.status(items[min(items.count - 1, index + 1)]))
-            case .down: setFocus(shelfCount > 0 ? .shelf(0) : .app(shelfAppIndex))
-            case .up: break
-            }
-        }
-    }
-
-    func activateStatus(_ item: StatusItem) {
-        setFocus(.status(item))
-        switch item {
-        case .lid: settings = SettingsPanel(section: .power, open: true, row: 1)
-        case .controlCenter: openControlCenter()
-        case .profile: openProfiles()
-        }
-    }
-
-    func activateShelf(_ index: Int) {
-        if index == 0, let url = TopShelfFeed.shared.searchURL(for: shelfService) {
-            playbackCoordinator.playWeb(shelfService, url: url)
-        } else {
-            open(shelfService)
-        }
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
@@ -545,10 +307,6 @@ final class TVController: NSObject, ObservableObject {
 
     private var feedbackState: String {
         String(describing: (focus, sheets, movies, mode == .launcher))
-    }
-
-    func iconPNG(for id: String) -> Data? {
-        services.first { $0.id == id }.flatMap { Icons.png(for: $0) }
     }
 
     // MARK: - Command Dispatch
@@ -763,69 +521,6 @@ final class TVController: NSObject, ObservableObject {
                 break
             }
         }
-    }
-    func screensaverOff() { screensaver = false }
-
-    // MARK: - Touchpad & Pointer
-
-    func movePointer(dx: Double, dy: Double) {
-        guard let window, let bounds = window.contentView?.bounds else { return }
-        var point = pointer ?? CGPoint(x: bounds.midX, y: bounds.midY)
-        point.x = min(max(point.x + dx, 0), bounds.width - 1)
-        point.y = min(max(point.y - dy, 0), bounds.height - 1)
-        pointer = point
-
-        let onScreen = window.convertPoint(toScreen: point)
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        CGWarpMouseCursorPosition(CGPoint(x: onScreen.x, y: primaryHeight - onScreen.y))
-        NSCursor.setHiddenUntilMouseMoves(false)
-        postMouse(.mouseMoved, at: point)
-    }
-
-    func clickPointer() {
-        guard let window, let bounds = window.contentView?.bounds else { return }
-        let point = pointer ?? CGPoint(x: bounds.midX, y: bounds.midY)
-        postMouse(.leftMouseDown, at: point)
-        postMouse(.leftMouseUp, at: point)
-    }
-
-    private func postMouse(_ type: NSEvent.EventType, at point: CGPoint) {
-        guard let window, let event = NSEvent.mouseEvent(
-            with: type, location: point, modifierFlags: [],
-            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-            context: nil, eventNumber: 0, clickCount: type == .mouseMoved ? 0 : 1,
-            pressure: type == .leftMouseDown ? 1 : 0)
-        else { return }
-        window.sendEvent(event)
-    }
-
-    // MARK: - Mac apps & Steam
-
-    private func forwardToFrontApp(_ command: RemoteCommand) {
-        let code: CGKeyCode
-        switch command {
-        case .move(.left): code = 123
-        case .move(.right): code = 124
-        case .move(.down): code = 125
-        case .move(.up): code = 126
-        case .select: code = 36
-        case .back: code = 53
-        case .playPause: code = 49
-        case .deleteBackward: code = 51
-        case .text(let text):
-            guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
-            for character in text {
-                var units = Array(String(character).utf16)
-                for down in [true, false] {
-                    guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down) else { continue }
-                    event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
-                    event.postToPid(pid)
-                }
-            }
-            return
-        default: return
-        }
-        SystemControl.postKeyToFrontApp(code)
     }
 
     func bringToFront() {

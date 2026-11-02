@@ -57,12 +57,12 @@ Built-in checks, run on the app's binary:
 
 One Swift package, one app target, organised by feature:
 
-- `Sources/MacTV/App`: the entry point, `TVController` (the app's state and input routing), TV mode, `RootView` (which sheet is showing) and the built-in self tests.
+- `Sources/MacTV/App`: the entry point, `TVController` (the app's state and input routing), `SheetStack` (which sheets are open, and which is on top), `Notices` (toasts, the volume indicator and controller banners), TV mode, `RootView` and the built-in self tests.
 - `Sources/MacTV/Core`: app-wide services with no screen of their own: system controls, sounds, logging and the diagnostics report, analytics and updates.
 - `Sources/MacTV/DesignSystem`: the Apple TV look shared by every screen: type scale, Liquid Glass, motion and the TV canvas.
 - `Sources/MacTV/Features/<Feature>`: everything one feature needs, kept together: its model, its `TVController` extension and its views. Home, Playback, Movies, Remote, Display, Audio, Controllers, Screen Saver, Settings, Profiles and Games.
 
-A feature uses Core and DesignSystem freely, and reaches other features only through `TVController`. New code goes in the folder of the feature it belongs to; something two features need moves to Core or DesignSystem.
+A feature with state of its own keeps it in a coordinator that publishes it (`PlaybackCoordinator`, `RemoteCoordinator`, `DisplayCoordinator`, `AudioCoordinator`, `IdleCoordinator`), rather than in `TVController`. A feature uses Core and DesignSystem freely, and reaches other features only through `TVController`. New code goes in the folder of the feature it belongs to; something two features need moves to Core or DesignSystem.
 
 ## How some parts work
 
