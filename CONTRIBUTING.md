@@ -37,6 +37,7 @@ node Tests/WebPlayback/touchpad.test.cjs # phone touchpad transport
 node Tests/WebPlayback/address.test.cjs  # phone website address entry
 node Tests/WebPlayback/transport.test.cjs # phone request deadlines and queues
 node Tests/WebPlayback/reconnect.test.cjs # phone finding the Mac at another address
+MACTV_LIVE_REMOTE_TEST=1 swift test --filter RemoteReconnectLive   # the whole move in WebKit; needs a network and Bonjour
 node Tests/WebPlayback/layout.test.cjs    # phone layout (needs Chrome or Brave, or BROWSER_BIN)
 ```
 

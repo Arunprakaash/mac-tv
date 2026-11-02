@@ -262,7 +262,9 @@ final class RemoteServer {
     /// that still answers after the IP changed), so those origins, and only those, are allowed across.
     @MainActor
     func respond(to request: HTTPRequest) -> HTTPResponse {
-        let origin = request.headers["origin"].flatMap { ownOrigins().contains($0) ? $0 : nil }
+        let origin = request.headers["origin"].flatMap { origin in
+            ownOrigins().contains { $0.caseInsensitiveCompare(origin) == .orderedSame } ? origin : nil
+        }
         if request.method == "OPTIONS" {
             guard let origin else { return .json(["error": "Not allowed"], status: "403 Forbidden") }
             return HTTPResponse(status: "204 No Content", headers: [
@@ -447,7 +449,7 @@ struct HTTPRequest {
         }
         var lines = head.components(separatedBy: "\r\n")
         let requestLine = lines.removeFirst().split(separator: " ")
-        guard requestLine.count == 3, ["GET", "POST"].contains(String(requestLine[0])),
+        guard requestLine.count == 3, ["GET", "POST", "OPTIONS"].contains(String(requestLine[0])),
               ["HTTP/1.1", "HTTP/1.0"].contains(String(requestLine[2])),
               requestLine[1].hasPrefix("/") else { return .invalid("400 Bad Request") }
         var headers: [String: String] = [:]
