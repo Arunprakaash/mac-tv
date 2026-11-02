@@ -142,11 +142,7 @@ struct AppOrganizerSheet: View {
                     Image(systemName: pinned ? "star.fill" : "app")
                         .font(.system(size: 25)).foregroundStyle(pinned ? .yellow : .white.opacity(0.65))
                         .frame(width: 30)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(service.name).font(.system(size: 27, weight: .semibold)).lineLimit(1)
-                        Text(pinned ? "Favourite" : "Other Apps")
-                            .font(.system(size: 18)).foregroundStyle(.white.opacity(0.6))
-                    }
+                    Text(service.name).font(.system(size: 27, weight: .semibold)).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
