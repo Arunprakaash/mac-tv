@@ -59,11 +59,9 @@ final class TVMode {
     }
 
     private func trace(_ event: String) {
-        guard ProcessInfo.processInfo.environment["MACTV_DISPLAY_DEBUG"] == "1" else { return }
-        NSLog("Mac TV display: %@ current=%@ preferred=%@ fullscreen=%@ transitioning=%@ moving=%@ target=%@ frame=%@", event,
-              window.screen.map(id) ?? "none", preferredID ?? "automatic",
-              String(window.styleMask.contains(.fullScreen)), String(transitioning), String(movingWindow),
-              manualTargetID ?? "none", NSStringFromRect(window.frame))
+        let current = window.screen.map(id) ?? "none", target = manualTargetID ?? "none"
+        let fullScreen = window.styleMask.contains(.fullScreen), frame = NSStringFromRect(window.frame)
+        Log.display.notice("\(event, privacy: .public) current=\(current, privacy: .public) preferred=\(self.preferredID ?? "automatic", privacy: .public) fullscreen=\(fullScreen, privacy: .public) transitioning=\(self.transitioning, privacy: .public) moving=\(self.movingWindow, privacy: .public) target=\(target, privacy: .public) frame=\(frame, privacy: .public)")
     }
 
     var enabled: Bool { defaults.bool(forKey: "dedicatedTVMode") }

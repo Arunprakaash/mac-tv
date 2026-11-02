@@ -233,6 +233,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
+        _ = DiagnosticReport.launched
+        Log.app.notice("Mac TV \(Updater.currentVersion, privacy: .public) started on macOS \(ProcessInfo.processInfo.operatingSystemVersionString, privacy: .public)")
+
         // `--setup` shows first-run setup again.
         // Usage analytics sends nothing unless the user has said yes (Analytics.swift).
         Analytics.start(context: tv.analyticsContext)
@@ -407,6 +410,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func goHome(_ sender: Any?) { tv.handle(.home) }
     @objc func reloadPage(_ sender: Any?) { tv.webView?.reload() }
+    @objc func copyReport(_ sender: Any?) { DiagnosticReport.copy(from: tv) }
+    @objc func reportBug(_ sender: Any?) {
+        NSWorkspace.shared.open(URL(string: "https://github.com/Arunprakaash/mac-tv/issues/new?template=bug_report.md")!)
+    }
 
     private func makeMainMenu() -> NSMenu {
         let main = NSMenu()
@@ -440,6 +447,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         main.addItem(submenu: window, title: "Window")
         NSApp.windowsMenu = window
+
+        let help = NSMenu(title: "Help")
+        help.addItem(withTitle: "Copy Diagnostics Report", action: #selector(copyReport(_:)), keyEquivalent: "")
+        help.addItem(withTitle: "Report a Bug…", action: #selector(reportBug(_:)), keyEquivalent: "")
+        main.addItem(submenu: help, title: "Help")
+        NSApp.helpMenu = help
 
         return main
     }

@@ -48,6 +48,8 @@ extension TVController {
     func recordPlayerFailure(_ web: WKWebView, error: Error? = nil) {
         guard web === webView, case .player = mode else { return }
         if let error, (error as NSError).code == NSURLErrorCancelled { return }
+        if let error { Log.playback.failure("Streaming page didn't load", error) }
+        else { Log.playback.error("Streaming page stopped responding") }
         playerFailure = PlayerFailure(message: error == nil
             ? "The streaming page stopped responding."
             : "The streaming page couldn't load. Check the connection, then try again.")

@@ -160,11 +160,14 @@ final class AudioCoordinator: ObservableObject {
             &targetID
         )
 
-        if status == noErr {
-            refreshDevices()
-            refreshVolume()
-            tv?.showToast("Audio: \(device.name)")
+        guard status == noErr else {
+            Log.audio.error("Couldn't switch audio output: \(status, privacy: .public)")
+            return
         }
+        Log.audio.notice("Audio output switched to a \(DiagnosticReport.transportName(device.transport), privacy: .public) device")
+        refreshDevices()
+        refreshVolume()
+        tv?.showToast("Audio: \(device.name)")
     }
 
     // MARK: - Real-Time CoreAudio Listeners

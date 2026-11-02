@@ -179,6 +179,7 @@ final class NetworkShares: ObservableObject {
                 if let path = result.path ?? Self.mountedPath(host: share.host, share: share.share) {
                     shares.connected(share.id, at: path, addToMovies: addToMovies)
                 } else {
+                    Log.movies.error("Network share didn't connect: \(result.error, privacy: .public)")
                     shares.status[share.id] = .offline(Self.message(for: result.error))
                 }
             }

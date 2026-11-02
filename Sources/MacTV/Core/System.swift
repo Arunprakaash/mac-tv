@@ -56,7 +56,7 @@ enum SystemControl {
     private static func runAppleScript(_ source: String) {
         var error: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&error)
-        if let error { NSLog("Mac TV: AppleScript failed: \(error)") }
+        if let error { Log.system.error("AppleScript failed: \((error[NSAppleScript.errorNumber] as? Int) ?? 0, privacy: .public)") }
     }
 
     private static func pmset(_ argument: String) {
