@@ -22,12 +22,12 @@ final class TVMode {
     private var pairingFocus = 0
     private var screenChangeGeneration = 0
     private var observers: [NSObjectProtocol] = []
-    private let defaults: UserDefaults
+    private let preferences: Preferences
 
-    init(window: NSWindow, tv: TVController, defaults: UserDefaults = .standard) {
+    init(window: NSWindow, tv: TVController, preferences: Preferences = .shared) {
         self.window = window
         self.tv = tv
-        self.defaults = defaults
+        self.preferences = preferences
         tv.displayCoordinator.tvMode = self
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
@@ -64,8 +64,8 @@ final class TVMode {
         Log.display.notice("\(event, privacy: .public) current=\(current, privacy: .public) preferred=\(self.preferredID ?? "automatic", privacy: .public) fullscreen=\(fullScreen, privacy: .public) transitioning=\(self.transitioning, privacy: .public) moving=\(self.movingWindow, privacy: .public) target=\(target, privacy: .public) frame=\(frame, privacy: .public)")
     }
 
-    var enabled: Bool { defaults.bool(forKey: "dedicatedTVMode") }
-    var preferredID: String? { defaults.string(forKey: "preferredTVDisplay") }
+    var enabled: Bool { preferences.dedicatedTVMode }
+    var preferredID: String? { preferences.preferredTVDisplay }
     var loginStatus: SMAppService.Status { SMAppService.mainApp.status }
     var loginEnabled: Bool { loginStatus == .enabled || loginStatus == .requiresApproval }
 
@@ -140,7 +140,7 @@ final class TVMode {
     @discardableResult
     func chooseDisplay(id displayID: String) -> Bool {
         guard NSScreen.screens.contains(where: { id($0) == displayID }) else { return false }
-        defaults.set(displayID, forKey: "preferredTVDisplay")
+        preferences.preferredTVDisplay = displayID
         trace("choose")
         if !transitioning, !movingWindow, window.screen.map({ id($0) }) == displayID {
             tv?.objectWillChange.send()
@@ -241,16 +241,13 @@ final class TVMode {
         let current = choices.firstIndex { $0 == preferredID } ?? 0
         var next = current + step
         next = wrap ? (next + choices.count) % choices.count : min(max(next, 0), choices.count - 1)
-        if let choice = choices[next] { defaults.set(choice, forKey: "preferredTVDisplay") }
-        else { defaults.removeObject(forKey: "preferredTVDisplay") }
-        tv?.objectWillChange.send()
+        preferences.preferredTVDisplay = choices[next]
         if enabled { reconcileScreen() }
     }
 
     func setEnabled(_ value: Bool) {
         guard value != enabled else { return }
-        defaults.set(value, forKey: "dedicatedTVMode")
-        tv?.objectWillChange.send()
+        preferences.dedicatedTVMode = value
         if value {
             normalFrame = window.frame
             reconcileScreen()

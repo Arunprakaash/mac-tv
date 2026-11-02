@@ -7,6 +7,7 @@ Thanks for helping. Bug reports and ideas go to [GitHub issues](https://github.c
 - Keep each pull request to one change, and describe what it does and how you checked it.
 - `main` is protected: the **macos** check (Swift tests and the universal build) must pass.
 - Match the surrounding code and the Apple TV look: Liquid Glass only over real content, a white platter for focus, the `Font.tv` type scale, and SF Symbols in one colour.
+- Settings rows are one line: a title and, on the right, a value, switch or chevron. No second line under the title.
 - Mac TV opens official services only. Don't add, suggest or document sites that host pirated content.
 - Analytics events live only in `Analytics.swift`. Never send what anyone watches, titles, addresses, file names or profile names.
 
@@ -58,7 +59,7 @@ Built-in checks, run on the app's binary:
 One Swift package, one app target, organised by feature:
 
 - `Sources/MacTV/App`: the entry point, `TVController` (the app's state and input routing), `SheetStack` (which sheets are open, and which is on top), `Notices` (toasts, the volume indicator and controller banners), TV mode, `RootView` and the built-in self tests.
-- `Sources/MacTV/Core`: app-wide services with no screen of their own: system controls, sounds, logging and the diagnostics report, analytics and updates.
+- `Sources/MacTV/Core`: app-wide services with no screen of their own: `Preferences` (every setting, published), system controls, sounds, logging and the diagnostics report, analytics and updates.
 - `Sources/MacTV/DesignSystem`: the Apple TV look shared by every screen: type scale, Liquid Glass, motion and the TV canvas.
 - `Sources/MacTV/Features/<Feature>`: everything one feature needs, kept together: its model, its `TVController` extension and its views. Home, Playback, Movies, Remote, Display, Audio, Controllers, Screen Saver, Settings, Profiles and Games.
 

@@ -39,10 +39,9 @@ final class Updater: ObservableObject {
 
     /// Install new versions on their own while Mac TV is idle. On unless turned off.
     var automatic: Bool {
-        get { UserDefaults.standard.object(forKey: "automaticUpdates") as? Bool ?? true }
+        get { Preferences.shared.automaticUpdates }
         set {
-            UserDefaults.standard.set(newValue, forKey: "automaticUpdates")
-            objectWillChange.send()
+            Preferences.shared.automaticUpdates = newValue
             if newValue, case .available(_, let url) = state { install(from: url, now: false) }
         }
     }

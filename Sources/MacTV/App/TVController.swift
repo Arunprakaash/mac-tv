@@ -32,6 +32,7 @@ final class TVController: NSObject, ObservableObject {
     let displayCoordinator: DisplayCoordinator
     let audioCoordinator: AudioCoordinator
     let idleCoordinator = IdleCoordinator()
+    let preferences = Preferences.shared
     private var coordinatorChanges: [AnyCancellable] = []
 
     // MARK: - State
@@ -77,14 +78,14 @@ final class TVController: NSObject, ObservableObject {
 
     /// Press the players' own Skip Intro / Skip Recap buttons.
     var autoSkip: Bool {
-        get { UserDefaults.standard.bool(forKey: "autoSkip") }
-        set { UserDefaults.standard.set(newValue, forKey: "autoSkip") }
+        get { preferences.autoSkip }
+        set { preferences.autoSkip = newValue }
     }
 
     /// Press Next Episode when the player offers it.
     var autoNext: Bool {
-        get { UserDefaults.standard.bool(forKey: "autoNext") }
-        set { UserDefaults.standard.set(newValue, forKey: "autoNext") }
+        get { preferences.autoNext }
+        set { preferences.autoNext = newValue }
     }
 
     // MARK: - Forwarded Properties to Coordinators
@@ -210,10 +211,9 @@ final class TVController: NSObject, ObservableObject {
         idleCoordinator.tv = self
         // Views watch this controller, so any change a coordinator publishes redraws them.
         coordinatorChanges = [pc.objectWillChange, rc.objectWillChange, dc.objectWillChange, ac.objectWillChange,
-                              idleCoordinator.objectWillChange].map {
+                              idleCoordinator.objectWillChange, preferences.objectWillChange].map {
             $0.sink { [weak self] in self?.objectWillChange.send() }
         }
-        UserDefaults.standard.register(defaults: ["autoSkip": true, "autoNext": true, "keepMacAwake": true])
         services = library.services()
     }
 
@@ -367,7 +367,6 @@ final class TVController: NSObject, ObservableObject {
             if key == "autoNext" { autoNext = value }
             if key == "keepMacAwake" { keepMacAwake = value }
             if key == "lidOverride" { lidOverride = value }
-            objectWillChange.send()
             return
         case .sleepMac:
             goHome()

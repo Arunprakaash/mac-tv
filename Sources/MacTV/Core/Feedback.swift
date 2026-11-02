@@ -23,20 +23,16 @@ final class Feedback: ObservableObject {
 
     /// Sounds and haptics, on unless turned off in Settings.
     var enabled: Bool {
-        get { UserDefaults.standard.object(forKey: "uiFeedback") as? Bool ?? true }
-        set {
-            objectWillChange.send()
-            UserDefaults.standard.set(newValue, forKey: "uiFeedback")
-        }
+        get { Preferences.shared.navigationSounds }
+        set { Preferences.shared.navigationSounds = newValue }
     }
 
     /// Volume for navigation sounds (0.0 to 1.0, defaults to 0.70).
     var volume: Float {
-        get { (UserDefaults.standard.object(forKey: "uiFeedbackVolume") as? Float) ?? 0.7 }
+        get { Preferences.shared.navigationSoundVolume }
         set {
-            objectWillChange.send()
             let clamped = max(0, min(1, newValue))
-            UserDefaults.standard.set(clamped, forKey: "uiFeedbackVolume")
+            Preferences.shared.navigationSoundVolume = clamped
             engine.mainMixerNode.outputVolume = clamped
         }
     }
