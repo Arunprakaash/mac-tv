@@ -22,6 +22,9 @@ final class RemoteCoordinator: ObservableObject {
     /// The links change only when the network does or the pairing code rotates, so Mac TV waits
     /// for those instead of checking every few seconds.
     private var pathMonitor: NWPathMonitor?
+    /// Every address a phone can reach this Mac at, for the phone to move between and for the server's
+    /// cross-origin checks.
+    private(set) var origins: [String] = []
     private var codeTimer: Timer?
     private var startupPairingPending = false
     private var startupPairingVisible = false
@@ -61,14 +64,20 @@ final class RemoteCoordinator: ObservableObject {
         let codeChanged = code != remoteToken || guestCode != remoteGuestToken
         remoteToken = code
         remoteGuestToken = guestCode
-        let found: [(label: String, ip: String?)] = [("Same Wi-Fi", LAN.ipv4()), ("Tailscale", LAN.tailscaleIPv4())]
-        let addresses = found.compactMap { entry in entry.ip.map { (entry.label, "http://\($0):\(remotePort)") } }
-        guard codeChanged || addresses.map(\.1) != remoteLinks.map(\.address) else { return }
-        remoteLinks = addresses.map { label, address in
-            RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteToken)"))
+        let ip = LAN.ipv4(), tailscale = LAN.tailscaleIPv4(), name = ip == nil ? nil : LAN.bonjourName()
+        // On the home network the QR code uses the Mac's name, which survives the IP changing while it
+        // sleeps; the IP is shown to type instead. Tailscale addresses don't change.
+        var found: [(label: String, address: String, fallback: String?)] = []
+        if let ip { found.append(("Same Wi-Fi", "http://\(name ?? ip):\(remotePort)", name == nil ? nil : "\(ip):\(remotePort)")) }
+        if let tailscale { found.append(("Tailscale", "http://\(tailscale):\(remotePort)", nil)) }
+        origins = ([name, ip, tailscale].compactMap { $0 }).map { "http://\($0):\(remotePort)" }
+        guard codeChanged || found.map(\.address) != remoteLinks.map(\.address)
+            || found.map(\.fallback) != remoteLinks.map(\.fallback) else { return }
+        remoteLinks = found.map { label, address, fallback in
+            RemoteLink(label: label, address: address, fallback: fallback, qr: QRCode.image(for: "\(address)/?k=\(remoteToken)"))
         }
-        remoteGuestLinks = addresses.map { label, address in
-            RemoteLink(label: label, address: address, qr: QRCode.image(for: "\(address)/?k=\(remoteGuestToken)"))
+        remoteGuestLinks = found.map { label, address, fallback in
+            RemoteLink(label: label, address: address, fallback: fallback, qr: QRCode.image(for: "\(address)/?k=\(remoteGuestToken)"))
         }
     }
 
@@ -109,6 +118,7 @@ final class RemoteCoordinator: ObservableObject {
 
         var state: [String: Any] = [
             "device": tv.deviceName,
+            "addresses": origins,
             "mode": "launcher",
             "audioDevice": tv.currentAudioDevice?.name ?? "",
             "apps": tv.arrangedServices.map { service -> [String: Any] in

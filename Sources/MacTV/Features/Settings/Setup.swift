@@ -233,6 +233,9 @@ struct SetupScreen: View {
                                 .background(.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                         }
                         Text(link.label).font(.tv(.caption2)).opacity(0.8)
+                        if let fallback = link.fallback {
+                            Text("or open \(fallback)").font(.tv(.caption2)).monospacedDigit().opacity(0.5)
+                        }
                     }
                 }
             }

@@ -10,6 +10,7 @@ final class RemoteServer {
     typealias StateProvider = @MainActor () -> [String: Any]
     typealias IconProvider = @MainActor (String) -> Data?
     typealias Routes = @MainActor (HTTPRequest) -> HTTPResponse?
+    typealias Origins = @MainActor () -> [String]
 
     private let pairing: PairingStore
     private var legacyCode: String?
@@ -20,7 +21,13 @@ final class RemoteServer {
     private let state: StateProvider
     private let icon: IconProvider
     private let routes: Routes
+    private let ownOrigins: Origins
     private var listener: NWListener?
+    /// The port phones know this Mac by, once it's listening. A phone's saved remote and its pairing
+    /// belong to one address and port, so after that the server only ever comes back on this port.
+    private(set) var listeningPort: UInt16?
+    private var allPorts: [UInt16] = []
+    private var onReady: (@MainActor (UInt16) -> Void)?
     private var failedAttempts: [Date] = []
     struct Limits {
         var maxConnections = 32
@@ -43,7 +50,8 @@ final class RemoteServer {
          icon: @escaping IconProvider, routes: @escaping Routes,
          pairing: PairingStore = PairingStore(), defaults: UserDefaults = .standard,
          now: @escaping () -> Date = Date.init, limits: Limits = Limits(),
-         onGuestCommand: GuestCommandHandler? = nil) {
+         onGuestCommand: GuestCommandHandler? = nil, ownOrigins: @escaping Origins = { [] }) {
+        self.ownOrigins = ownOrigins
         self.limits = limits
         self.pairing = pairing
         self.now = now
@@ -86,6 +94,8 @@ final class RemoteServer {
     /// Listens on the first free port in `ports`.
     func start(ports: [UInt16], onReady: @escaping @MainActor (UInt16) -> Void) {
         guard !stopped else { return }
+        if allPorts.isEmpty { allPorts = ports }
+        self.onReady = onReady
         guard let port = ports.first, let nwPort = NWEndpoint.Port(rawValue: port) else {
             Log.remote.error("No free port for the phone remote")
             return
@@ -105,13 +115,22 @@ final class RemoteServer {
                 MainActor.assumeIsolated {
                     switch state {
                     case .ready:
-                        guard self?.stopped == false else { listener?.cancel(); return }
+                        guard let self, !self.stopped else { listener?.cancel(); return }
                         Log.remote.notice("Phone remote listening on port \(port, privacy: .public)")
+                        self.listeningPort = port
                         onReady(port)
-                    case .failed:
+                    case .failed(let error):
                         listener?.cancel()
-                        guard self?.stopped == false else { return }
-                        self?.start(ports: next, onReady: onReady)
+                        guard let self, !self.stopped else { return }
+                        if self.listeningPort == port {
+                            // It was ours and the network dropped it, as over sleep or a Wi-Fi change: take it back.
+                            Log.remote.notice("Phone remote stopped listening (\(error.debugDescription, privacy: .public)); restarting")
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                MainActor.assumeIsolated { self.restart() }
+                            }
+                        } else {
+                            self.start(ports: next, onReady: onReady)
+                        }
                     default: break
                     }
                 }
@@ -121,6 +140,28 @@ final class RemoteServer {
         } catch {
             start(ports: next, onReady: onReady)
         }
+    }
+
+    /// Starts listening again on the port phones know, if the listener isn't running, as after the
+    /// Mac wakes. Other ports are tried only if that one has been taken in the meantime.
+    func ensureListening() {
+        guard !stopped, let onReady else { return }
+        if let listener {
+            switch listener.state {
+            case .failed, .cancelled: break
+            default: return // Ready, starting, or waiting for the network to come back on its own.
+            }
+        }
+        restart(onReady: onReady)
+    }
+
+    private func restart(onReady: (@MainActor (UInt16) -> Void)? = nil) {
+        guard !stopped, let onReady = onReady ?? self.onReady else { return }
+        listener?.stateUpdateHandler = nil
+        listener?.cancel()
+        listener = nil
+        let first = listeningPort.map { [$0] } ?? []
+        start(ports: first + allPorts.filter { !first.contains($0) }, onReady: onReady)
     }
 
     /// Call on the listener queue (main) during app shutdown.
@@ -217,8 +258,26 @@ final class RemoteServer {
         }
     }
 
+    /// Answers a request. The phone page may ask from another of this Mac's addresses (moving to one
+    /// that still answers after the IP changed), so those origins, and only those, are allowed across.
     @MainActor
     func respond(to request: HTTPRequest) -> HTTPResponse {
+        let origin = request.headers["origin"].flatMap { ownOrigins().contains($0) ? $0 : nil }
+        if request.method == "OPTIONS" {
+            guard let origin else { return .json(["error": "Not allowed"], status: "403 Forbidden") }
+            return HTTPResponse(status: "204 No Content", headers: [
+                ("Access-Control-Allow-Origin", origin), ("Vary", "Origin"),
+                ("Access-Control-Allow-Methods", "GET, POST"),
+                ("Access-Control-Allow-Headers", "Content-Type, X-Couch-Key"),
+                ("Access-Control-Allow-Private-Network", "true"), ("Access-Control-Max-Age", "600")])
+        }
+        var response = route(request)
+        if let origin { response.headers += [("Access-Control-Allow-Origin", origin), ("Vary", "Origin")] }
+        return response
+    }
+
+    @MainActor
+    private func route(_ request: HTTPRequest) -> HTTPResponse {
         if request.method == "GET", request.path == "/" {
             return HTTPResponse(contentType: "text/html; charset=utf-8", body: Data(RemotePage.html.utf8))
         }
@@ -417,6 +476,7 @@ struct HTTPResponse {
     var status = "200 OK"
     var contentType = "application/json"
     var body = Data()
+    var headers: [(String, String)] = []
 
     static func json(_ object: Any, status: String = "200 OK") -> HTTPResponse {
         HTTPResponse(status: status, body: (try? JSONSerialization.data(withJSONObject: object)) ?? Data())
@@ -424,7 +484,8 @@ struct HTTPResponse {
 
     func serialized(keepAlive: Bool) -> Data {
         let head = "HTTP/1.1 \(status)\r\nContent-Type: \(contentType)\r\nContent-Length: \(body.count)\r\n"
-            + "Cache-Control: no-store\r\nConnection: \(keepAlive ? "keep-alive" : "close")\r\n\r\n"
+            + "Cache-Control: no-store\r\nConnection: \(keepAlive ? "keep-alive" : "close")\r\n"
+            + headers.map { "\($0.0): \($0.1)\r\n" }.joined() + "\r\n"
         return Data(head.utf8) + body
     }
 }

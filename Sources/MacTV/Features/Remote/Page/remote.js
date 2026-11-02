@@ -43,8 +43,38 @@ const store = {
   },
 };
 const qrCode = new URLSearchParams(location.search).get('k') || '';
-if (qrCode) history.replaceState(null, '', location.pathname);
+// A remote that moved here from another of the Mac's addresses brings its key in the fragment,
+// which browsers never send to the server.
+const carriedKey = new URLSearchParams(location.hash.slice(1)).get('key') || '';
+if (carriedKey) store.set(carriedKey);
+if (qrCode || carriedKey) history.replaceState(null, '', location.pathname);
 let key = store.get();
+
+// Every address the Mac answers at (its name, IP and Tailscale), from its last state.
+const addresses = {
+  get() { try { const list = JSON.parse(localStorage.getItem('mactvAddresses') || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } },
+  set(list) { try { localStorage.setItem('mactvAddresses', JSON.stringify(list)); } catch {} },
+};
+
+// When this address stops answering (the Mac's IP changed while it slept, say), try its other
+// addresses and move to the first one that still knows this phone, taking the key along.
+let unanswered = 0, moving = false;
+async function moveToAnotherAddress(fetcher = fetch, go = url => location.replace(url)) {
+  if (moving || !key) return false;
+  moving = true;
+  try {
+    for (const origin of addresses.get()) {
+      if (typeof origin !== 'string' || origin === location.origin || !/^http:\/\/[^/]+$/.test(origin)) continue;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      try {
+        const res = await fetcher(origin + '/state', { headers: { 'X-Couch-Key': key }, signal: controller.signal });
+        if (res.ok) { go(origin + '/#key=' + encodeURIComponent(key)); return true; }
+      } catch {} finally { clearTimeout(timer); }
+    }
+    return false;
+  } finally { moving = false; }
+}
 
 // Keep a reachable sleeping display distinct from an offline Mac.
 function online(ok, sleeping = false) {
@@ -142,6 +172,8 @@ async function readState() {
     const s = await api('/state');
     // A newer refresh or an edit invalidates an older in-flight response.
     if (generation !== stateGeneration) return false;
+    unanswered = 0;
+    if (Array.isArray(s.addresses) && s.addresses.length) addresses.set(s.addresses);
     online(true, s.displaysSleeping === true);
     document.body.classList.toggle('guest', s.guest === true);
     if (s.guest === true) document.querySelectorAll('.scrim.show').forEach(sheet => sheet.classList.remove('show'));
@@ -183,7 +215,11 @@ async function readState() {
     }
     return true;
   } catch (e) {
-    if (generation === stateGeneration && e.message !== 'unpaired') online(false);
+    if (generation === stateGeneration && e.message !== 'unpaired') {
+      online(false);
+      // About nine seconds without an answer: look for the Mac at its other addresses.
+      if (++unanswered >= 3) moveToAnotherAddress();
+    }
     return false;
   }
 }

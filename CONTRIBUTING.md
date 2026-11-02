@@ -36,6 +36,7 @@ node Tests/WebPlayback/bridge.test.cjs   # web player bridge
 node Tests/WebPlayback/touchpad.test.cjs # phone touchpad transport
 node Tests/WebPlayback/address.test.cjs  # phone website address entry
 node Tests/WebPlayback/transport.test.cjs # phone request deadlines and queues
+node Tests/WebPlayback/reconnect.test.cjs # phone finding the Mac at another address
 node Tests/WebPlayback/layout.test.cjs    # phone layout (needs Chrome or Brave, or BROWSER_BIN)
 ```
 
@@ -71,7 +72,7 @@ A feature with state of its own keeps it in a coordinator that publishes it (`Pl
 
 ## How some parts work
 
-- **Phone remote:** a web page Mac TV serves only to local and private-network phones (Tailscale included), with limits on connections, request size and time. Trusted and guest phones scan separate rotating codes, exchanged for a per-device credential stored hashed on the Mac. Guests get playback controls only and expire after 24 hours. It's plain HTTP, so use a trusted network or Tailscale, and never expose its port publicly.
+- **Phone remote:** a web page Mac TV serves only to local and private-network phones (Tailscale included), with limits on connections, request size and time. On the home network its QR code uses the Mac's Bonjour name (`name.local`), which survives the IP changing while the Mac sleeps, with the IP shown to type instead; the server keeps the same port across sleep; and an open remote that stops getting answers moves to another of the Mac's addresses, carrying its key in the URL fragment. Cross-origin requests are allowed only from the Mac's own addresses. Trusted and guest phones scan separate rotating codes, exchanged for a per-device credential stored hashed on the Mac. Guests get playback controls only and expire after 24 hours. It's plain HTTP, so use a trusted network or Tailscale, and never expose its port publicly.
 - **IINA:** Mac TV starts its own IINA window on the TV display and controls it over a private mpv socket (in a 0700 temporary folder), so commands work whatever app is in front. Home and Quit close only that window. Placing the window needs Accessibility.
 - **Screen wake:** "Wake screen" and other remote presses ask macOS to wake sleeping displays (a short user-activity assertion). It can't wake a Mac that is asleep or a TV that is switched off.
 - **Brave player:** Mac TV opens its own Brave window through Apple Events (values passed as descriptors, never as script text) and sends input only to that window. It needs Automation and Accessibility permission. Auto-skip, auto-next and the playback check apply only to the built-in player.

@@ -5,6 +5,7 @@ import CoreAudio
 import CoreImage.CIFilterBuiltins
 import IOKit.ps
 import IOKit.pwr_mgt
+import SystemConfiguration
 
 enum SystemControl {
     /// Raising the volume also unmutes, like the volume keys. Returns the new level.
@@ -252,6 +253,13 @@ enum LAN {
     /// tailnet even where the router keeps Wi-Fi devices apart, and away from home.
     static func tailscaleIPv4() -> String? {
         addresses().first { $0.interface.hasPrefix("utun") && isTailscale($0.address) }?.address
+    }
+
+    /// This Mac's Bonjour name on the local network, like "Aruns-MacBook-Pro.local". Unlike the IP
+    /// address it stays the same across sleep and Wi-Fi changes, so a phone's saved remote keeps working.
+    static func bonjourName() -> String? {
+        guard let name = SCDynamicStoreCopyLocalHostName(nil) as String?, !name.isEmpty else { return nil }
+        return name + ".local"
     }
 
     /// Tailscale hands out addresses from 100.64.0.0/10.
