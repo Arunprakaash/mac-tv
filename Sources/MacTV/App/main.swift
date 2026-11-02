@@ -26,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             BraveSessionProbe.start(url)
             return
         }
+        if CommandLine.arguments.contains("--diagnostics") {
+            Log.app.notice("Diagnostics report printed")
+            print(DiagnosticReport.facts(tv) + "\n\n## Log (this session)\n\n" + DiagnosticReport.sessionLog())
+            exit(0)
+        }
         if CommandLine.arguments.contains("--selftest-drm") {
             DRMSelfTest.start()
             return
