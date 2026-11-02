@@ -56,6 +56,7 @@ enum DiagnosticReport {
         add("Navigation sounds", Feedback.shared.enabled ? "on" : "off")
 
         lines += ["", "## Remote and power", ""]
+        add("Remote page", RemotePage.available ? "found" : "missing")
         add("Phone paired", yesNo(tv.phonePaired))
         add("Tailscale running", yesNo(LAN.tailscaleIPv4() != nil))
         add("Game controller", tv.controller == nil ? "none" : "connected")
