@@ -217,7 +217,7 @@ struct SetupScreen: View {
         VStack(spacing: 28) {
             title("Use your phone as the remote")
             subtitle("Scan a code with your phone's camera. It opens a remote in the browser, with nothing to install. Add it to your home screen to keep it handy.")
-            HStack(spacing: 36) {
+            HStack(alignment: .top, spacing: 36) {
                 if tv.remoteLinks.isEmpty {
                     RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.white.opacity(0.1))
                         .frame(width: 300, height: 300)
