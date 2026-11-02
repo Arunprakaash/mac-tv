@@ -47,6 +47,7 @@ swift test --disable-xctest -Xswiftc -load-plugin-library \
 
 Built-in checks, run on the app's binary:
 
+- `--diagnostics` prints the diagnostics report (the one Settings › About copies).
 - `--selftest-drm` prints the DRM systems available.
 - `--selftest-brave <url>` opens and closes a test Brave window, and checks input if Accessibility is allowed.
 - `--export-tiles <folder>` renders the dock tiles, and `--export-home <folder>` the home screen.
