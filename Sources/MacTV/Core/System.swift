@@ -59,7 +59,7 @@ enum SystemControl {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         process.arguments = [argument]
-        try? process.run()
+        Log.system.attempt("Running pmset \(argument)") { try process.run() }
     }
 }
 

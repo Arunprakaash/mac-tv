@@ -60,7 +60,7 @@ final class JellyfinServers: ObservableObject {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(servers) { try? data.write(to: file, options: .atomic) }
+        Log.movies.attempt("Saving Jellyfin servers") { try JSONEncoder().encode(servers).write(to: file, options: .atomic) }
     }
 
     func server(for path: String) -> Server? {
@@ -123,7 +123,9 @@ final class JellyfinServers: ObservableObject {
         guard let server = servers.first(where: { $0.id == id }) else { return }
         if let token = JellyfinKeychain.token(server: id) {
             let request = Self.request(server.address, "/Sessions/Logout", token: token, body: [String: Any]())
-            Task.detached { _ = try? await Self.call(request) }
+            Task.detached {
+                do { _ = try await Self.call(request) } catch { Log.movies.failure("Jellyfin sign-out", error) }
+            }
         }
         JellyfinKeychain.delete(server: id)
         servers.removeAll { $0.id == id }
@@ -273,7 +275,9 @@ final class JellyfinServers: ObservableObject {
         body["PlaySessionId"] = stream.session
         body["PositionTicks"] = Int64(max(0, position) * 10_000_000)
         let request = Self.request(server.address, path, token: token, body: body)
-        Task.detached { _ = try? await Self.call(request) }
+        Task.detached {
+            do { _ = try await Self.call(request) } catch { Log.movies.failure("Jellyfin playback report", error) }
+        }
     }
 
     /// What Mac TV's player opens itself; Jellyfin converts the rest to HLS in fragmented MP4,

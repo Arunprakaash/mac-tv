@@ -273,8 +273,10 @@ final class MovieLibrary: ObservableObject {
     func movie(_ path: String) -> Movie? { movies.first { $0.path == path } }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(movies) { try? data.write(to: listFile, options: .atomic) }
-        if let data = try? JSONEncoder().encode(offline) { try? data.write(to: offlineFile, options: .atomic) }
+        Log.movies.attempt("Saving the movie list") {
+            try JSONEncoder().encode(movies).write(to: listFile, options: .atomic)
+            try JSONEncoder().encode(offline).write(to: offlineFile, options: .atomic)
+        }
     }
 
     // MARK: Posters

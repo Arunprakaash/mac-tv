@@ -26,4 +26,14 @@ extension Logger {
         let error = error as NSError
         self.error("\(what, privacy: .public): \(error.domain, privacy: .public) \(error.code, privacy: .public) \(error.localizedDescription)")
     }
+
+    /// Runs a step whose failure mustn't stop Mac TV, like saving a list, and logs it if it fails.
+    /// Returns nil then, like `try?`.
+    @discardableResult
+    func attempt<T>(_ what: String, _ body: () throws -> T) -> T? {
+        do { return try body() } catch {
+            failure(what, error)
+            return nil
+        }
+    }
 }

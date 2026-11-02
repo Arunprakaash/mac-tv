@@ -171,8 +171,9 @@ final class TopShelfFeed: ObservableObject {
             services["ytmusic"] = Array(albums.dropFirst(albums.count / 2) + albums.prefix(albums.count / 2))
         }
         guard fetchedUsable else { return } // Keep the last successful timestamp when offline.
-        if let data = try? JSONEncoder().encode(Saved(fetched: Date(), services: services, preferences: preferences)) {
-            try? data.write(to: listFile, options: .atomic)
+        Log.app.attempt("Saving the Top Shelf") {
+            try JSONEncoder().encode(Saved(fetched: Date(), services: services, preferences: preferences))
+                .write(to: listFile, options: .atomic)
         }
         use(services)
     }

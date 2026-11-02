@@ -13,9 +13,11 @@ enum AppFolder {
         let folder = support.appendingPathComponent("Mac TV", isDirectory: true)
         let earlier = support.appendingPathComponent("Matinee", isDirectory: true)
         if !FileManager.default.fileExists(atPath: folder.path), FileManager.default.fileExists(atPath: earlier.path) {
-            try? FileManager.default.moveItem(at: earlier, to: folder)
+            Log.app.attempt("Moving the Matinee folder") { try FileManager.default.moveItem(at: earlier, to: folder) }
         }
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        Log.app.attempt("Creating the data folder") {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
         // Earlier versions kept a list of what was watched; Mac TV no longer records one.
         try? FileManager.default.removeItem(at: folder.appendingPathComponent("history.json"))
         return folder
@@ -67,8 +69,11 @@ final class AppLibrary {
 
     init(profileID: String = Profile.mainID, folder: URL = AppFolder.url) {
         storageFolder = folder
-        iconsFolder = folder.appendingPathComponent("Icons", isDirectory: true)
-        try? FileManager.default.createDirectory(at: iconsFolder, withIntermediateDirectories: true)
+        let icons = folder.appendingPathComponent("Icons", isDirectory: true)
+        iconsFolder = icons
+        Log.app.attempt("Creating the icons folder") {
+            try FileManager.default.createDirectory(at: icons, withIntermediateDirectories: true)
+        }
         let main = profileID == Profile.mainID
         file = folder.appendingPathComponent(main ? "apps.json" : "apps-\(profileID).json")
         idPrefix = main ? "user-" : "user-\(profileID)-"
@@ -173,7 +178,7 @@ final class AppLibrary {
 
     func setIcon(_ png: Data, accent: String?, for id: String) {
         guard containsAddedApp(id) else { return }
-        try? png.write(to: iconFile(for: id), options: .atomic)
+        Log.app.attempt("Saving an app icon") { try png.write(to: iconFile(for: id), options: .atomic) }
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added[index].accent = accent
             save()
