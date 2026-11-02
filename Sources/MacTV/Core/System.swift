@@ -259,7 +259,8 @@ enum LAN {
     /// address it stays the same across sleep and Wi-Fi changes, so a phone's saved remote keeps working.
     static func bonjourName() -> String? {
         guard let name = SCDynamicStoreCopyLocalHostName(nil) as String?, !name.isEmpty else { return nil }
-        return name + ".local"
+        // Lowercase, as browsers write host names in a page's origin.
+        return name.lowercased() + ".local"
     }
 
     /// Tailscale hands out addresses from 100.64.0.0/10.

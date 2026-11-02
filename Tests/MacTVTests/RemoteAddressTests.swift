@@ -26,6 +26,12 @@ struct RemoteAddressTests {
         #expect(header("Access-Control-Allow-Origin", in: allowed) == name)
         #expect(header("Access-Control-Allow-Headers", in: allowed)?.contains("X-Couch-Key") == true)
 
+        // Browsers lowercase host names in an origin.
+        let mixedCase = server(origins: ["http://MacBook-Pro-2.local:8765"])
+        let lowered = mixedCase.respond(to: request("OPTIONS", "/state", origin: "http://macbook-pro-2.local:8765"))
+        #expect(lowered.status == "204 No Content")
+        #expect(header("Access-Control-Allow-Origin", in: lowered) == "http://macbook-pro-2.local:8765")
+
         let foreign = remote.respond(to: request("OPTIONS", "/state", origin: "http://evil.example"))
         #expect(foreign.status == "403 Forbidden")
         #expect(header("Access-Control-Allow-Origin", in: foreign) == nil)
@@ -58,5 +64,20 @@ struct RemoteAddressTests {
         #expect(tv.remoteCoordinator.origins.contains("http://\(name):18765"))
         #expect(tv.remoteCoordinator.origins.contains("http://\(ip):18765"))
         #expect(name.hasSuffix(".local"))
+        #expect(name == name.lowercased())
+    }
+}
+
+@Suite struct RemoteAddressParsingTests {
+    @Test func preflightRequestsAreParsed() throws {
+        let raw = "OPTIONS /state HTTP/1.1\r\nHost: 192.168.1.5:8765\r\nOrigin: http://arun.local:8765\r\n\r\n"
+        guard case .complete(let request, _) = HTTPRequest.parseResult(Data(raw.utf8)) else {
+            Issue.record("An OPTIONS preflight should parse"); return
+        }
+        #expect(request.method == "OPTIONS")
+        #expect(request.headers["origin"] == "http://arun.local:8765")
+        guard case .invalid = HTTPRequest.parseResult(Data("DELETE /state HTTP/1.1\r\n\r\n".utf8)) else {
+            Issue.record("Other methods stay rejected"); return
+        }
     }
 }
