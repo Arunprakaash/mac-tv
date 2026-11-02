@@ -79,7 +79,8 @@ async function moveToAnotherAddress(fetcher = fetch, go = url => location.replac
 // Keep a reachable sleeping display distinct from an offline Mac.
 function online(ok, sleeping = false) {
   $('.status').hidden = ok && !sleeping;
-  $('#status').textContent = !ok ? 'Can’t reach the TV' : sleeping ? 'Screen asleep · controls wake it' : '';
+  // A Mac that's fully asleep is off the network; only its own keyboard, trackpad or lid wakes it.
+  $('#status').textContent = !ok ? 'Can’t reach the Mac. If it’s asleep, wake it with its keyboard or lid.' : sleeping ? 'Screen asleep · controls wake it' : '';
 }
 
 // A timed-out POST may already have reached the TV; never replay it automatically.
