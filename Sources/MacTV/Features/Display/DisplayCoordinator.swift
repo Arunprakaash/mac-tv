@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.ps
 import IOKit.pwr_mgt
 
 /// Manages display power assertions, lid sleep overrides, and external screen configuration.
@@ -10,7 +11,9 @@ final class DisplayCoordinator: ObservableObject {
     private let keepAwake = KeepAwake()
     private let macAwake = KeepAwake(kIOPMAssertionTypePreventUserIdleSystemSleep)
     private var powerTimer: Timer?
+    private var powerSource: CFRunLoopSource?
     private var wakeObserver: NSObjectProtocol?
+    private var screensObserver: NSObjectProtocol?
     private var lidGuard: Process?
     private static let lowBattery = 20
 
@@ -48,18 +51,33 @@ final class DisplayCoordinator: ObservableObject {
 
     func startPowerManagement() {
         applyPower()
-        // Often enough to win back the lid switch soon after powerd rewrites it.
-        powerTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshPower() }
-        }
+        // macOS says when the power source, battery level or displays change, so there's nothing
+        // to poll for. Only a lid override needs a timer (`updateLidTimer`).
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        powerSource = IOPSNotificationCreateRunLoopSource({ context in
+            guard let context else { return }
+            let coordinator = Unmanaged<DisplayCoordinator>.fromOpaque(context).takeUnretainedValue()
+            MainActor.assumeIsolated { coordinator.refreshPower() }
+        }, context)?.takeRetainedValue()
+        if let powerSource { CFRunLoopAddSource(CFRunLoopGetMain(), powerSource, .defaultMode) }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshPower() }
+        }
+        // Closing the lid with a TV connected switches the built-in display off.
+        screensObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshPower() }
         }
     }
 
     func stopPowerManagement() {
         powerTimer?.invalidate()
+        powerTimer = nil
+        if let powerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .defaultMode) }
+        powerSource = nil
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
+        if let screensObserver { NotificationCenter.default.removeObserver(screensObserver) }
         macAwake.release()
         if lidSleepOff { releaseLid() }
     }
@@ -73,6 +91,7 @@ final class DisplayCoordinator: ObservableObject {
         guard lidSleepOff else { return }
         if let reason = lidOverrideStopReason() {
             lidOverride = false
+            Log.system.notice("Lid override stopped: \(reason, privacy: .public)")
             tv?.showToast(reason)
         } else {
             LidSleep.setPrevented(true)
@@ -97,7 +116,21 @@ final class DisplayCoordinator: ObservableObject {
         } else if !lidOverride, lidSleepOff {
             releaseLid()
         }
+        updateLidTimer()
         tv?.objectWillChange.send()
+    }
+
+    /// powerd rewrites the lid switch when power or displays change, and at times of its own, so
+    /// while lid sleep is off it's set again every few seconds, and the battery and heat checked.
+    private func updateLidTimer() {
+        if lidSleepOff, powerTimer == nil {
+            powerTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshPower() }
+            }
+        } else if !lidSleepOff {
+            powerTimer?.invalidate()
+            powerTimer = nil
+        }
     }
 
     private func releaseLid() {

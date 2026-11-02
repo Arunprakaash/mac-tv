@@ -193,7 +193,7 @@ struct AppCell: View {
     var body: some View {
         let index = item.index, service = item.service
         let focused = tv.focus == .app(index)
-        AppTile(service: service, focused: focused, tilt: focused ? tv.tilt : .zero)
+        TiltingAppTile(pointer: tv.pointerTilt, service: service, focused: focused)
             .overlay(alignment: .topTrailing) {
                 if tv.isPinned(service.id) {
                     Image(systemName: "star.fill")
@@ -230,6 +230,22 @@ struct AppCell: View {
                 tv.open(service)
             }
             .zIndex(focused ? 1 : 0)
+    }
+}
+
+/// The pointer over the focused tile, apart from `TVController` so following it redraws only tiles.
+final class PointerTilt: ObservableObject {
+    @Published var value: CGSize = .zero
+}
+
+/// An app tile that leans towards the pointer while it has focus.
+private struct TiltingAppTile: View {
+    @ObservedObject var pointer: PointerTilt
+    let service: Service
+    let focused: Bool
+
+    var body: some View {
+        AppTile(service: service, focused: focused, tilt: focused ? pointer.value : .zero)
     }
 }
 

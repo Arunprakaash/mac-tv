@@ -97,16 +97,14 @@ final class AudioCoordinator: ObservableObject {
         }
         self.devices = newDevices
         self.currentDevice = newDevices.first(where: { $0.id == defaultID })
-        // Reading the volume runs AppleScript, so only while the picker shows it.
-        if tv?.audioPicker != nil { refreshVolume() }
-        tv?.objectWillChange.send()
+        refreshVolume()
     }
 
     // MARK: - Volume Controls
 
     @Published private(set) var currentVolume = VolumeLevel(level: nil, muted: false)
 
-    /// Reads the Mac's volume. Tests swap it out: the AppleScript behind it ends a test run.
+    /// Reads the Mac's volume. Tests swap it out, so they don't depend on the Mac's sound hardware.
     static var readVolume: () -> VolumeLevel = SystemControl.volume
 
     func refreshVolume() {
@@ -120,14 +118,9 @@ final class AudioCoordinator: ObservableObject {
         tv?.objectWillChange.send()
     }
 
-    /// Setting the volume runs AppleScript, so a drag sets it only when the level changes,
-    /// at most about twelve times a second.
-    private var lastDragSet: TimeInterval = 0
-
+    /// A drag sets the volume only when the level changes.
     func dragVolume(to level: Int) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard level != currentVolume.level || currentVolume.muted, now - lastDragSet >= 0.08 else { return }
-        lastDragSet = now
+        guard level != currentVolume.level || currentVolume.muted else { return }
         setVolume(level)
     }
 
