@@ -58,10 +58,18 @@ final class TVMode {
         }
     }
 
+    /// One short line per window step, for the diagnostics report: the display it's on (first part
+    /// of its id), where it's headed, and its state.
     private func trace(_ event: String) {
-        let current = window.screen.map(id) ?? "none", target = manualTargetID ?? "none"
-        let fullScreen = window.styleMask.contains(.fullScreen), frame = NSStringFromRect(window.frame)
-        Log.display.notice("\(event, privacy: .public) current=\(current, privacy: .public) preferred=\(self.preferredID ?? "automatic", privacy: .public) fullscreen=\(fullScreen, privacy: .public) transitioning=\(self.transitioning, privacy: .public) moving=\(self.movingWindow, privacy: .public) target=\(target, privacy: .public) frame=\(frame, privacy: .public)")
+        func short(_ id: String?) -> String { id.map { String($0.prefix(8)) } ?? "none" }
+        var parts = ["on \(short(window.screen.map(id)))"]
+        if let manualTargetID { parts.append("to \(short(manualTargetID))") }
+        parts.append(preferredID.map { "prefers \(short($0))" } ?? "automatic")
+        parts.append(window.styleMask.contains(.fullScreen) ? "full screen" : "windowed")
+        if transitioning { parts.append("transitioning") }
+        if movingWindow { parts.append("moving") }
+        parts.append("\(Int(window.frame.width))×\(Int(window.frame.height))")
+        Log.display.notice("\(event, privacy: .public): \(parts.joined(separator: ", "), privacy: .public)")
     }
 
     var enabled: Bool { preferences.dedicatedTVMode }
