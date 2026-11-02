@@ -152,7 +152,7 @@ final class NetworkShares: ObservableObject {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(shares) { try? data.write(to: file, options: .atomic) }
+        Log.movies.attempt("Saving network shares") { try JSONEncoder().encode(shares).write(to: file, options: .atomic) }
     }
 
     // MARK: Connecting

@@ -171,9 +171,12 @@ final class Updater: ObservableObject {
             var kept: URL?
             if let file, ok {
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent("MacTV-update-\(UUID().uuidString)")
-                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let target = folder.appendingPathComponent("update.dmg")
-                if (try? FileManager.default.moveItem(at: file, to: target)) != nil { kept = target }
+                kept = Log.updates.attempt("Keeping the download") {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.moveItem(at: file, to: target)
+                    return target
+                }
             }
             Task { @MainActor in
                 Updater.shared.progress = nil
@@ -225,7 +228,9 @@ final class Updater: ObservableObject {
     private nonisolated static func replaceApp(at bundle: URL, withAppIn image: URL, work: URL,
                                                requirement: SecRequirement?) -> Result<Void, InstallError> {
         let mount = work.appendingPathComponent("mount")
-        try? FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
+        Log.updates.attempt("Creating the mount point") {
+            try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
+        }
         guard run("/usr/bin/hdiutil", ["attach", image.path, "-nobrowse", "-readonly", "-quiet", "-mountpoint", mount.path]) else {
             return .failure(InstallError(message: "Couldn't open the update."))
         }
@@ -285,7 +290,7 @@ final class Updater: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.3; done; open \"$2\"",
                              "sh", String(ProcessInfo.processInfo.processIdentifier), bundle.path]
-        try? process.run()
+        Log.updates.attempt("Starting the relaunch") { try process.run() }
         NSApp.terminate(nil)
     }
 }

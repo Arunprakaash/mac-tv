@@ -83,7 +83,7 @@ final class ProfileStore {
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(saved) { try? data.write(to: file, options: .atomic) }
+        Log.app.attempt("Saving profiles") { try JSONEncoder().encode(saved).write(to: file, options: .atomic) }
     }
 }
 

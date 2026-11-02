@@ -30,3 +30,13 @@ struct DiagnosticReportTests {
         #expect(!DiagnosticReport.sessionLog(limit: 5).hasPrefix("Couldn't read the log"))
     }
 }
+
+@Suite struct LogAttemptTests {
+    struct Failure: Error {}
+
+    @Test func attemptReturnsTheValueOrNilAndKeepsGoing() {
+        #expect(Log.app.attempt("A step that works") { 42 } == 42)
+        let failed: Int? = Log.app.attempt("A step that fails") { throw Failure() }
+        #expect(failed == nil)
+    }
+}
