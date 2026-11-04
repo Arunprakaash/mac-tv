@@ -28,7 +28,7 @@
 </nav>
 <main class="wrap"><div class="doc">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated November 1, 2026</p>
+    <p class="updated">Last updated November 4, 2026</p>
 
     <div class="summary">
       <p><strong>In short:</strong> Mac TV has no account and no servers of its own, and it never records what you watch. If you agree, it shares anonymous usage (which features you use) to help improve it; if you don't, it sends nothing. It doesn't sell or share your data. What it stores stays on your Mac. The streaming services you use in it have their own privacy policies.</p>
@@ -72,6 +72,7 @@
       <li><strong>Features you use:</strong> opening Control Center and which controls you use, which Settings sections you open, the screen saver's wallpaper type, creating a profile, finishing setup.</li>
       <li><strong>Which built-in apps you open</strong>, such as Netflix or YouTube. Apps you added are counted only by kind (a website, a Mac app or a Steam game), never by name or address.</li>
       <li><strong>How you control Mac TV:</strong> phone remote, game controller, keyboard, trackpad or mouse.</li>
+      <li><strong>Links you share from your phone:</strong> only which built-in app opened them, such as YouTube, or that it was a website. Never the link.</li>
       <li><strong>Your settings and counts:</strong> how many profiles and added apps you have, and whether options like sounds, keep awake or skip intros are on.</li>
       <li><strong>Movies:</strong> the kind of file (for example MKV) and whether it played in Mac TV or another app, never its name.</li>
       <li><strong>Basics:</strong> Mac TV and macOS versions, Mac model, and your language and region settings.</li>
@@ -81,6 +82,7 @@
     <h2>The phone remote</h2>
     <p>The remote is a web page served by Mac TV from your Mac, on your own network or your Tailscale network. It doesn't pass through the internet or any server of mine. Only phones that scan the QR code or enter the pairing code shown on your TV can control Mac TV. Each phone then gets its own key, kept in its browser and stored only as a hash on your Mac, and you can remove any phone in TV controls.</p>
     <p>On your home network the remote uses plain HTTP, so it's meant for networks you trust. Tailscale encrypts the connection itself.</p>
+    <p>On Android, the remote can add Mac TV to your phone's Share menu through a small page on this website. That page keeps your Mac's remote address in your phone's browser. It answers each share from a copy kept on your phone and hands the link straight to the remote, in the part of the address browsers never send to servers, so this website never receives your links or your Mac's address.</p>
 
     <h2>Permissions on your Mac</h2>
     <ul>

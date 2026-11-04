@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Share to Mac TV</title>
+<meta name="theme-color" content="#07080b">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+  :root { --bg:#07080b; --fg:#f5f5f7; --dim:rgba(235,235,245,.6); --card:rgba(255,255,255,.07); --warn:#ff9f0a; }
+  html, body { margin:0; min-height:100%; background:var(--bg); color:var(--fg);
+    font:16px/1.4 -apple-system, system-ui, Roboto, sans-serif; }
+  main { max-width:420px; margin:0 auto; padding:calc(40px + env(safe-area-inset-top)) 20px 32px;
+    display:flex; flex-direction:column; gap:16px; }
+  img { width:72px; height:72px; border-radius:16px; }
+  h1 { font-size:24px; margin:0; }
+  p { margin:0; color:var(--dim); }
+  p.warn { color:var(--warn); }
+  ol { margin:0; padding-left:22px; color:var(--dim); display:flex; flex-direction:column; gap:6px; }
+  button, a.button { display:block; box-sizing:border-box; width:100%; height:52px; border:0; border-radius:14px;
+    background:#fff; color:#07080b; font:inherit; font-weight:600; text-align:center; line-height:52px; text-decoration:none; }
+  a.button.quiet { background:var(--card); color:var(--fg); font-weight:500; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <img src="icon-192.png" alt="">
+  <h1 id="title">Share to Mac TV</h1>
+
+  <section id="setup" hidden>
+    <p>Install Mac TV on this phone. It then appears in the Share menu of YouTube, Netflix, Chrome and other apps, and what you share opens on your TV.</p>
+    <button id="install" hidden>Install</button>
+    <ol id="how">
+      <li>Tap Chrome's <strong>⋮</strong> menu.</li>
+      <li>Tap <strong>Add to Home screen</strong>, then <strong>Install</strong>.</li>
+    </ol>
+  </section>
+
+  <section id="ready" hidden>
+    <p>Mac TV is in your Share menu. Share a link from any app and choose Mac TV.</p>
+  </section>
+
+  <section id="unknown" hidden>
+    <p class="warn">This phone doesn't know your Mac yet.</p>
+    <p>Open Mac TV's phone remote, then Settings › Add to Share menu.</p>
+  </section>
+
+  <p id="message" hidden></p>
+  <a class="button quiet" id="remote" hidden>Open the remote</a>
+</main>
+<script>
+// Takes a link shared from another app and hands it to the Mac TV phone remote, which opens it on
+// the TV. The remote is plain HTTP on the home network, so it can't be installed into the Share
+// menu itself; this page can. The Mac's address is kept only in this phone's browser; shares are
+// answered from a copy of this page on the phone (sw.js), and the link goes to the remote in the
+// address fragment (#…), which browsers never send to any server.
+const $ = id => document.getElementById(id);
+const saved = {
+  get() { try { return localStorage.getItem('mactvRemote') || ''; } catch { return ''; } },
+  set(value) { try { localStorage.setItem('mactvRemote', value); } catch {} },
+};
+
+function remoteOrigin(text) {
+  try {
+    const url = new URL(text);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.origin : '';
+  } catch { return ''; }
+}
+
+// Apps share the link in `url`, or inside the text ("Watch this! https://youtu.be/…").
+function sharedLink(params) {
+  for (const value of [params.get('url'), params.get('text'), params.get('title')]) {
+    const match = (value || '').match(/https?:\/\/[^\s<>"']+/i);
+    if (match) return match[0];
+  }
+  return '';
+}
+
+const fromRemote = remoteOrigin(new URLSearchParams(location.hash.slice(1)).get('mac') || '');
+if (fromRemote) saved.set(fromRemote);
+const origin = saved.get();
+const link = sharedLink(new URLSearchParams(location.search));
+if (location.hash || location.search) history.replaceState(null, '', location.pathname);
+
+if (link && origin) {
+  $('title').textContent = 'Sending to Mac TV…';
+  location.replace(`${origin}/#send=${encodeURIComponent(link)}`);
+} else if (link) {
+  $('unknown').hidden = false;
+} else {
+  const installed = matchMedia('(display-mode: standalone)').matches;
+  $(origin ? (installed ? 'ready' : 'setup') : 'unknown').hidden = false;
+  if (origin) {
+    $('remote').href = `${origin}/`;
+    $('remote').hidden = false;
+  }
+}
+
+let installPrompt = null;
+addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  $('install').hidden = false;
+  $('how').hidden = true;
+});
+$('install').onclick = async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice;
+  installPrompt = null;
+  $('install').hidden = true;
+  if (outcome === 'accepted') { $('setup').hidden = true; $('ready').hidden = false; }
+  else $('how').hidden = false;
+};
+addEventListener('appinstalled', () => { $('setup').hidden = true; $('ready').hidden = false; });
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
