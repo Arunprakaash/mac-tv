@@ -109,6 +109,8 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         config.userContentController.addUserScript(
             WKUserScript(source: WebPlayback.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(
+            WKUserScript(source: StillMouse.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(
             WKUserScript(source: AutoPlay.script(skip: tv?.autoSkip ?? true, next: tv?.autoNext ?? true),
                          injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         if service.dpadNavigation {

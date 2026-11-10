@@ -18,6 +18,7 @@ jobs:
           node Tests/WebPlayback/address.test.cjs
           node Tests/WebPlayback/layout.test.cjs
           node Tests/WebPlayback/transport.test.cjs
+          node Tests/WebPlayback/stillmouse.test.cjs
           node Tests/WebPlayback/reconnect.test.cjs
       - name: Build universal app
         run: ./build.sh

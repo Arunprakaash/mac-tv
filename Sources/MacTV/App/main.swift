@@ -252,6 +252,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tv.updater.isIdle = { [weak self] in self?.tv.idleForUpdate ?? false }
         tv.updater.start()
         tv.networkShares.start()
+        // `--open-website <url>` opens a page in the website player at launch, for testing.
+        if let flag = CommandLine.arguments.firstIndex(of: "--open-website"), flag + 1 < CommandLine.arguments.count,
+           let url = WebsiteAddress.url(from: CommandLine.arguments[flag + 1]) {
+            tv.open(Service(id: "browser-session", name: url.host ?? "Website", kind: .web(url)))
+            return
+        }
         if tv.needsSetup || CommandLine.arguments.contains("--setup") {
             tv.startSetup()
             return
