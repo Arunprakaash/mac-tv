@@ -52,6 +52,7 @@ Built-in checks, run on the app's binary:
 
 - `--diagnostics` prints the diagnostics report (the one Settings › About copies).
 - `--selftest-drm` prints the DRM systems available.
+- `--open-website <url>` opens a page in the website player at launch.
 - `--selftest-brave <url>` opens and closes a test Brave window, and checks input if Accessibility is allowed.
 - `--export-tiles <folder>` renders the dock tiles, and `--export-home <folder>` the home screen.
 - `--export-remote <file.png> [apps|controls]` renders the phone remote. Needs Mac TV running and `MACTV_REMOTE_CODE` set to its current pairing PIN.
