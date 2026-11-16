@@ -71,13 +71,52 @@ extension TVController {
         if game == SteamLibrary.bigPicture {
             useIcon(SteamLibrary.appURL.flatMap { IconFinder.icon(forAppAt: $0.path) }, for: app.id)
         } else {
-            let origin = library
-            Task { [weak self] in
-                let png = await SteamLibrary.tile(for: game.appID)
-                await MainActor.run { self?.useIcon(png, for: app.id, in: origin) }
-            }
+            Task { await fetchSteamArt(appID: game.appID, id: app.id, in: library) }
         }
         return app
+    }
+
+    /// Downloads missing Steam tile / Top Shelf art for games already on the dock.
+    func ensureSteamHeroes() {
+        let origin = library
+        for service in services {
+            guard case .steam(let appID) = service.kind, appID != SteamLibrary.bigPicture.appID else { continue }
+            let tileMissing = !FileManager.default.fileExists(atPath: origin.iconFile(for: service.id).path)
+            let heroMissing = !FileManager.default.fileExists(atPath: origin.heroFile(for: service.id).path)
+            guard tileMissing || heroMissing else { continue }
+            Task { await fetchSteamArt(appID: appID, id: service.id, in: origin, tile: tileMissing) }
+        }
+    }
+
+    /// Adds shelf-art samples if needed and (re)downloads tile + hero for each.
+    func seedSteamShelfSamples() async {
+        for game in SteamLibrary.shelfArtSamples {
+            let id: String
+            if let existing = services.first(where: { $0.kind == .steam(appID: game.appID) }) {
+                id = existing.id
+            } else {
+                let app = library.add(name: game.name, url: nil, bundleID: nil, steamID: game.appID)
+                reloadServices()
+                id = app.id
+            }
+            await fetchSteamArt(appID: game.appID, id: id, in: library)
+        }
+    }
+
+    @discardableResult
+    private func fetchSteamArt(appID: String, id: String, in origin: AppLibrary, tile: Bool = true) async -> Bool {
+        async let tilePNG: Data? = tile ? SteamLibrary.tile(for: appID) : nil
+        async let heroJPEG = SteamLibrary.hero(for: appID)
+        let (png, hero) = await (tilePNG, heroJPEG)
+        return await MainActor.run {
+            guard origin.containsAddedApp(id) else { return false }
+            if let png { useIcon(png, for: id, in: origin) }
+            if let hero {
+                origin.setHero(hero, for: id)
+                if origin === library { objectWillChange.send() }
+            }
+            return png != nil || hero != nil
+        }
     }
 
     func useIcon(_ png: Data?, for id: String, in origin: AppLibrary? = nil) {

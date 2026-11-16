@@ -145,6 +145,8 @@ final class AppLibrary {
     }
 
     func iconFile(for id: String) -> URL { iconsFolder.appendingPathComponent("\(id).png") }
+    /// Steam library hero (often 3840×1240) for the Top Shelf; separate from the dock tile PNG.
+    func heroFile(for id: String) -> URL { iconsFolder.appendingPathComponent("\(id)-hero.jpg") }
 
     private func service(for app: AddedApp) -> Service? {
         let kind: Service.Kind
@@ -185,6 +187,11 @@ final class AppLibrary {
         }
     }
 
+    func setHero(_ jpeg: Data, for id: String) {
+        guard containsAddedApp(id) else { return }
+        Log.app.attempt("Saving Steam hero art") { try jpeg.write(to: heroFile(for: id), options: .atomic) }
+    }
+
     /// Removes an added app, or hides a built-in one.
     func remove(_ id: String) {
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
@@ -192,6 +199,7 @@ final class AppLibrary {
             saved.order.removeAll { $0 == id }
             saved.pinned.remove(id)
             try? FileManager.default.removeItem(at: iconFile(for: id))
+            try? FileManager.default.removeItem(at: heroFile(for: id))
         } else if Catalog.services.contains(where: { $0.id == id && $0.kind != .settings && $0.kind != .addApp }) {
             saved.hidden.insert(id)
         }

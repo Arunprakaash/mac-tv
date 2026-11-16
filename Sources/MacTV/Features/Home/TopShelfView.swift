@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TopShelf: View {
@@ -36,28 +37,62 @@ struct AppBanner: View {
         self.expanded = expanded
     }
 
-    /// What the Top Shelf shows now: the Movies app's own movies, or the app's popular shows.
-    private var backdrop: (id: String, name: String, image: NSImage, cover: Bool)? {
+    /// Own artwork for Steam / Mac / custom apps. Steam prefers the full-res library hero over the dock tile.
+    private var appArt: NSImage? {
+        if case .steam = service.kind {
+            let hero = tv.library.heroFile(for: service.id)
+            if FileManager.default.fileExists(atPath: hero.path),
+               let image = NSImage(contentsOf: hero), image.size.width > 0 {
+                return image
+            }
+        }
+        let file = service.iconFile ?? tv.library.iconFile(for: service.id)
+        if FileManager.default.fileExists(atPath: file.path),
+           let image = NSImage(contentsOf: file), image.size.width > 0 {
+            return image
+        }
+        return Icons.tile(for: service) ?? Icons.image(for: service)
+    }
+
+    /// What the Top Shelf shows now: Movies art, popular shows, or the app's own tile when nothing else is available.
+    private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
             if !shelf.isEmpty {
                 let pick = shelf[feed.turn % shelf.count]
                 // Posters sit on the right like album covers; frames from the film fill the screen.
-                return (pick.path, movieLibrary.movies.first(where: { $0.path == pick.path })?.displayTitle ?? "Movies", pick.image, pick.image.size.height > pick.image.size.width)
+                return (pick.path, movieLibrary.movies.first(where: { $0.path == pick.path })?.displayTitle ?? "Movies",
+                        pick.image, pick.image.size.height > pick.image.size.width, false)
             }
         }
-        guard let show = feed.currentShow(for: service.id) else { return nil }
-        return feed.image(for: show.id).map { (String(show.id), show.name, $0, show.square) }
+        if let show = feed.currentShow(for: service.id), let image = feed.image(for: show.id) {
+            return (String(show.id), show.name, image, show.square, false)
+        }
+        if let tile = appArt {
+            // Pixel width in the id so swapping tile → Steam hero recreates the backdrop layer.
+            let px = tile.representations.first.map { $0.pixelsWide } ?? Int(tile.size.width)
+            return ("\(service.id)-\(px)", service.name, tile, false, true)
+        }
+        return nil
     }
 
     var body: some View {
         let show = backdrop
         ZStack(alignment: .topLeading) {
-            Artwork(accent: service.accent, deep: service.deep)
-                .frame(width: canvas.width, height: canvas.height)
-                .clipped()
+            // Steam/custom: art is the base layer so it can't be lost under a stale show backdrop.
+            if let show, show.appOwned {
+                AppArtBackdrop(image: show.image)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+                    .id(show.id)
+                    .transition(.opacity)
+            } else {
+                Artwork(accent: service.accent, deep: service.deep)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+            }
             // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
-            if let show {
+            if let show, !show.appOwned {
                 if show.cover {
                     AlbumBackdrop(image: show.image)
                         .id(show.id)
@@ -110,6 +145,30 @@ struct AppBanner: View {
             .padding(.top, 96)
             .padding(.bottom, 110)
         }
+    }
+}
+
+/// Full-bleed app tile art via a layer (SwiftUI `Image(nsImage:)` was unreliable for some Steam PNGs).
+struct AppArtBackdrop: NSViewRepresentable {
+    let image: NSImage
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.masksToBounds = true
+        view.layer?.contentsGravity = .resizeAspectFill
+        view.layer?.contents = Self.bitmap(image)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        view.layer?.contents = Self.bitmap(image)
+    }
+
+    private static func bitmap(_ image: NSImage) -> CGImage? {
+        if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) { return cg }
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.cgImage
     }
 }
 
