@@ -94,6 +94,12 @@ final class TVController: NSObject, ObservableObject {
         set { preferences.autoNext = newValue }
     }
 
+    /// Block ads on YouTube / YouTube Music in the built-in website player.
+    var blockYouTubeAds: Bool {
+        get { preferences.blockYouTubeAds }
+        set { preferences.blockYouTubeAds = newValue }
+    }
+
     // MARK: - Forwarded Properties to Coordinators
 
     // Playback
@@ -379,6 +385,7 @@ final class TVController: NSObject, ObservableObject {
         case .setting(let key, let value):
             if key == "autoSkip" { autoSkip = value }
             if key == "autoNext" { autoNext = value }
+            if key == "blockYouTubeAds" { blockYouTubeAds = value }
             if key == "keepMacAwake" { keepMacAwake = value }
             if key == "lidOverride" { lidOverride = value }
             return

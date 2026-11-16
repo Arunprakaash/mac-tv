@@ -132,6 +132,7 @@ final class RemoteCoordinator: ObservableObject {
             "sheet": sheetName,
             "autoSkip": tv.autoSkip,
             "autoNext": tv.autoNext,
+            "blockYouTubeAds": tv.blockYouTubeAds,
             "keepMacAwake": tv.keepMacAwake,
             "lidOverride": tv.lidOverride,
             "lidStatus": tv.lidStatus,
