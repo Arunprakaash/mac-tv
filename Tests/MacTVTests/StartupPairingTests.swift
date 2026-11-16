@@ -56,4 +56,30 @@ import Testing
             #expect(!tv.pairing)
         }
     }
+
+    @Test func optOutSkipsStartupPairing() throws {
+        let suite = "MacTV.StartupPairing.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = Preferences(defaults: defaults)
+        preferences.showPairingAtLaunch = false
+        var services = AppServices()
+        services.preferences = preferences
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let folder = root.appendingPathComponent("work/tests/startup-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let tv = TVController(library: AppLibrary(folder: folder), services: services)
+        tv.offerStartupPairing()
+        #expect(!tv.pairing)
+    }
+
+    @Test func openingSettingsDoesNotForcePairing() throws {
+        try withController { tv in
+            tv.phonePaired = false
+            tv.openSettings()
+            #expect(tv.settings != nil)
+            #expect(!tv.pairing)
+        }
+    }
 }
