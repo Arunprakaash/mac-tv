@@ -74,6 +74,39 @@ enum SteamLibrary {
 
     // MARK: Artwork
 
+    /// Full-bleed Top Shelf art: a full-colour store screenshot (unlike Steam's blue-tinted page backgrounds),
+    /// then the library hero. Kept separate from the dock tile's logo composite.
+    static func hero(for appID: String) async -> Data? {
+        guard appID != bigPicture.appID else { return nil }
+        if let shot = await storeScreenshot(for: appID) { return shot }
+        let base = "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/"
+        for name in ["library_hero_2x.jpg", "library_hero.jpg", "header.jpg"] {
+            if let data = await data(at: base + name) { return data }
+        }
+        return nil
+    }
+
+    /// First store screenshot for the app (1920×1080 when Steam has one).
+    private static func storeScreenshot(for appID: String) async -> Data? {
+        let api = "https://store.steampowered.com/api/appdetails?appids=\(appID)&filters=screenshots"
+        guard let meta = await data(at: api),
+              let json = try? JSONSerialization.jsonObject(with: meta) as? [String: Any],
+              let entry = json[appID] as? [String: Any],
+              let payload = entry["data"] as? [String: Any],
+              let shots = payload["screenshots"] as? [[String: Any]],
+              let path = shots.first?["path_full"] as? String else { return nil }
+        return await data(at: path)
+    }
+
+    /// A few well-known titles for Top Shelf art checks (need not be installed).
+    static let shelfArtSamples: [Game] = [
+        Game(appID: "292030", name: "The Witcher 3: Wild Hunt"),
+        Game(appID: "1091500", name: "Cyberpunk 2077"),
+        Game(appID: "1245620", name: "ELDEN RING"),
+        Game(appID: "1174180", name: "Red Dead Redemption 2"),
+        Game(appID: "814380", name: "Sekiro: Shadows Die Twice"),
+    ]
+
     /// A 5:3 tile like Steam's own TV mode: the game's wide background with its logo centred on it.
     /// Falls back to the store header image. Downloads from Steam's servers.
     static func tile(for appID: String) async -> Data? {
@@ -86,10 +119,15 @@ enum SteamLibrary {
         return compose(background: picture, logo: background == nil ? nil : mark)
     }
 
-    private static func image(at address: String) async -> CGImage? {
+    private static func data(at address: String) async -> Data? {
         guard let url = URL(string: address),
               let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200,
+              (response as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else { return nil }
+        return data
+    }
+
+    private static func image(at address: String) async -> CGImage? {
+        guard let data = await data(at: address),
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }

@@ -113,6 +113,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // `--seed-steam-shelf` adds a few AAA Steam tiles (artwork only; need not be installed) for Top Shelf checks.
+        if CommandLine.arguments.contains("--seed-steam-shelf") {
+            let tv = TVController()
+            Task {
+                await tv.seedSteamShelfSamples()
+                let icons = AppFolder.url.appendingPathComponent("Icons", isDirectory: true)
+                let names = (try? FileManager.default.contentsOfDirectory(atPath: icons.path)) ?? []
+                let tiles = SteamLibrary.shelfArtSamples.compactMap { game -> String? in
+                    tv.services.first(where: { $0.kind == .steam(appID: game.appID) })?.id
+                }.filter { names.contains("\($0).png") }
+                print("Seeded Steam shelf samples: \(tiles.count)/\(SteamLibrary.shelfArtSamples.count) tiles ready.")
+                exit(tiles.count == SteamLibrary.shelfArtSamples.count ? 0 : 1)
+            }
+            return
+        }
         // `--export-tiles <folder>` writes every dock tile as a PNG, for checking the icon layout.
         if let flag = CommandLine.arguments.firstIndex(of: "--export-tiles"), flag + 1 < CommandLine.arguments.count {
             let folder = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
@@ -230,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tv.startPowerManagement()
         tv.startControllers()
         tv.topShelf.start()
+        tv.ensureSteamHeroes()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displaysSlept),
             name: NSWorkspace.screensDidSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(macWoke),
