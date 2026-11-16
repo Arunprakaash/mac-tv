@@ -28,6 +28,7 @@ final class Preferences: ObservableObject {
         saverPhotos = defaults.string(forKey: Key.saverPhotos)
         dedicatedTVMode = defaults.bool(forKey: Key.dedicatedTVMode)
         preferredTVDisplay = defaults.string(forKey: Key.preferredTVDisplay)
+        showPairingAtLaunch = defaults.object(forKey: Key.showPairingAtLaunch) as? Bool ?? true
     }
 
     // MARK: Watching
@@ -74,6 +75,11 @@ final class Preferences: ObservableObject {
     /// The display Mac TV moves to; nil picks one automatically.
     @Published var preferredTVDisplay: String? { didSet { save(preferredTVDisplay, Key.preferredTVDisplay) } }
 
+    // MARK: Remote
+
+    /// Show the phone-remote pairing sheet when Mac TV launches.
+    @Published var showPairingAtLaunch: Bool { didSet { save(showPairingAtLaunch, Key.showPairingAtLaunch) } }
+
     private func save(_ value: Any?, _ key: String) {
         if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
@@ -94,5 +100,6 @@ final class Preferences: ObservableObject {
         static let saverPhotos = "saverPhotos"
         static let dedicatedTVMode = "dedicatedTVMode"
         static let preferredTVDisplay = "preferredTVDisplay"
+        static let showPairingAtLaunch = "showPairingAtLaunch"
     }
 }

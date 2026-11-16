@@ -90,6 +90,7 @@ final class RemoteCoordinator: ObservableObject {
         guard let tv, startupPairingPending, !phoneConnectedThisLaunch,
               tv.setup == nil, tv.profilePicker == nil, tv.mode == .launcher else { return }
         startupPairingPending = false
+        guard tv.preferences.showPairingAtLaunch else { return }
         startupPairingVisible = true
         tv.pairing = true
     }

@@ -101,8 +101,6 @@ extension TVController {
 
     func openSettings() {
         settings = SettingsPanel()
-        // Nothing to set before there's a remote: go straight to the QR code.
-        if !phonePaired { pairing = true }
     }
 
     func handleSettings(_ command: RemoteCommand) {

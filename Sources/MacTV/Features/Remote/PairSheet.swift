@@ -42,6 +42,10 @@ struct PairSheet: View {
                         pairRow("Display", value: (displays.first(where: \.current) ?? displays.first)?.name,
                                 focused: tv.pairingFocusedRow == .display) { tv.stepPairingDisplay() }
                     }
+                    pairRow("Show this at launch", value: tv.preferences.showPairingAtLaunch ? "On" : "Off",
+                            focused: tv.pairingFocusedRow == .showAtLaunch) {
+                        tv.preferences.showPairingAtLaunch.toggle()
+                    }
                 }
                 .padding(.top, 8)
                 ShelfButton(title: "Done", focused: tv.pairingFocusedRow == .done, glass: false) { tv.pairing = false }
