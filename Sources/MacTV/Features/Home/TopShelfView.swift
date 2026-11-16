@@ -5,17 +5,23 @@ struct TopShelf: View {
     @ObservedObject var tv: TVController
     let expanded: Bool
     @Environment(\.canvasSize) private var canvas
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let service = tv.shelfService
+        let service = tv.bannerService
         Group {
-            if tv.shelfCount > 0 {
+            if tv.shelfCount > 0 || (service.kind != .addApp && service.kind != .settings) {
                 AppBanner(tv: tv, service: service, expanded: expanded)
             }
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .id(service.id)
         .transition(.opacity)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: service.id)
+        // Grid browsing: soft-focus the hero so the tiles stay the focus.
+        .blur(radius: tv.inGrid ? 40 : 0)
+        .overlay { Color.black.opacity(tv.inGrid ? 0.5 : 0).allowsHitTesting(false) }
+        .animation(reduceMotion ? nil : Motion.navigate, value: tv.inGrid)
     }
 }
 

@@ -1,18 +1,52 @@
 import AppKit
 
+/// How the home dock shows apps past the first row.
+enum HomeLayout: String, CaseIterable {
+    /// Continuous scroll: lower rows push the dock away.
+    case scroll
+    /// One dock row at a time: down swaps in the next six tiles.
+    case pages
+
+    var title: String {
+        switch self {
+        case .scroll: "Scroll"
+        case .pages: "Pages"
+        }
+    }
+}
+
 // Focus on the home screen: the app grid, the Top Shelf and the status row.
 extension TVController {
     var statusItems: [StatusItem] {
         (lidSleepOff ? [.lid] : []) + [.controlCenter, .profile]
     }
 
+    var homeLayout: HomeLayout {
+        get { HomeLayout(rawValue: preferences.homeLayout) ?? .scroll }
+        set { preferences.homeLayout = newValue.rawValue }
+    }
+
     /// The top-row app whose content the Top Shelf shows.
     var shelfService: Service { services.indices.contains(shelfAppIndex) ? services[shelfAppIndex] : services[0] }
 
-    /// True when focus is below the top row; the Top Shelf scrolls away.
+    /// Backdrop art follows the focused app in the grid; Open/Search stay on the dock's shelf app.
+    var bannerService: Service {
+        if case .app(let index) = focus, services.indices.contains(index) { return services[index] }
+        return shelfService
+    }
+
+    /// True when focus is below the top row in Scroll layout; the dock scrolls away, the hero stays behind the grid.
+    /// Pages layout keeps the dock, so this stays false.
     var inGrid: Bool {
+        if homeLayout == .pages { return false }
         if case .app(let index) = focus { return index >= columns }
         return false
+    }
+
+    /// Dock page index for Pages layout (also used while the Top Shelf has focus).
+    var homePage: Int {
+        if case .app(let index) = focus { return index / columns }
+        return shelfAppIndex / max(columns, 1)
     }
 
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
@@ -29,7 +63,11 @@ extension TVController {
         case .shelf, .status: return
         case .app: break
         }
-        guard (index >= columns) == inGrid else { return }
+        if homeLayout == .pages {
+            guard index / columns == homePage else { return }
+        } else {
+            guard (index >= columns) == inGrid else { return }
+        }
         if focus != .app(index) { feedback.play(.move, from: .pointer) }
         setFocus(.app(index))
         self.tilt = tilt
@@ -49,6 +87,8 @@ extension TVController {
                     setFocus(.app(index + columns))
                 } else if (row + 1) * columns < services.count {
                     setFocus(.app(services.count - 1))
+                } else {
+                    setFocus(.app(0))
                 }
             case .up:
                 if row > 0 {

@@ -216,6 +216,61 @@ struct AppLibraryTests {
     }
 
     @Test
+    func organizerRemoveKeepsSlotOrPrevious() throws {
+        try withFolder { folder in
+            let tv = TVController(library: AppLibrary(folder: folder))
+            #expect(tv.addWebsite(name: "Crunchyroll", address: "crunchyroll.com") != nil)
+            #expect(tv.addWebsite(name: "Funimation", address: "funimation.com") != nil)
+            let apps = tv.arrangedServices
+            let index = try #require(apps.firstIndex { $0.name == "Crunchyroll" })
+            let id = apps[index].id
+            let nextID = apps[index + 1].id
+            tv.openOrganizer()
+            tv.organizer?.selectedID = id
+            tv.activateOrganizerAction(.remove, for: id)
+            #expect(!tv.arrangedServices.contains { $0.id == id })
+            #expect(tv.organizer?.selectedID == nextID)
+            #expect(tv.organizer?.action == .remove)
+
+            let last = try #require(tv.arrangedServices.last)
+            let previousID = tv.arrangedServices.dropLast().last?.id
+            tv.organizer?.selectedID = last.id
+            tv.activateOrganizerAction(.remove, for: last.id)
+            #expect(tv.organizer?.selectedID == previousID)
+            #expect(tv.organizer != nil)
+        }
+    }
+
+    @Test
+    func homeDownWrapsToFirstAppInScrollAndPages() throws {
+        try withFolder { folder in
+            let tv = TVController(library: AppLibrary(folder: folder))
+            let last = tv.services.count - 1
+            tv.homeLayout = .scroll
+            tv.setFocus(.app(last))
+            tv.moveFocus(.down)
+            #expect(tv.focus == .app(0))
+
+            tv.homeLayout = .pages
+            tv.setFocus(.app(last))
+            tv.moveFocus(.down)
+            #expect(tv.focus == .app(0))
+        }
+    }
+
+    @Test
+    func organizerDownWrapsToFirst() throws {
+        try withFolder { folder in
+            let tv = TVController(library: AppLibrary(folder: folder))
+            let apps = tv.arrangedServices
+            tv.openOrganizer()
+            tv.organizer?.selectedID = apps.last?.id
+            tv.handleOrganizer(.move(.down))
+            #expect(tv.organizer?.selectedID == apps.first?.id)
+        }
+    }
+
+    @Test
     func appRequestValidationRejectsWrongTypesAndFixedOrUnknownIDs() throws {
         try withFolder { folder in
             let tv = TVController(library: AppLibrary(folder: folder))
