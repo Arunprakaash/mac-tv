@@ -200,30 +200,12 @@ enum Catalog {
                 accent: "#00A0E2", deep: "#022433", regions: ["NL"]),
     ]
 
-    /// Tests / Suggested debug row may pin a region; otherwise the Mac's Locale region.
+    /// Tests may pin a region; otherwise the Mac's Locale region.
     nonisolated(unsafe) static var suggestionRegionOverride: String?
-
-    /// ISO codes the Suggested debug row cycles through (`nil` = Auto / Locale).
-    static let suggestionDebugRegions: [String?] = [
-        nil, "DE", "AT", "CH", "FR", "GB", "US", "CA", "IN", "AU", "JP", "BR", "IT", "NL",
-    ]
 
     /// ISO region for Suggested sections.
     static var suggestionRegion: String? {
         suggestionRegionOverride ?? Locale.current.region?.identifier
-    }
-
-    /// Label for the Suggested debug row.
-    static var suggestionRegionDebugLabel: String {
-        if let override = suggestionRegionOverride { return override }
-        if let region = Locale.current.region?.identifier { return "Auto · \(region)" }
-        return "Auto"
-    }
-
-    static func cycleSuggestionRegion(forward: Bool = true) {
-        let regions = suggestionDebugRegions
-        let i = regions.firstIndex { $0 == suggestionRegionOverride } ?? 0
-        suggestionRegionOverride = regions[(i + (forward ? 1 : regions.count - 1)) % regions.count]
     }
 
     /// Whether this service's `regions` include the Mac (or override) region. Nil regions = worldwide.
