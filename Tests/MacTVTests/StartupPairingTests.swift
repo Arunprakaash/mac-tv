@@ -75,6 +75,9 @@ import Testing
     }
 
     @Test func openingSettingsDoesNotForcePairing() throws {
+        // "Phone paired" lives in the app's real settings: put it back afterwards.
+        let saved = UserDefaults.standard.object(forKey: "phonePaired")
+        defer { UserDefaults.standard.set(saved, forKey: "phonePaired") }
         try withController { tv in
             tv.phonePaired = false
             tv.openSettings()
