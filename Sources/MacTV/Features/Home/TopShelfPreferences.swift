@@ -4,16 +4,41 @@ import SwiftUI
 /// Out of the box: worldwide (plus India and the US), in languages people here watch.
 struct ShelfPreferences: Codable, Equatable {
     var region = ""
-    var languages: [String] = ["Bengali", "English", "Hindi", "Japanese", "Kannada", "Korean", "Malayalam",
-                               "Marathi", "Spanish", "Tamil", "Telugu"]
-    static let regions: [(code: String, name: String)] = [("", "Worldwide"), ("GB", "United Kingdom"), ("IN", "India"), ("US", "United States"), ("CA", "Canada"), ("AU", "Australia")]
-    static let languageOptions = ["English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi", "Japanese", "Korean", "Spanish", "French"]
+    var languages: [String] = ["Bengali", "Dutch", "English", "French", "German", "Hindi", "Italian",
+                               "Japanese", "Kannada", "Korean", "Malayalam", "Marathi", "Portuguese",
+                               "Spanish", "Tamil", "Telugu"]
+    static let regions: [(code: String, name: String)] = [
+        ("", "Worldwide"), ("DE", "Germany"), ("AT", "Austria"), ("CH", "Switzerland"),
+        ("FR", "France"), ("GB", "United Kingdom"), ("IN", "India"), ("US", "United States"),
+        ("CA", "Canada"), ("AU", "Australia"), ("JP", "Japan"), ("BR", "Brazil"), ("IT", "Italy"),
+        ("NL", "Netherlands"),
+    ]
+    static let languageOptions = ["English", "German", "French", "Dutch", "Italian", "Portuguese",
+                                  "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada",
+                                  "Bengali", "Marathi", "Japanese", "Korean", "Spanish"]
+    /// Languages Suggested locals need; older installs only had the India/DE set.
+    private static let curatedLanguages = ["Dutch", "French", "German", "Italian", "Portuguese"]
+    /// Worldwide by default; DACH still gets local catalogue via the Mac's region in scheduleQueries.
+    /// Forcing region=DE here used to disagree with the on-disk cache and blank the shelf on launch.
+    static func defaults(macRegion: String? = Locale.current.region?.identifier) -> ShelfPreferences {
+        _ = macRegion
+        return ShelfPreferences()
+    }
     func includes(language: String?) -> Bool {
         languages.isEmpty || language.map { languages.contains($0) } == true
     }
     static func load() -> ShelfPreferences {
         guard let data = UserDefaults.standard.data(forKey: "topShelfPreferences"),
-              let value = try? JSONDecoder().decode(ShelfPreferences.self, from: data) else { return ShelfPreferences() }
+              var value = try? JSONDecoder().decode(ShelfPreferences.self, from: data) else { return defaults() }
+        // Older installs omitted local catalogue languages (German first, then FR/IT/NL/PT).
+        if !value.languages.isEmpty {
+            let missing = curatedLanguages.filter { !value.languages.contains($0) }
+            if !missing.isEmpty {
+                value.languages.append(contentsOf: missing)
+                value.languages.sort()
+                value.save()
+            }
+        }
         return value
     }
     func save() {

@@ -247,42 +247,75 @@ final class AppLibrary {
 enum IconFinder {
     /// For a website: its App Store app's icon (crisp, 1024 px) when the name matches one,
     /// else the largest home-screen icon the site publishes.
-    static func icon(forSite site: URL, name: String) async -> Data? {
-        if let data = await appStoreIcon(named: name) { return data }
+    /// `regions` prefers those App Store storefronts (e.g. FR for TF1+) before the Mac's.
+    static func icon(forSite site: URL, name: String, regions: Set<String>? = nil) async -> Data? {
+        if let data = await appStoreIcon(named: name, regions: regions) { return data }
         return await siteIcon(site)
     }
 
     /// A Mac app's own icon.
     @MainActor
     static func icon(forAppAt path: String) -> Data? {
+        // Workspace icons load lazily — drawing them immediately often saves a blank tile.
+        // Round-trip through TIFF so the real pixels are in memory before we rasterise.
         let image = NSWorkspace.shared.icon(forFile: path)
         image.size = NSSize(width: 512, height: 512)
+        guard let tiff = image.tiffRepresentation, let ready = NSImage(data: tiff) else { return nil }
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1024, pixelsHigh: 1024, bitsPerSample: 8,
                                          samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                                          bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        image.draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024))
+        ready.draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024))
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])
     }
 
-    private static func appStoreIcon(named name: String) async -> Data? {
+    private static func appStoreIcon(named name: String, regions: Set<String>? = nil) async -> Data? {
         let wanted = normalized(name)
         guard !wanted.isEmpty else { return nil }
+        var countries: [String] = []
+        var seen = Set<String>()
+        for code in Array(regions ?? []) + [Locale.current.region?.identifier ?? "US",
+                                            "US", "GB", "DE", "FR", "AU", "CA", "IN", "IT", "NL", "JP", "BR"] {
+            let upper = code.uppercased()
+            if seen.insert(upper).inserted { countries.append(upper) }
+        }
+        for country in countries {
+            if let data = await appStoreIcon(named: name, wanted: wanted, country: country) { return data }
+        }
+        return nil
+    }
+
+    private static func appStoreIcon(named name: String, wanted: String, country: String) async -> Data? {
         var query = URLComponents(string: "https://itunes.apple.com/search")!
         query.queryItems = [.init(name: "term", value: name), .init(name: "entity", value: "software"),
                             .init(name: "limit", value: "8"),
-                            .init(name: "country", value: Locale.current.region?.identifier ?? "US")]
+                            .init(name: "country", value: country)]
         guard let url = query.url, let data = await fetch(url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let results = json["results"] as? [[String: Any]] else { return nil }
-        // Only trust a result whose name actually matches, e.g. "Crunchyroll" or "Crunchyroll: Anime".
-        let match = results.first { result in
+        // Prefer exact / TV-ish suffixes so "Arte"→Mediathek/TV, not ARTE Radio; "TF1+"≠"TF1 INFO".
+        let match = results.compactMap { result -> (score: Int, artwork: String)? in
             let title = normalized(result["trackName"] as? String ?? "")
-            return title == wanted || title.hasPrefix(wanted) || (wanted.count > 3 && wanted.hasPrefix(title) && title.count > 3)
-        }
-        guard let artwork = match?["artworkUrl512"] as? String,
+            guard let artwork = result["artworkUrl512"] as? String else { return nil }
+            let score: Int?
+            if title == wanted { score = 0 }
+            else if title.hasPrefix(wanted), title.count <= wanted.count + 24 {
+                let rest = title.dropFirst(wanted.count)
+                if rest.isEmpty
+                    || rest.hasPrefix("tv") || rest.hasPrefix("plus") || rest.hasPrefix("mediathek")
+                    || rest.hasPrefix("play") || rest.hasPrefix("go") || rest.hasPrefix("liv") {
+                    score = rest.count
+                } else {
+                    score = 100 + rest.count
+                }
+            } else if wanted.count > 3, wanted.hasPrefix(title), title.count > 3 {
+                score = wanted.count - title.count + 50
+            } else { score = nil }
+            return score.map { ($0, artwork) }
+        }.min(by: { $0.score < $1.score })
+        guard let artwork = match?.artwork,
               let large = URL(string: artwork.replacingOccurrences(of: "512x512bb.jpg", with: "1024x1024bb.png"))
         else { return nil }
         return await fetchImage(large)

@@ -28,6 +28,8 @@ struct Service: Identifiable, Hashable {
     /// Countries (ISO codes) where a built-in service streams; nil for everywhere. Elsewhere it isn't
     /// built in, since it would only open on a "not available in your region" page; it can still be added.
     var regions: Set<String>? = nil
+    /// App Store search term when `name` is ambiguous (e.g. My5 → "Channel 5", CTV → "CTV+").
+    var iconQuery: String? = nil
 
     /// Installed, and streams in this Mac's region.
     var isAvailable: Bool {
@@ -78,7 +80,7 @@ enum Catalog {
         Service(id: "prime", name: "Prime Video", kind: .web(URL(string: "https://www.primevideo.com")!),
                 icon: "prime.png", accent: "#1A98FF", deep: "#05213F"),
         Service(id: "hotstar", name: "JioHotstar", kind: .web(URL(string: "https://www.hotstar.com")!),
-                icon: "hotstar.png", accent: "#2C6BED", deep: "#081538"),
+                icon: "hotstar.png", accent: "#2C6BED", deep: "#081538", regions: ["IN"]),
         Service(id: "appletv", name: "Apple TV", kind: .web(URL(string: "https://tv.apple.com")!),
                 icon: "appletv.png", accent: "#9A9AA2", deep: "#18181B"),
         Service(id: "spotify", name: "Spotify", kind: .web(URL(string: "https://open.spotify.com")!),
@@ -95,6 +97,181 @@ enum Catalog {
         Service(id: "add-app", name: "Add App", kind: .addApp),
         Service(id: "settings", name: "Settings", kind: .settings),
     ]
+
+    /// Extra streaming sites under Add App › Suggested (not on the home screen by default).
+    /// `regions: nil` = worldwide (*Included*); otherwise local (*Suggested for you* when the
+    /// Mac's region matches, else behind *More services*). See `plans/suggested-catalog.md`.
+    static let websiteSuggestions: [Service] = [
+        // Global
+        Service(id: "disney", name: "Disney+", kind: .web(URL(string: "https://www.disneyplus.com")!),
+                accent: "#113CCF", deep: "#06103A"),
+        Service(id: "max", name: "Max", kind: .web(URL(string: "https://www.max.com")!),
+                accent: "#002BE7", deep: "#01082E"),
+        Service(id: "paramount", name: "Paramount+", kind: .web(URL(string: "https://www.paramountplus.com")!),
+                accent: "#0064FF", deep: "#021433"),
+        Service(id: "crunchyroll", name: "Crunchyroll", kind: .web(URL(string: "https://www.crunchyroll.com")!),
+                accent: "#F47521", deep: "#3A1604"),
+        Service(id: "twitch", name: "Twitch", kind: .web(URL(string: "https://www.twitch.tv")!),
+                accent: "#9146FF", deep: "#1C0B33"),
+        Service(id: "dazn", name: "DAZN", kind: .web(URL(string: "https://www.dazn.com")!),
+                accent: "#F7FF1A", deep: "#2A2C05"),
+        Service(id: "pluto", name: "Pluto TV", kind: .web(URL(string: "https://pluto.tv")!),
+                accent: "#FFF200", deep: "#1A1600"),
+        // DE / AT / CH
+        Service(id: "joyn", name: "Joyn", kind: .web(URL(string: "https://www.joyn.de")!),
+                accent: "#0ADEC6", deep: "#04332E", regions: ["DE", "AT", "CH"]),
+        Service(id: "rtlplus", name: "RTL+", kind: .web(URL(string: "https://plus.rtl.de")!),
+                accent: "#E4002B", deep: "#2E050C", regions: ["DE", "AT", "CH"]),
+        Service(id: "arte", name: "Arte", kind: .web(URL(string: "https://www.arte.tv")!),
+                accent: "#FF6A00", deep: "#3A1600", regions: ["DE", "FR", "AT", "CH", "BE"],
+                iconQuery: "ARTE Mediathek"),
+        Service(id: "ard", name: "ARD Mediathek", kind: .web(URL(string: "https://www.ardmediathek.de")!),
+                accent: "#003D70", deep: "#011526", regions: ["DE", "AT", "CH"]),
+        Service(id: "zdf", name: "ZDF", kind: .web(URL(string: "https://www.zdf.de")!),
+                accent: "#FA7D19", deep: "#3A1A04", regions: ["DE", "AT", "CH"]),
+        // FR (myCanal omitted — editorial)
+        Service(id: "francetv", name: "France.tv", kind: .web(URL(string: "https://www.france.tv")!),
+                accent: "#000091", deep: "#010133", regions: ["FR"], iconQuery: "france.tv"),
+        Service(id: "tf1plus", name: "TF1+", kind: .web(URL(string: "https://www.tf1.fr")!),
+                accent: "#1A1A1A", deep: "#0A0A0A", regions: ["FR"], iconQuery: "TF1+"),
+        Service(id: "m6plus", name: "M6+", kind: .web(URL(string: "https://www.m6.fr/m6plus")!),
+                accent: "#FF6B00", deep: "#3A1600", regions: ["FR"], iconQuery: "M6+"),
+        // GB
+        Service(id: "bbciplayer", name: "BBC iPlayer", kind: .web(URL(string: "https://www.bbc.co.uk/iplayer")!),
+                accent: "#FFD500", deep: "#2A2200", regions: ["GB"]),
+        Service(id: "my5", name: "My5", kind: .web(URL(string: "https://www.channel5.com")!),
+                accent: "#00A0DC", deep: "#042433", regions: ["GB"], iconQuery: "Channel 5"),
+        Service(id: "now", name: "NOW", kind: .web(URL(string: "https://www.nowtv.com")!),
+                accent: "#6C2BD9", deep: "#1A0833", regions: ["GB"], iconQuery: "NOW"),
+        // US
+        Service(id: "hulu", name: "Hulu", kind: .web(URL(string: "https://www.hulu.com")!),
+                accent: "#1CE783", deep: "#062816", regions: ["US"]),
+        Service(id: "peacock", name: "Peacock", kind: .web(URL(string: "https://www.peacocktv.com")!),
+                accent: "#F4A6C9", deep: "#2A1520", regions: ["US"]),
+        Service(id: "espn", name: "ESPN", kind: .web(URL(string: "https://www.espn.com")!),
+                accent: "#E4002B", deep: "#2E050C", regions: ["US"]),
+        Service(id: "tubi", name: "Tubi", kind: .web(URL(string: "https://tubitv.com")!),
+                accent: "#FA3825", deep: "#2E0805", regions: ["US"]),
+        // CA
+        Service(id: "crave", name: "Crave", kind: .web(URL(string: "https://www.crave.ca")!),
+                accent: "#E50914", deep: "#2B0204", regions: ["CA"]),
+        Service(id: "cbcgem", name: "CBC Gem", kind: .web(URL(string: "https://gem.cbc.ca")!),
+                accent: "#E60505", deep: "#2B0202", regions: ["CA"]),
+        Service(id: "ctv", name: "CTV", kind: .web(URL(string: "https://www.ctv.ca")!),
+                accent: "#0096D6", deep: "#022433", regions: ["CA"], iconQuery: "CTV+"),
+        // IN
+        Service(id: "sonyliv", name: "SonyLIV", kind: .web(URL(string: "https://www.sonyliv.com")!),
+                accent: "#000000", deep: "#111111", regions: ["IN"], iconQuery: "Sony LIV"),
+        Service(id: "zee5", name: "ZEE5", kind: .web(URL(string: "https://www.zee5.com")!),
+                accent: "#8230C9", deep: "#1A0833", regions: ["IN"], iconQuery: "Zee 5"),
+        // AU
+        Service(id: "stan", name: "Stan", kind: .web(URL(string: "https://www.stan.com.au")!),
+                accent: "#00A9E0", deep: "#022433", regions: ["AU"]),
+        Service(id: "binge", name: "Binge", kind: .web(URL(string: "https://binge.com.au")!),
+                accent: "#FF288C", deep: "#330A1C", regions: ["AU"]),
+        Service(id: "abciview", name: "ABC iview", kind: .web(URL(string: "https://iview.abc.net.au")!),
+                accent: "#000000", deep: "#111111", regions: ["AU"]),
+        Service(id: "sbsondemand", name: "SBS On Demand", kind: .web(URL(string: "https://www.sbs.com.au/ondemand")!),
+                accent: "#FF6200", deep: "#3A1600", regions: ["AU"], iconQuery: "SBS On Demand"),
+        // JP
+        Service(id: "unext", name: "U-NEXT", kind: .web(URL(string: "https://video.unext.jp")!),
+                accent: "#00C300", deep: "#022A02", regions: ["JP"]),
+        Service(id: "abema", name: "ABEMA", kind: .web(URL(string: "https://abema.tv")!),
+                accent: "#00C3A0", deep: "#022A22", regions: ["JP"], iconQuery: "ABEMA"),
+        Service(id: "tver", name: "TVer", kind: .web(URL(string: "https://tver.jp")!),
+                accent: "#1A1A1A", deep: "#0A0A0A", regions: ["JP"]),
+        // BR
+        Service(id: "globoplay", name: "Globoplay", kind: .web(URL(string: "https://globoplay.globo.com")!),
+                accent: "#F56700", deep: "#3A1600", regions: ["BR"]),
+        // IT
+        Service(id: "raiplay", name: "RaiPlay", kind: .web(URL(string: "https://www.raiplay.it")!),
+                accent: "#00A0E3", deep: "#022433", regions: ["IT"]),
+        Service(id: "mediasetinfinity", name: "Mediaset Infinity",
+                kind: .web(URL(string: "https://www.mediasetinfinity.mediaset.it")!),
+                accent: "#0066CC", deep: "#021433", regions: ["IT"], iconQuery: "Mediaset Infinity Italia"),
+        Service(id: "nowit", name: "NOW", kind: .web(URL(string: "https://www.nowtv.it")!),
+                accent: "#6C2BD9", deep: "#1A0833", regions: ["IT"], iconQuery: "NOW"),
+        // NL
+        Service(id: "videoland", name: "Videoland", kind: .web(URL(string: "https://www.videoland.com")!),
+                accent: "#E31C23", deep: "#2E0508", regions: ["NL"]),
+        Service(id: "npostart", name: "NPO Start", kind: .web(URL(string: "https://www.npostart.nl")!),
+                accent: "#FF6D00", deep: "#3A1600", regions: ["NL"]),
+        Service(id: "nlziet", name: "NLZIET", kind: .web(URL(string: "https://www.nlziet.nl")!),
+                accent: "#00A0E2", deep: "#022433", regions: ["NL"]),
+    ]
+
+    /// Tests / Suggested debug row may pin a region; otherwise the Mac's Locale region.
+    nonisolated(unsafe) static var suggestionRegionOverride: String?
+
+    /// ISO codes the Suggested debug row cycles through (`nil` = Auto / Locale).
+    static let suggestionDebugRegions: [String?] = [
+        nil, "DE", "AT", "CH", "FR", "GB", "US", "CA", "IN", "AU", "JP", "BR", "IT", "NL",
+    ]
+
+    /// ISO region for Suggested sections.
+    static var suggestionRegion: String? {
+        suggestionRegionOverride ?? Locale.current.region?.identifier
+    }
+
+    /// Label for the Suggested debug row.
+    static var suggestionRegionDebugLabel: String {
+        if let override = suggestionRegionOverride { return override }
+        if let region = Locale.current.region?.identifier { return "Auto · \(region)" }
+        return "Auto"
+    }
+
+    static func cycleSuggestionRegion(forward: Bool = true) {
+        let regions = suggestionDebugRegions
+        let i = regions.firstIndex { $0 == suggestionRegionOverride } ?? 0
+        suggestionRegionOverride = regions[(i + (forward ? 1 : regions.count - 1)) % regions.count]
+    }
+
+    /// Whether this service's `regions` include the Mac (or override) region. Nil regions = worldwide.
+    static func matchesSuggestionRegion(_ service: Service, region: String? = nil) -> Bool {
+        let region = region ?? suggestionRegion
+        guard let regions = service.regions else { return true }
+        guard let region else { return true }
+        return regions.contains(region)
+    }
+}
+
+/// Fetched brand icons for Add App › Suggested (App Store / site icons), cached on disk.
+@MainActor
+enum SuggestionIcons {
+    private static var memory: [String: NSImage] = [:]
+
+    private static func file(for id: String) -> URL {
+        AppFolder.url.appendingPathComponent("Icons", isDirectory: true)
+            .appendingPathComponent("suggest-\(id).png")
+    }
+
+    static func image(for service: Service) -> NSImage? {
+        // Bundled restore icons only — don't ask Icons for bare website presets (it would cache a nil).
+        if service.icon != nil || service.iconFile != nil, let bundled = Icons.image(for: service) {
+            return bundled
+        }
+        if let cached = memory[service.id] { return cached }
+        let path = file(for: service.id)
+        guard let image = NSImage(contentsOf: path), image.size.width > 0 else { return nil }
+        memory[service.id] = image
+        return image
+    }
+
+    /// Pulls missing logos in list order so the first rows fill first.
+    static func prefetch(_ services: [Service], onEach: @MainActor () -> Void = {}) async {
+        for service in services {
+            guard case .web(let url) = service.kind else { continue }
+            if image(for: service) != nil { continue }
+            guard let data = await IconFinder.icon(forSite: url, name: service.iconQuery ?? service.name,
+                                                   regions: service.regions),
+                  let image = NSImage(data: data) else { continue }
+            Log.app.attempt("Saving a suggested app icon") {
+                try data.write(to: file(for: service.id), options: .atomic)
+            }
+            memory[service.id] = image
+            onEach()
+        }
+    }
 }
 
 /// Icon artwork for tiles and for the phone remote's app list.

@@ -40,8 +40,15 @@ extension TVController {
         reloadServices()
         showToast("Added \(app.name)")
         let origin = library
+        let preset = Catalog.websiteSuggestions.first {
+            guard case .web(let known) = $0.kind else { return false }
+            return known.host()?.lowercased().replacingOccurrences(of: "www.", with: "")
+                == host.lowercased().replacingOccurrences(of: "www.", with: "")
+        }
         Task { [weak self] in
-            let png = await IconFinder.icon(forSite: url, name: app.name)
+            let png = await IconFinder.icon(forSite: url,
+                                           name: preset?.iconQuery ?? preset?.name ?? app.name,
+                                           regions: preset?.regions)
             await MainActor.run { self?.useIcon(png, for: app.id, in: origin) }
         }
         return app

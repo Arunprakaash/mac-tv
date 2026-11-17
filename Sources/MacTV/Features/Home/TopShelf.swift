@@ -20,19 +20,75 @@ final class TopShelfFeed: ObservableObject {
         let fetched: Date
         let services: [String: [Show]]
         var preferences: ShelfPreferences? = nil
+        var schema: Int? = nil
     }
+
+    private static let schema = 6
 
     static let shared = TopShelfFeed()
 
     /// TVmaze's names for each app's streaming service.
-    private static let channels = ["Netflix": "netflix", "Prime Video": "prime", "Amazon Prime Video": "prime",
-                                   "Apple TV": "appletv", "Apple TV+": "appletv",
-                                   "JioHotstar": "hotstar", "Disney+ Hotstar": "hotstar", "Hotstar": "hotstar",
-                                   "YouTube": "youtube"]
+    private static let channels = [
+        "Netflix": "netflix", "Prime Video": "prime", "Amazon Prime Video": "prime",
+        "Apple TV": "appletv", "Apple TV+": "appletv",
+        "JioHotstar": "hotstar", "Disney+ Hotstar": "hotstar", "Hotstar": "hotstar",
+        "YouTube": "youtube",
+        "Disney+": "disney",
+        "HBO Max": "max", "Max": "max",
+        "Paramount+": "paramount",
+        "Crunchyroll": "crunchyroll",
+        "DAZN": "dazn",
+        "ARD Mediathek": "ard",
+        "ZDFmediathek": "zdf", "ZDF Mediathek": "zdf",
+        "Joyn": "joyn",
+        "RTL+": "rtlplus", "RTL Plus": "rtlplus", "TVNOW": "rtlplus",
+        "Arte": "arte", "ARTE": "arte",
+        "BBC iPlayer": "bbciplayer", "iPlayer": "bbciplayer",
+        "France 2": "francetv", "France 3": "francetv", "france.tv": "francetv",
+        "France tv slash": "francetv", "France.tv": "francetv",
+        "TF1": "tf1plus", "TF1+": "tf1plus",
+        "M6": "m6plus", "M6+": "m6plus",
+        "My5": "my5", "Channel 5": "my5",
+        "Now": "now", "NOW": "now", "NOW TV": "now",
+        "Hulu": "hulu", "Peacock": "peacock", "Tubi": "tubi",
+        "ESPN": "espn", "ESPN+": "espn",
+        "Crave": "crave", "CBC Gem": "cbcgem", "CTV": "ctv", "CTV+": "ctv",
+        "SonyLIV": "sonyliv", "Sony Liv": "sonyliv", "Sony LIV": "sonyliv",
+        "ZEE5": "zee5", "Zee 5": "zee5",
+        "Stan": "stan", "Binge": "binge", "ABC iview": "abciview",
+        "SBS On Demand": "sbsondemand", "SBS": "sbsondemand",
+        "U-NEXT": "unext", "U-Next": "unext", "ABEMA": "abema", "AbemaTV": "abema", "TVer": "tver",
+        "Globoplay": "globoplay", "Pluto TV": "pluto",
+        "RaiPlay": "raiplay", "Rai Play": "raiplay",
+        "Mediaset Infinity": "mediasetinfinity", "Mediaset Infinity Italia": "mediasetinfinity",
+        "Videoland": "videoland", "NPO Start": "npostart", "NLZIET": "nlziet",
+    ]
     /// Music apps show the week's top albums.
     private static let musicApps = ["spotify", "ytmusic"]
+    /// Host → feed id so Suggested / user-added sites reuse the same lists as built-ins.
+    private static let hosts: [String: String] = [
+        "netflix.com": "netflix", "youtube.com": "youtube", "primevideo.com": "prime",
+        "tv.apple.com": "appletv", "hotstar.com": "hotstar",
+        "open.spotify.com": "spotify", "music.youtube.com": "ytmusic",
+        "disneyplus.com": "disney", "max.com": "max", "hbomax.com": "max",
+        "paramountplus.com": "paramount", "crunchyroll.com": "crunchyroll",
+        "twitch.tv": "twitch", "dazn.com": "dazn", "pluto.tv": "pluto",
+        "joyn.de": "joyn", "plus.rtl.de": "rtlplus", "arte.tv": "arte",
+        "ardmediathek.de": "ard", "zdf.de": "zdf",
+        "france.tv": "francetv", "tf1.fr": "tf1plus", "m6.fr": "m6plus",
+        "bbc.co.uk": "bbciplayer", "channel5.com": "my5", "nowtv.com": "now",
+        "hulu.com": "hulu", "peacocktv.com": "peacock", "espn.com": "espn", "tubitv.com": "tubi",
+        "crave.ca": "crave", "gem.cbc.ca": "cbcgem", "ctv.ca": "ctv",
+        "sonyliv.com": "sonyliv", "zee5.com": "zee5",
+        "stan.com.au": "stan", "binge.com.au": "binge", "iview.abc.net.au": "abciview",
+        "sbs.com.au": "sbsondemand",
+        "video.unext.jp": "unext", "abema.tv": "abema", "tver.jp": "tver",
+        "globoplay.globo.com": "globoplay",
+        "raiplay.it": "raiplay", "mediasetinfinity.mediaset.it": "mediasetinfinity", "nowtv.it": "nowit",
+        "videoland.com": "videoland", "npostart.nl": "npostart", "nlziet.nl": "nlziet",
+    ]
     /// Series only: sports, talk shows, news and reality TV make poor Top Shelf art.
-    private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary"]
+    private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary", "Reality"]
     private static let perApp = 8
 
     /// Shows whose image is ready, by app id.
@@ -95,10 +151,37 @@ final class TopShelfFeed: ObservableObject {
         return shows.isEmpty ? nil : shows[turn % shows.count]
     }
 
+    func currentShow(for service: Service) -> Show? { currentShow(for: feedID(for: service)) }
+
+    /// Built-in id, or the Suggested/user tile's host mapped onto the same feed.
+    func feedID(for service: Service) -> String {
+        if case .web(let url) = service.kind, let host = url.host()?.lowercased().replacingOccurrences(of: "www.", with: "") {
+            if let id = Self.hosts[host] { return id }
+            if let id = Self.hosts.first(where: { host.hasSuffix("." + $0.key) })?.value { return id }
+        }
+        return service.id
+    }
+
+
     /// Search routes are used only for services with known search pages, not direct playback.
     func searchURL(for service: Service) -> URL? {
-        guard case .web = service.kind, let show = currentShow(for: service.id) else { return nil }
-        return ShelfSearch.url(serviceID: service.id, query: show.name)
+        guard case .web = service.kind, let show = currentShow(for: service) else { return nil }
+        return ShelfSearch.url(serviceID: feedID(for: service), query: show.name)
+    }
+
+    /// Markets we curate Suggested locals for — Worldwide must query them or their shelves stay empty.
+    private static let catalogRegions = ["DE", "AT", "CH", "FR", "GB", "US", "CA", "IN", "AU", "JP", "BR", "IT", "NL"]
+
+    static func scheduleQueries(for region: String, macRegion: String? = Locale.current.region?.identifier) -> [String] {
+        if region.isEmpty {
+            var seen = Set<String>()
+            var queries = [""]
+            for code in ["IN", "US", "DE"] + catalogRegions + [macRegion].compactMap({ $0 }) {
+                if seen.insert(code).inserted { queries.append("&country=\(code)") }
+            }
+            return queries
+        }
+        return ["&country=", "&country=\(region)"]
     }
 
     /// Shows the last list straight away, then fetches a fresh one if it's a day old.
@@ -117,7 +200,12 @@ final class TopShelfFeed: ObservableObject {
         // A list saved before Top Shelf preferences existed was made with the defaults.
         let savedPreferences = saved.map { $0.preferences ?? ShelfPreferences() }
         if let saved, let savedPreferences { use(Self.reusableLists(saved.services, from: savedPreferences, to: preferences)) }
-        if saved.map({ $0.services.values.allSatisfy { $0.isEmpty } || savedPreferences != preferences || Date().timeIntervalSince($0.fetched) > 20 * 3600 }) ?? true {
+        if saved.map({
+            ($0.schema ?? 0) < Self.schema
+                || $0.services.values.allSatisfy(\.isEmpty)
+                || savedPreferences != preferences
+                || Date().timeIntervalSince($0.fetched) > 20 * 3600
+        }) ?? true {
             refreshTask = Task { await refresh() }
         }
         Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
@@ -172,7 +260,7 @@ final class TopShelfFeed: ObservableObject {
         }
         guard fetchedUsable else { return } // Keep the last successful timestamp when offline.
         Log.app.attempt("Saving the Top Shelf") {
-            try JSONEncoder().encode(Saved(fetched: Date(), services: services, preferences: preferences))
+            try JSONEncoder().encode(Saved(fetched: Date(), services: services, preferences: preferences, schema: Self.schema))
                 .write(to: listFile, options: .atomic)
         }
         use(services)

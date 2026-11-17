@@ -4,6 +4,8 @@ struct AddAppSheet: View {
     @ObservedObject var tv: TVController
     @Environment(\.canvasSize) private var canvas
     @Namespace private var focusSpace
+    /// Bumps as suggested logos arrive from the network / disk cache.
+    @State private var suggestionIconTick = 0
 
     var body: some View {
         let a = tv.adder ?? AppAdder()
@@ -12,6 +14,7 @@ struct AddAppSheet: View {
 
             HStack(spacing: 6) {
                 tab("Website", .website, a)
+                tab("Suggested", .suggested, a)
                 tab("Mac app", .macApp, a)
                 if tv.adderTabs.contains(.steam) { tab("Steam", .steam, a) }
             }
@@ -26,6 +29,8 @@ struct AddAppSheet: View {
                     set(row: 3)
                     tv.submitAdder()
                 }
+            } else if a.tab == .suggested {
+                suggestedList(a)
             } else if a.tab == .macApp {
                 AdderField(label: "Search apps on this Mac", text: a.query, placeholder: "Type to filter", focused: a.row == 1) { set(row: 1) }
                 macList(a)
@@ -33,8 +38,7 @@ struct AddAppSheet: View {
                 steamList(a)
             }
 
-            Text(a.message ?? (a.tab == .steam ? "Games open through Steam, and Mac TV comes back when you quit."
-                                                : "Type with the keyboard or the remote's typing box."))
+            Text(a.message ?? footer(for: a))
                 .font(.tv(.caption2, emphasized: a.message != nil))
                 .foregroundStyle(a.failed ? Color(hex: "#FF8A80") : .white.opacity(a.message == nil ? 0.55 : 0.9))
             InputHintsBar(tv: tv, set: .form)
@@ -45,10 +49,30 @@ struct AddAppSheet: View {
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(Motion.focus, value: a)
+        .task(id: "\(a.tab)-\(a.moreServicesExpanded)") {
+            guard a.tab == .suggested else { return }
+            let services = tv.adderSuggestions.map(\.service)
+            await SuggestionIcons.prefetch(services) {
+                suggestionIconTick += 1
+            }
+        }
     }
 
     private func set(row: Int) {
         tv.adder?.row = row
+    }
+
+    private func footer(for a: AppAdder) -> String {
+        switch a.tab {
+        case .suggested:
+            "Select adds or removes. Esc or Back closes."
+        case .steam:
+            "Select adds or removes. Games open through Steam; Mac TV returns when you quit. Esc or Back closes."
+        case .macApp:
+            "Select adds or removes. Type to filter. Esc or Back closes."
+        case .website:
+            "Type with the keyboard or the remote's typing box. Esc or Back closes."
+        }
     }
 
     private func tab(_ title: String, _ tab: AppAdder.Tab, _ a: AppAdder) -> some View {
@@ -65,11 +89,126 @@ struct AddAppSheet: View {
             .onTapGesture {
                 tv.adder?.tab = tab
                 tv.adder?.row = 1
-                tv.adder?.selected = 0
+                tv.adder?.moreServicesExpanded = false
+                tv.adder?.selected = tab == .suggested ? tv.firstFocusableSuggestionRow() : 0
             }
     }
 
-    /// Steam Big Picture and the installed games, eight rows at a time. Games launch through Steam.
+    /// Included / Suggested for you / More services. Select toggles On TV or expands More.
+    @ViewBuilder private func suggestedList(_ a: AppAdder) -> some View {
+        let rows = tv.adderSuggestionRows
+        let window = 10
+        let start = min(max(0, a.selected - window / 2), max(0, rows.count - window))
+        VStack(alignment: .leading, spacing: 6) {
+            if rows.isEmpty {
+                Text("Nothing to suggest right now.")
+                    .font(.tv(.caption1)).opacity(0.6)
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            }
+            ForEach(Array(rows.enumerated().dropFirst(start).prefix(window)), id: \.element.id) { index, row in
+                switch row {
+                case .header(let title):
+                    Text(title)
+                        .font(.tv(.caption2, emphasized: true))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.top, index == start ? 0 : 10)
+                        .padding(.horizontal, 8)
+                case .moreServices:
+                    let focused = a.row == 1 && a.selected == index
+                    HStack(spacing: 18) {
+                        Image(systemName: a.moreServicesExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                        Text("More services")
+                            .font(.tv(.body)).lineLimit(1)
+                        Spacer()
+                        Text(a.moreServicesExpanded ? "Hide" : "Show")
+                            .font(.tv(.caption2, emphasized: true))
+                            .opacity(focused ? 0.55 : 0.6)
+                    }
+                    .padding(.horizontal, 18)
+                    .frame(height: 60)
+                    .foregroundStyle(focused ? .black : .white)
+                    .background {
+                        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        if focused {
+                            shape.fill(.white).matchedGeometryEffect(id: "focus", in: focusSpace)
+                        } else {
+                            shape.fill(.white.opacity(0.06))
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        tv.adder?.row = 1
+                        tv.adder?.selected = index
+                        tv.addSelectedSuggestion()
+                    }
+                case .item(let pick):
+                    let focused = a.row == 1 && a.selected == index
+                    let service = pick.service
+                    let onHome = tv.isOnHomeScreen(service)
+                    let removed = tv.adderRemovedFlash(for: pick.id)
+                    HStack(spacing: 18) {
+                        suggestionIcon(service)
+                        Text(service.name).font(.tv(.body)).lineLimit(1)
+                        Spacer()
+                        adderBadge(onHome: onHome, removed: removed, focused: focused)
+                    }
+                    .padding(.horizontal, 18)
+                    .frame(height: 60)
+                    .foregroundStyle(focused ? .black : .white)
+                    .background {
+                        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        if focused {
+                            shape.fill(.white).matchedGeometryEffect(id: "focus", in: focusSpace)
+                        } else {
+                            shape.fill(.white.opacity(0.06))
+                        }
+                    }
+                    .opacity(onHome && !focused && !removed ? 0.55 : 1)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        tv.adder?.row = 1
+                        tv.adder?.selected = index
+                        tv.addSelectedSuggestion()
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func adderBadge(onHome: Bool, removed: Bool, focused: Bool) -> some View {
+        let label = removed ? "Removed" : onHome ? "On TV" : nil
+        if let label {
+            Text(label)
+                .font(.tv(.caption2, emphasized: true))
+                .opacity(focused ? 0.55 : 0.6)
+                .transition(.opacity)
+                .animation(.easeOut(duration: 0.55), value: label)
+        }
+    }
+
+    private func suggestionIcon(_ service: Service) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let image = SuggestionIcons.image(for: service)
+        return ZStack {
+            shape.fill(Color(hex: service.accent))
+            if let image {
+                Image(nsImage: image).resizable().clipShape(shape)
+            } else {
+                Image(systemName: "play.tv.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .id("\(service.id)-\(suggestionIconTick)")
+        // Row focus tints labels; keep the glyph readable on light brand colours (DAZN yellow).
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// Steam Big Picture and the installed games, eight rows at a time.
     @ViewBuilder private func steamList(_ a: AppAdder) -> some View {
         let games = tv.adderSteamGames
         let window = 8
@@ -78,6 +217,7 @@ struct AddAppSheet: View {
             ForEach(Array(games.enumerated().dropFirst(start).prefix(window)), id: \.element.appID) { index, game in
                 let focused = a.row == 1 && a.selected == index
                 let added = tv.isOnHomeScreen(game)
+                let removed = tv.adderRemovedFlash(for: game.appID)
                 HStack(spacing: 18) {
                     Group {
                         if game == SteamLibrary.bigPicture, let url = SteamLibrary.appURL {
@@ -89,7 +229,7 @@ struct AddAppSheet: View {
                     .frame(width: 44, height: 44)
                     Text(game.name).font(.tv(.body)).lineLimit(1)
                     Spacer()
-                    if added { Text("On TV").font(.tv(.caption2, emphasized: true)).opacity(0.6) }
+                    adderBadge(onHome: added, removed: removed, focused: focused)
                 }
                 .padding(.horizontal, 18)
                 .frame(height: 60)
@@ -102,7 +242,7 @@ struct AddAppSheet: View {
                         shape.fill(.white.opacity(0.06))
                     }
                 }
-                .opacity(added && !focused ? 0.55 : 1)
+                .opacity(added && !focused && !removed ? 0.55 : 1)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     tv.adder?.row = 1
@@ -117,6 +257,7 @@ struct AddAppSheet: View {
         }
     }
 
+
     /// Eight rows at a time, scrolled to keep the highlighted app in view.
     @ViewBuilder private func macList(_ a: AppAdder) -> some View {
         let matches = tv.adderMatches
@@ -130,14 +271,13 @@ struct AddAppSheet: View {
             ForEach(Array(matches.enumerated().dropFirst(start).prefix(window)), id: \.element.bundleID) { index, app in
                 let focused = a.row == 2 && a.selected == index
                 let added = tv.isOnHomeScreen(app)
+                let removed = tv.adderRemovedFlash(for: app.bundleID)
                 HStack(spacing: 18) {
                     Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
                         .resizable().frame(width: 44, height: 44)
                     Text(app.name).font(.tv(.body)).lineLimit(1)
                     Spacer()
-                    if added {
-                        Text("On TV").font(.tv(.caption2, emphasized: true)).opacity(0.6)
-                    }
+                    adderBadge(onHome: added, removed: removed, focused: focused)
                 }
                 .padding(.horizontal, 18)
                 .frame(height: 60)
@@ -150,7 +290,7 @@ struct AddAppSheet: View {
                         shape.fill(.white.opacity(0.06))
                     }
                 }
-                .opacity(added && !focused ? 0.55 : 1)
+                .opacity(added && !focused && !removed ? 0.55 : 1)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     tv.adder?.row = 2

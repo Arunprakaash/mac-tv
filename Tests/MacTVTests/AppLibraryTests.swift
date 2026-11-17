@@ -106,9 +106,12 @@ struct AppLibraryTests {
     func testMoreThanSixAppsCanBePinned() throws {
         try withFolder { folder in
             let library = AppLibrary(folder: folder)
-            let ids = ["netflix", "youtube", "prime", "hotstar", "appletv", "spotify", "ytmusic", "movies"]
+            // Prefer worldwide built-ins — region-gated ones (hotstar/IN, itvx/GB) may be absent.
+            let ids = ["netflix", "youtube", "prime", "appletv", "spotify", "ytmusic", "movies"]
             for id in ids { #expect(library.setPinned(id, true)) }
-            #expect(Set(library.services().filter { library.isPinned($0.id) }.map(\.id)) == Set(ids))
+            let extra = library.add(name: "Extra", url: URL(string: "https://extra.example"), bundleID: nil)
+            #expect(library.setPinned(extra.id, true))
+            #expect(Set(library.services().filter { library.isPinned($0.id) }.map(\.id)) == Set(ids + [extra.id]))
             #expect(Array(library.services().suffix(2).map(\.id)) == ["add-app", "settings"])
         }
     }
@@ -157,7 +160,7 @@ struct AppLibraryTests {
         try withFolder { folder in
             let tv = TVController(library: AppLibrary(folder: folder))
             tv.setFocus(.shelf(0))
-            for id in ["youtube", "prime", "hotstar", "appletv", "spotify", "ytmusic"] {
+            for id in ["youtube", "prime", "appletv", "spotify", "ytmusic", "movies"] {
                 #expect(tv.setPinned(id, true))
             }
             let netflixIndex = try #require(tv.services.firstIndex { $0.id == "netflix" })
