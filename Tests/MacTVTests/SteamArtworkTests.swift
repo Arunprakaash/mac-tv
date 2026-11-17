@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import MacTV
 
@@ -26,5 +26,30 @@ struct SteamArtworkTests {
         let library = AppLibrary(folder: folder)
         #expect(library.heroFile(for: "user-stardewvalley").lastPathComponent == "user-stardewvalley-hero.jpg")
         #expect(library.iconFile(for: "user-stardewvalley").lastPathComponent == "user-stardewvalley.png")
+    }
+}
+
+@Suite @MainActor
+struct SteamShelfArtTests {
+    @Test func artIsReadOnceUntilItChanges() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("steam-art-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("game-hero.jpg")
+        #expect(SteamShelfArt.image(at: file) == nil)
+
+        let image = NSImage(size: NSSize(width: 64, height: 36), flipped: false) { rect in
+            NSColor.systemTeal.setFill(); rect.fill(); return true
+        }
+        let jpeg = try #require(image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0) }?
+            .representation(using: .jpeg, properties: [:]))
+        try jpeg.write(to: file)
+        // Remembered as missing until told the file changed, so a redraw never touches the disk.
+        #expect(SteamShelfArt.image(at: file) == nil)
+        SteamShelfArt.forget(file)
+        let art = try #require(SteamShelfArt.image(at: file))
+        #expect(art.size == NSSize(width: 64, height: 36))
+        #expect(SteamShelfArt.image(at: file) === art)
+        SteamShelfArt.forget(file)
     }
 }

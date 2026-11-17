@@ -190,6 +190,7 @@ final class AppLibrary {
     func setHero(_ jpeg: Data, for id: String) {
         guard containsAddedApp(id) else { return }
         Log.app.attempt("Saving Steam hero art") { try jpeg.write(to: heroFile(for: id), options: .atomic) }
+        SteamShelfArt.forget(heroFile(for: id))
     }
 
     /// Removes an added app, or hides a built-in one.
@@ -200,6 +201,7 @@ final class AppLibrary {
             saved.pinned.remove(id)
             try? FileManager.default.removeItem(at: iconFile(for: id))
             try? FileManager.default.removeItem(at: heroFile(for: id))
+            SteamShelfArt.forget(heroFile(for: id))
         } else if Catalog.services.contains(where: { $0.id == id && $0.kind != .settings && $0.kind != .addApp }) {
             saved.hidden.insert(id)
         }
