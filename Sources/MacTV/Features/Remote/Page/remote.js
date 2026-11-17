@@ -187,6 +187,7 @@ async function readState() {
     showSleep(s.sleepMinutes || 0);
     $('#auto-skip').checked = s.autoSkip;
     $('#auto-next').checked = s.autoNext;
+    $('#block-youtube-ads').checked = s.blockYouTubeAds !== false;
     $('#keep-awake').checked = s.keepMacAwake;
     $('#lid-override').checked = s.lidOverride;
     $('#lid-status').textContent = s.lidStatus || '';
@@ -851,6 +852,7 @@ async function choosePlayer(player) {
 }
 $('#auto-skip').onchange = e => send('setting', { k: 'autoSkip', v: e.target.checked });
 $('#auto-next').onchange = e => send('setting', { k: 'autoNext', v: e.target.checked });
+$('#block-youtube-ads').onchange = e => send('setting', { k: 'blockYouTubeAds', v: e.target.checked });
 $('#keep-awake').onchange = e => send('setting', { k: 'keepMacAwake', v: e.target.checked });
 $('#lid-override').onchange = e => send('setting', { k: 'lidOverride', v: e.target.checked });
 function showSleep(minutes) {

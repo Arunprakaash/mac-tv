@@ -15,6 +15,7 @@ final class Preferences: ObservableObject {
         self.defaults = defaults
         autoSkip = defaults.object(forKey: Key.autoSkip) as? Bool ?? true
         autoNext = defaults.object(forKey: Key.autoNext) as? Bool ?? true
+        blockYouTubeAds = defaults.object(forKey: Key.blockYouTubeAds) as? Bool ?? true
         keepMacAwake = defaults.object(forKey: Key.keepMacAwake) as? Bool ?? true
         lidOverride = defaults.bool(forKey: Key.lidOverride)
         navigationSounds = defaults.object(forKey: Key.navigationSounds) as? Bool ?? true
@@ -37,6 +38,8 @@ final class Preferences: ObservableObject {
     @Published var autoSkip: Bool { didSet { save(autoSkip, Key.autoSkip) } }
     /// Press Next Episode when the player offers it.
     @Published var autoNext: Bool { didSet { save(autoNext, Key.autoNext) } }
+    /// Block ads on YouTube / YouTube Music in the built-in player. Default on.
+    @Published var blockYouTubeAds: Bool { didSet { save(blockYouTubeAds, Key.blockYouTubeAds) } }
 
     // MARK: Power
 
@@ -87,6 +90,7 @@ final class Preferences: ObservableObject {
     private enum Key {
         static let autoSkip = "autoSkip"
         static let autoNext = "autoNext"
+        static let blockYouTubeAds = "blockYouTubeAds"
         static let keepMacAwake = "keepMacAwake"
         static let lidOverride = "lidOverride"
         static let navigationSounds = "uiFeedback"

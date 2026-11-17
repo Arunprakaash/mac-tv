@@ -10,7 +10,7 @@ struct SettingsPanel: Equatable {
     /// One row on a section's page.
     enum Row: Equatable {
         case phoneRemote, pairingCode, controller
-        case sleepTimer, autoSkip, autoNext, playbackCheck, websitePlayer
+        case sleepTimer, autoSkip, autoNext, blockYouTubeAds, playbackCheck, websitePlayer
         case addApp, arrangeApps, topShelfPreferences
         case dedicatedTV, preferredDisplay, launchAtLogin
         case wallpaper, aerialCategory, saverDelay, saverClock, saverPreview
@@ -77,7 +77,7 @@ extension SettingsPanel.Section {
     @MainActor var rows: [SettingsPanel.Row] {
         switch self {
         case .remotes: [.phoneRemote, .pairingCode, .controller]
-        case .watching: [.sleepTimer, .autoSkip, .autoNext, .playbackCheck, .websitePlayer]
+        case .watching: [.sleepTimer, .autoSkip, .autoNext, .blockYouTubeAds, .playbackCheck, .websitePlayer]
         case .screenSaver: ScreenSaverSettings.wallpaper == .aerials && !Aerials.categories.isEmpty
             ? [.wallpaper, .aerialCategory, .saverDelay, .saverClock, .saverPreview]
             : [.wallpaper, .saverDelay, .saverClock, .saverPreview]
@@ -131,7 +131,7 @@ extension TVController {
         let rows = panel.section.rows
         // Left steps or switches off a row that has a value; on any other row it goes back.
         let adjustable: Set<String> = ["sleepTimer", "wallpaper", "aerialCategory", "saverDelay", "saverClock", "feedback",
-                                       "autoSkip", "autoNext", "websitePlayer", "dedicatedTV", "preferredDisplay", "launchAtLogin",
+                                       "autoSkip", "autoNext", "blockYouTubeAds", "websitePlayer", "dedicatedTV", "preferredDisplay", "launchAtLogin",
                                        "keepMacAwake", "lidOverride", "analytics", "autoUpdate"]
         switch command {
         case .back:
@@ -189,6 +189,7 @@ extension TVController {
         case .feedback: feedback.enabled = forward
         case .autoSkip: autoSkip = forward
         case .autoNext: autoNext = forward
+        case .blockYouTubeAds: blockYouTubeAds = forward
         case .keepMacAwake: keepMacAwake = forward
         case .lidOverride: lidOverride = forward
         case .analytics: Analytics.setConsent(forward, context: analyticsContext)
@@ -217,6 +218,7 @@ extension TVController {
         case .websitePlayer: stepWebsitePlayer()
         case .autoSkip: autoSkip.toggle()
         case .autoNext: autoNext.toggle()
+        case .blockYouTubeAds: blockYouTubeAds.toggle()
         case .wallpaper:
             if ScreenSaverSettings.wallpaper == .photos { ScreenSaverSettings.choosePhotosFolder() } else { ScreenSaverSettings.step(1) }
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(1, wrap: true)
@@ -434,6 +436,9 @@ struct SettingsSheet: View {
         case .autoNext:
             title("Play next episode automatically")
             SettingSwitch(on: tv.autoNext)
+        case .blockYouTubeAds:
+            title("Block YouTube ads")
+            SettingSwitch(on: tv.blockYouTubeAds)
         case .saverDelay:
             title("Start after")
             stepper("\(ScreenSaverSettings.delayMinutes) minutes", active: tv.settings?.section.rows[panel.row] == .saverDelay)

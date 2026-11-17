@@ -258,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         _ = DiagnosticReport.launched
         Log.app.notice("Mac TV \(Updater.currentVersion, privacy: .public) started on macOS \(ProcessInfo.processInfo.operatingSystemVersionString, privacy: .public)")
+        if tv.blockYouTubeAds { YouTubeAdBlocking.prepare() }
 
         // `--setup` shows first-run setup again.
         // Usage analytics sends nothing unless the user has said yes (Analytics.swift).
