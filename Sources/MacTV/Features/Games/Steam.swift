@@ -265,3 +265,29 @@ enum GameWindow {
         return CGRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height)
     }
 }
+
+/// Steam games' Top Shelf art, decoded once and kept: the Top Shelf asks for it on every redraw,
+/// and a library hero can be 3840 pixels wide.
+@MainActor
+enum SteamShelfArt {
+    /// A file that isn't there is remembered too, until `forget` says it changed.
+    private static var images: [URL: NSImage?] = [:]
+
+    static func image(at file: URL) -> NSImage? {
+        if let known = images[file] { return known }
+        let image = decode(file)
+        images.updateValue(image, forKey: file)
+        return image
+    }
+
+    static func forget(_ file: URL) { images.removeValue(forKey: file) }
+
+    private static func decode(_ file: URL) -> NSImage? {
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                        kCGImageSourceCreateThumbnailWithTransform: true,
+                                        kCGImageSourceThumbnailMaxPixelSize: 3840]
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+    }
+}

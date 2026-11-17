@@ -55,7 +55,7 @@ Built-in checks, run on the app's binary:
 - `--open-website <url>` opens a page in the website player at launch.
 - `--selftest-brave <url>` opens and closes a test Brave window, and checks input if Accessibility is allowed.
 - `--export-tiles <folder>` renders the dock tiles, and `--export-home <folder>` the home screen.
-- `--seed-steam-shelf` adds a few AAA Steam tiles (and their Top Shelf heroes) for artwork checks; the games need not be installed.
+- `--seed-steam-shelf` adds five well-known Steam games (and their Top Shelf art) to your home screen for artwork checks; they need not be installed, and stay until you remove them.
 - `--export-remote <file.png> [apps|controls]` renders the phone remote. Needs Mac TV running and `MACTV_REMOTE_CODE` set to its current pairing PIN.
 
 ## Project layout

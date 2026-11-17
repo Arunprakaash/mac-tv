@@ -37,24 +37,15 @@ struct AppBanner: View {
         self.expanded = expanded
     }
 
-    /// Own artwork for Steam / Mac / custom apps. Steam prefers the full-res library hero over the dock tile.
-    private var appArt: NSImage? {
-        if case .steam = service.kind {
-            let hero = tv.library.heroFile(for: service.id)
-            if FileManager.default.fileExists(atPath: hero.path),
-               let image = NSImage(contentsOf: hero), image.size.width > 0 {
-                return image
-            }
-        }
-        let file = service.iconFile ?? tv.library.iconFile(for: service.id)
-        if FileManager.default.fileExists(atPath: file.path),
-           let image = NSImage(contentsOf: file), image.size.width > 0 {
-            return image
-        }
-        return Icons.tile(for: service) ?? Icons.image(for: service)
+    /// A Steam game's own art, for when there are no shows: its store screenshot or library hero,
+    /// else its dock tile. Other apps keep their colour wash: their icons are too small to fill the screen.
+    private var steamArt: (id: String, image: NSImage)? {
+        guard case .steam = service.kind else { return nil }
+        if let hero = SteamShelfArt.image(at: tv.library.heroFile(for: service.id)) { return ("\(service.id)-hero", hero) }
+        return Icons.tile(for: service).map { ("\(service.id)-tile", $0) }
     }
 
-    /// What the Top Shelf shows now: Movies art, popular shows, or the app's own tile when nothing else is available.
+    /// What the Top Shelf shows now: Movies art, popular shows, or a Steam game's own art.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -68,10 +59,8 @@ struct AppBanner: View {
         if let show = feed.currentShow(for: service.id), let image = feed.image(for: show.id) {
             return (String(show.id), show.name, image, show.square, false)
         }
-        if let tile = appArt {
-            // Pixel width in the id so swapping tile → Steam hero recreates the backdrop layer.
-            let px = tile.representations.first.map { $0.pixelsWide } ?? Int(tile.size.width)
-            return ("\(service.id)-\(px)", service.name, tile, false, true)
+        if let art = steamArt {
+            return (art.id, service.name, art.image, false, true)
         }
         return nil
     }
@@ -79,7 +68,7 @@ struct AppBanner: View {
     var body: some View {
         let show = backdrop
         ZStack(alignment: .topLeading) {
-            // Steam/custom: art is the base layer so it can't be lost under a stale show backdrop.
+            // A Steam game's art is the base layer, so it can't be lost under a stale show backdrop.
             if let show, show.appOwned {
                 AppArtBackdrop(image: show.image)
                     .frame(width: canvas.width, height: canvas.height)
@@ -148,7 +137,7 @@ struct AppBanner: View {
     }
 }
 
-/// Full-bleed app tile art via a layer (SwiftUI `Image(nsImage:)` was unreliable for some Steam PNGs).
+/// Full-bleed Steam art via a layer (SwiftUI `Image(nsImage:)` was unreliable for some Steam PNGs).
 struct AppArtBackdrop: NSViewRepresentable {
     let image: NSImage
 
@@ -162,7 +151,9 @@ struct AppArtBackdrop: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSView, context: Context) {
-        view.layer?.contents = Self.bitmap(image)
+        // SwiftUI updates the view on every redraw; a new picture gets a new view (its id changes).
+        guard let bitmap = Self.bitmap(image), view.layer?.contents as AnyObject? !== bitmap else { return }
+        view.layer?.contents = bitmap
     }
 
     private static func bitmap(_ image: NSImage) -> CGImage? {
