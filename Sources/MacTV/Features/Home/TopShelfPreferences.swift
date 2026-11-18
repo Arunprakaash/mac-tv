@@ -97,13 +97,9 @@ struct TopShelfPreferencesSheet: View {
     var body: some View {
         let panel = tv.topShelfPreferences ?? TopShelfPreferencesPanel()
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Top Shelf").font(.system(size: 48, weight: .heavy))
-                Spacer()
-                Button("Done") { tv.topShelfPreferences = nil }.buttonStyle(.plain).font(.system(size: 24, weight: .semibold))
-            }
+            Text("Top Shelf").font(.tv(.title3, emphasized: true))
             Text("Choose a TV schedule region and languages. Music charts use the selected region, or this Mac’s region for Worldwide. Artwork may contain its original language.")
-                .font(.system(size: 22)).foregroundStyle(.white.opacity(0.7))
+                .font(.tv(.caption1)).foregroundStyle(.white.opacity(0.7))
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 8) {
@@ -118,12 +114,20 @@ struct TopShelfPreferencesSheet: View {
                 .onAppear { proxy.scrollTo(panel.row, anchor: .center) }
                 .onChange(of: panel.row) { _, row in withAnimation(reduceMotion ? nil : Motion.navigate) { proxy.scrollTo(row, anchor: .center) } }
             }
-            Text("↑ ↓ Choose    ← → Change    OK Select    Back Close · Changes refresh the shelf")
-                .font(.system(size: 20)).foregroundStyle(.white.opacity(0.65))
+            InputHintsBar(tv: tv, set: topShelfHints(panel), note: "Changes refresh the shelf")
         }
         .padding(48).frame(width: 1100, alignment: .leading)
-        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white).frame(width: canvas.width, height: canvas.height)
+    }
+
+    private func topShelfHints(_ panel: TopShelfPreferencesPanel) -> HintSet {
+        if panel.row == 0 {
+            .custom([.moveVertical("Choose"), .moveHorizontal("Change"), .back("Close")])
+        } else {
+            // Language on/off: ←→ and OK both flip — Toggle only.
+            .custom([.moveVertical("Choose"), .select("Toggle"), .back("Close")])
+        }
     }
 
     private func preferenceRow(_ row: Int, _ title: String, _ detail: String, _ panel: TopShelfPreferencesPanel) -> some View {

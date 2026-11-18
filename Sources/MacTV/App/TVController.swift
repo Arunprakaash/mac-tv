@@ -73,6 +73,8 @@ final class TVController: NSObject, ObservableObject {
     let notices = Notices()
     /// The connected game controller, if any.
     @Published var controller: ControllerInfo?
+    /// Last device that issued a command — footer legends show its glyphs.
+    @Published var lastInputKind: InputKind = .keyboard
 
     /// The home screen's apps, in order; changes when the user adds or removes apps.
     @Published private(set) var services: [Service] = []
@@ -326,6 +328,7 @@ final class TVController: NSObject, ObservableObject {
     // MARK: - Command Dispatch
 
     func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
+        lastInputKind = InputKind(source)
         if source == .remote {
             noteRemoteConnection()
             if displaysSleeping {

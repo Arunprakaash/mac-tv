@@ -48,7 +48,7 @@ struct PairSheet: View {
                     }
                 }
                 .padding(.top, 8)
-                ShelfButton(title: "Done", focused: tv.pairingFocusedRow == .done, glass: false) { tv.pairing = false }
+                InputHintsBar(tv: tv, set: pairHints)
                     .padding(.top, 10)
             }
             .frame(maxWidth: 760, alignment: .leading)
@@ -57,6 +57,16 @@ struct PairSheet: View {
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
+    }
+
+    private var pairHints: HintSet {
+        switch tv.pairingFocusedRow {
+        case .access, .showAtLaunch:
+            // ←→ and OK both flip — Toggle only.
+            .custom([.moveVertical("Choose"), .select("Toggle"), .back("Close")])
+        case .display:
+            .custom([.moveVertical("Choose"), .moveHorizontal("Change"), .back("Close")])
+        }
     }
 
     /// A row on the frosted sheet: a plain fill at rest, the white platter with dark text when focused.

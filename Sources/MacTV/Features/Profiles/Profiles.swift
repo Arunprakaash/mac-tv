@@ -252,10 +252,22 @@ struct ProfilesScreen: View {
                 removeButton(picker, all: all)
                     .frame(height: 70)
             }
+            InputHintsBar(tv: tv, set: profileHints(picker))
         }
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(Motion.focus, value: picker)
+    }
+
+    private func profileHints(_ picker: ProfilePicker) -> HintSet {
+        if picker.naming != nil {
+            return .custom([.select("Create"), .back("Cancel")])
+        }
+        if picker.onRemove {
+            let ok = picker.confirmingRemove ? "Confirm" : "Remove"
+            return .custom([.select(ok), .back("Close")])
+        }
+        return .custom([.moveHorizontal("Choose"), .select("Select"), .back("Close")])
     }
 
     private func tile<Art: View, Label: View>(index: Int, focused: Bool, @ViewBuilder art: () -> Art,

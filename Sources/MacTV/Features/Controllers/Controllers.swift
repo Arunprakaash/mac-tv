@@ -170,26 +170,40 @@ struct ControllerBanner: View {
     }
 }
 
-/// The controller's own buttons and what they do, shown beside the clock while one is connected.
-struct ControllerHints: View {
-    let info: ControllerInfo
+/// Home status strip: Open / Back / Home for whichever input last drove the TV.
+struct HomeInputHints: View {
+    @ObservedObject var tv: TVController
 
     var body: some View {
         HStack(spacing: 18) {
-            hint(info.selectSymbol, "Open")
-            hint(info.backSymbol, "Back")
-            hint(info.menuSymbol, "Home")
+            switch tv.lastInputKind {
+            case .controller:
+                let info = tv.controller
+                InputHint(action: .symbol(info?.selectSymbol ?? "a.circle", "Open"), kind: .controller, controller: info)
+                InputHint(action: .symbol(info?.backSymbol ?? "b.circle", "Back"), kind: .controller, controller: info)
+                InputHint(action: .symbol(info?.menuSymbol ?? "line.3.horizontal.circle", "Home"), kind: .controller, controller: info)
+            case .keyboard:
+                InputHint(action: .select("Open"), kind: .keyboard)
+                InputHint(action: .back("Back"), kind: .keyboard)
+                HStack(spacing: 7) {
+                    Text("⌘⇧H")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.45), lineWidth: 1))
+                    Text("Home")
+                }
+            case .remote:
+                InputHint(action: .select("Open"), kind: .remote)
+                InputHint(action: .back("Back"), kind: .remote)
+                InputHint(action: .symbol("house.fill", "Home"), kind: .remote)
+            }
         }
         .font(.tv(.caption2))
         .padding(.horizontal, 20)
         .frame(height: 50)
         .tvGlass(in: Capsule())
-    }
-
-    private func hint(_ symbol: String, _ label: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol).font(.system(size: 22, weight: .medium)).symbolRenderingMode(.hierarchical)
-            Text(label)
-        }
+        .animation(Motion.appear, value: tv.lastInputKind)
     }
 }

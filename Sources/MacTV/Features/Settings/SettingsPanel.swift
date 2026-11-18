@@ -17,6 +17,38 @@ struct SettingsPanel: Equatable {
         case audioOutput, feedback
         case keepMacAwake, lidOverride, screenOff, sleepMac
         case version, update, autoUpdate, source, report, analytics
+
+        /// Left/right steps or toggles this row; otherwise left goes back.
+        var adjustsWithArrows: Bool {
+            switch self {
+            case .sleepTimer, .wallpaper, .aerialCategory, .saverDelay, .saverClock, .feedback,
+                 .autoSkip, .autoNext, .websitePlayer, .dedicatedTV, .preferredDisplay, .launchAtLogin,
+                 .keepMacAwake, .lidOverride, .analytics, .autoUpdate:
+                true
+            default:
+                false
+            }
+        }
+
+        /// Verb for the OK / Select hint on this row.
+        var okVerb: String {
+            switch self {
+            case .autoSkip, .autoNext, .saverClock, .feedback, .keepMacAwake, .lidOverride,
+                 .analytics, .autoUpdate, .dedicatedTV, .launchAtLogin:
+                "Toggle"
+            case .sleepTimer, .websitePlayer, .preferredDisplay, .wallpaper, .aerialCategory, .saverDelay:
+                // ←→ already says Change; OK advances the same value.
+                "Select"
+            case .phoneRemote, .addApp, .arrangeApps, .topShelfPreferences, .playbackCheck, .audioOutput:
+                "Open"
+            case .saverPreview: "Preview"
+            case .screenOff: "Turn Off"
+            case .sleepMac: "Sleep"
+            case .report: "Copy"
+            case .update: "Update"
+            case .pairingCode, .controller, .version, .source: "Select"
+            }
+        }
     }
 
     var section: Section = .profiles
@@ -129,15 +161,12 @@ extension TVController {
         }
 
         let rows = panel.section.rows
-        // Left steps or switches off a row that has a value; on any other row it goes back.
-        let adjustable: Set<String> = ["sleepTimer", "wallpaper", "aerialCategory", "saverDelay", "saverClock", "feedback",
-                                       "autoSkip", "autoNext", "websitePlayer", "dedicatedTV", "preferredDisplay", "launchAtLogin",
-                                       "keepMacAwake", "lidOverride", "analytics", "autoUpdate"]
+        let row = rows[min(panel.row, max(rows.count - 1, 0))]
         switch command {
         case .back:
             panel.open = false
             panel.row = 0
-        case .move(.left) where !adjustable.contains(String(describing: rows[panel.row])):
+        case .move(.left) where !row.adjustsWithArrows:
             panel.open = false
             panel.row = 0
         case .move(.up):
@@ -146,11 +175,11 @@ extension TVController {
             panel.row = min(rows.count - 1, panel.row + 1)
         case .move(let direction) where direction == .left || direction == .right:
             settings = panel
-            adjustSetting(rows[panel.row], forward: direction == .right)
+            adjustSetting(row, forward: direction == .right)
             return
         case .select:
             settings = panel
-            activateSetting(rows[panel.row])
+            activateSetting(row)
             return
         default:
             break
@@ -299,20 +328,48 @@ struct SettingsSheet: View {
             hero(panel.section)
                 .frame(width: 780, alignment: .leading)
                 .padding(.leading, 120)
-            Group {
-                if panel.open {
-                    page(panel)
-                } else {
-                    sections(panel)
+            VStack {
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 28) {
+                    Group {
+                        if panel.open {
+                            page(panel)
+                        } else {
+                            sections(panel)
+                        }
+                    }
+                    InputHintsBar(tv: tv, set: settingsHints(panel))
                 }
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.trailing, 120)
             .padding(.leading, 20)
         }
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(Motion.focus, value: panel)
+    }
+
+    /// One primary OK verb — never Change + Toggle together (same action twice).
+    private func settingsHints(_ panel: SettingsPanel) -> HintSet {
+        guard panel.open else { return .list }
+        let rows = panel.section.rows
+        guard rows.indices.contains(panel.row) else { return .list }
+        let row = rows[panel.row]
+        var actions: [HintAction] = [.moveVertical("Choose")]
+        let ok = (row == .sleepMac && panel.confirmingSleep) ? "Confirm" : row.okVerb
+        if row.adjustsWithArrows, ok == "Toggle" {
+            // ←→ and OK both flip the switch — show Toggle only.
+            actions.append(.select("Toggle"))
+        } else if row.adjustsWithArrows {
+            // Multi-value steppers: ←→ is the real control; OK also advances.
+            actions.append(.moveHorizontal("Change"))
+        } else {
+            actions.append(.select(ok))
+        }
+        actions.append(.back("Close"))
+        return .custom(actions)
     }
 
     private func hero(_ section: SettingsPanel.Section) -> some View {
