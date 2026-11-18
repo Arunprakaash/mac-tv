@@ -27,6 +27,7 @@ struct BravePlaybackView: View {
                     }
                 }
                 .padding(.top, 20)
+                InputHintsBar(tv: tv, set: .chooser)
             }
             .padding(64)
         }

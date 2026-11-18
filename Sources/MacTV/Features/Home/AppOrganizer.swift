@@ -77,17 +77,9 @@ struct AppOrganizerSheet: View {
     var body: some View {
         let apps = tv.arrangedServices
         VStack(alignment: .leading, spacing: 22) {
-            HStack {
-                Text("Arrange Apps").font(.system(size: 48, weight: .heavy)).tracking(-1)
-                Spacer()
-                Button("Done") { tv.organizer = nil }
-                    .font(.system(size: 24, weight: .semibold))
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 26).padding(.vertical, 14)
-                    .background(.white.opacity(0.12), in: Capsule())
-            }
+            Text("Arrange Apps").font(.tv(.title3, emphasized: true))
             Text("Favourites stay first. The first six apps appear in the dock.")
-                .font(.system(size: 23)).foregroundStyle(.white.opacity(0.7))
+                .font(.tv(.caption1)).foregroundStyle(.white.opacity(0.7))
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -109,16 +101,11 @@ struct AppOrganizerSheet: View {
                 .onChange(of: apps.map(\.id)) { _, _ in scrollToSelection(proxy) }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("↑ ↓ Choose app    ← → Choose action    OK Apply    Back Close")
-                    .font(.system(size: 22, weight: .medium))
-                Text("Move apps within Favourites or Other Apps. Changes save automatically.")
-                    .font(.system(size: 20)).foregroundStyle(.white.opacity(0.65))
-            }
+            InputHintsBar(tv: tv, set: .arrange)
         }
         .padding(48)
         .frame(width: 1340, alignment: .leading)
-        .tvGlass(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
     }

@@ -160,15 +160,27 @@ struct SetupScreen: View {
             .id(flow.step)
             .transition(.opacity.combined(with: .offset(y: 24)))
             Spacer(minLength: 0)
+            InputHintsBar(tv: tv, set: setupHints(flow))
+                .padding(.bottom, flow.onlyPrivacy ? 64 : 24)
             if !flow.onlyPrivacy {
                 dots(flow)
-                    .padding(.bottom, 64)
+                    .padding(.bottom, 48)
             }
         }
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .animation(Motion.navigate, value: flow.step)
         .animation(Motion.focus, value: flow.index)
+    }
+
+    private func setupHints(_ flow: SetupFlow) -> HintSet {
+        switch flow.step {
+        case .welcome: .custom([.select("Select")])
+        case .apps: .custom([.moveVertical("Choose"), .moveHorizontal("Choose"), .select("Select")])
+        case .remote: .custom([.select("Continue")])
+        case .privacy: .pick
+        case .done: .custom([.select("Start")])
+        }
     }
 
     // MARK: Steps
@@ -181,12 +193,6 @@ struct SetupScreen: View {
                 .shadow(color: .black.opacity(0.5), radius: 30, y: 16)
             title("Welcome to Mac TV")
             subtitle("Your streaming apps on the big screen, with your phone as the remote. Setting up takes about a minute.")
-            HStack(spacing: 18) {
-                hint("arrow.up.and.down.and.arrow.left.and.right", "Arrow keys move")
-                hint("return", "Return selects")
-                hint("escape", "Esc goes back")
-            }
-            .padding(.top, 8)
             ShelfButton(title: "Get Started", focused: true, glass: false) { tv.activateSetup(0) }
                 .padding(.top, 20)
         }
@@ -305,14 +311,6 @@ struct SetupScreen: View {
             .multilineTextAlignment(.center)
             .lineSpacing(4)
             .frame(maxWidth: 1000)
-    }
-
-    private func hint(_ symbol: String, _ text: String) -> some View {
-        Label(text, systemImage: symbol)
-            .font(.tv(.caption2))
-            .padding(.horizontal, 22).frame(height: 52)
-            .foregroundStyle(.white.opacity(0.85))
-            .tvPanel(in: Capsule())
     }
 
     private func tip(_ symbol: String, _ heading: String, _ detail: String) -> some View {

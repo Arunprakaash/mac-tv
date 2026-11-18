@@ -14,6 +14,7 @@ let package = Package(
             name: "MacTV",
             dependencies: [.product(name: "TelemetryDeck", package: "TelemetryDeck")],
             path: "Sources/MacTV",
+            exclude: ["DesignSystem/InputHints.md"],
             // The phone remote's web page (Features/Remote/RemotePage.swift serves it).
             resources: [.copy("Features/Remote/Page")]
         ),

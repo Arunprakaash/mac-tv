@@ -33,10 +33,11 @@ struct AddAppSheet: View {
                 steamList(a)
             }
 
-            Text(a.message ?? (a.tab == .steam ? "Games open through Steam, and Mac TV comes back when you quit. Esc or Back closes."
-                                                : "Type with the keyboard or the remote's typing box. Esc or Back closes."))
+            Text(a.message ?? (a.tab == .steam ? "Games open through Steam, and Mac TV comes back when you quit."
+                                                : "Type with the keyboard or the remote's typing box."))
                 .font(.tv(.caption2, emphasized: a.message != nil))
                 .foregroundStyle(a.failed ? Color(hex: "#FF8A80") : .white.opacity(a.message == nil ? 0.55 : 0.9))
+            InputHintsBar(tv: tv, set: .form)
         }
         .padding(56)
         .frame(width: 1100, alignment: .leading)

@@ -327,10 +327,26 @@ struct MoviesScreen: View {
                 .padding(.leading, PosterLayout.left)
                 .frame(height: PosterLayout.rowsTop - 40, alignment: .bottomLeading)
 
-            ClockPill()
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, 96)
-                .padding(.top, 56)
+            HStack(spacing: 14) {
+                if browser.folderRow == nil, browser.shareForm == nil, browser.resuming == nil {
+                    InputHintsBar(
+                        tv: tv,
+                        set: .custom([
+                            .moveVertical("Choose"),
+                            .moveHorizontal("Choose"),
+                            .select("Open"),
+                            .back("Close"),
+                        ])
+                    )
+                    .padding(.horizontal, 20)
+                    .frame(height: 50)
+                    .tvGlass(in: Capsule())
+                }
+                ClockPill()
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 96)
+            .padding(.top, 56)
 
             VStack(alignment: .leading, spacing: 56) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
@@ -366,7 +382,7 @@ struct MoviesScreen: View {
                     .transition(Motion.sheet(reduceMotion: reduceMotion))
             }
             if let path = browser.resuming, let resuming = library.movie(path) {
-                ResumeSheet(movie: resuming, row: browser.resumeRow) { from in
+                ResumeSheet(tv: tv, movie: resuming, row: browser.resumeRow) { from in
                     tv.movies?.resuming = nil
                     tv.playMovie(resuming, from: from)
                 }
@@ -590,6 +606,8 @@ struct FoldersSheet: View {
             row(extras + 2, systemImage: "folder.badge.plus", title: "Choose Another Folder…") {
                 Image(systemName: "chevron.right").font(.system(size: 22, weight: .semibold)).opacity(0.6)
             }
+            InputHintsBar(tv: tv, set: folderHints)
+                .padding(.top, 12)
         }
         .padding(56)
         .frame(width: 980, alignment: .leading)
@@ -598,6 +616,15 @@ struct FoldersSheet: View {
         .frame(width: canvas.width, height: canvas.height)
         .background(Color.black.opacity(0.35))
         .animation(Motion.focus, value: focusedRow)
+    }
+
+    private var folderHints: HintSet {
+        let folders = library.suggestedFolders
+        let extras = folders.count + jellyfin.servers.count
+        let ok: String
+        if focusedRow < extras { ok = "Toggle" }
+        else { ok = "Open" }
+        return .custom([.moveVertical("Choose"), .select(ok), .back("Close")])
     }
 
     private func row<Trailing: View>(_ index: Int, systemImage: String, title: String,
@@ -629,6 +656,7 @@ struct FoldersSheet: View {
 
 /// Apple TV's choice for a movie you've started: carry on, or from the beginning.
 struct ResumeSheet: View {
+    @ObservedObject var tv: TVController
     let movie: Movie
     let row: Int
     let choose: (Double) -> Void
@@ -643,6 +671,8 @@ struct ResumeSheet: View {
                 choose(max(0, position - 5))
             }
             button("Start from the Beginning", systemImage: "arrow.counterclockwise", focused: row == 1) { choose(0) }
+            InputHintsBar(tv: tv, set: .chooser)
+                .padding(.top, 8)
         }
         .padding(48)
         .frame(width: 720)
@@ -677,6 +707,7 @@ struct ResumeSheet: View {
 /// progress bar at the bottom. The remote drives them (left and right skip, select plays or
 /// pauses, down opens subtitles and audio) and so does the mouse.
 struct MoviePlayerView: View {
+    @ObservedObject var tv: TVController
     @ObservedObject var player: MoviePlayer
 
     var body: some View {
@@ -832,6 +863,17 @@ struct MoviePlayerView: View {
                     }
                 }
             }
+            InputHintsBar(
+                tv: tv,
+                set: columns.count > 1
+                    ? .custom([
+                        .moveVertical("Choose"),
+                        .moveHorizontal("Choose"),
+                        .select("Select"),
+                        .back("Close"),
+                    ])
+                    : .list
+            )
         }
         .padding(24)
         .tvGlass(in: RoundedRectangle(cornerRadius: 32, style: .continuous))
@@ -958,6 +1000,7 @@ struct ShareFormSheet: View {
                 .foregroundStyle(form.failed ? Color(hex: "#FF8A80") : .white.opacity(form.message == nil ? 0.55 : 0.9))
                 .lineLimit(2)
                 .frame(minHeight: 64, alignment: .topLeading)
+            InputHintsBar(tv: tv, set: .form)
         }
         .padding(56)
         .frame(width: 1000, alignment: .leading)

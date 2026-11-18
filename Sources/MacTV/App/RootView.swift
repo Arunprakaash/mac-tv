@@ -16,7 +16,7 @@ struct RootView: View {
                     TVCanvas { PlaybackFailureView(tv: tv) }.ignoresSafeArea()
                 }
             } else if tv.mode == .movie, let player = tv.moviePlayer {
-                MoviePlayerView(player: player).id(ObjectIdentifier(player))
+                MoviePlayerView(tv: tv, player: player).id(ObjectIdentifier(player))
             } else {
                 if tv.movies != nil {
                     // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.

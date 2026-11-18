@@ -100,8 +100,10 @@ struct PlaybackFailureView: View {
                         .background(tv.playerFailure?.selected == index ? .white : .white.opacity(0.12), in: Capsule())
                 }
             }
+            InputHintsBar(tv: tv, set: .chooser)
         }
-        .padding(60).frame(width: 1280).tvGlass(in: RoundedRectangle(cornerRadius: 40))
+        .padding(60).frame(width: 1280)
+        .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black.opacity(0.8))
     }
@@ -110,30 +112,28 @@ struct PlaybackFailureView: View {
 struct PlaybackCheckSheet: View {
     @ObservedObject var tv: TVController
     var body: some View {
-        if let check = tv.playbackCheck { PlaybackCheckContent(check: check) { tv.playbackCheck = nil } }
+        if let check = tv.playbackCheck {
+            PlaybackCheckContent(tv: tv, check: check)
+        }
     }
 }
 
 private struct PlaybackCheckContent: View {
+    @ObservedObject var tv: TVController
     @ObservedObject var check: PlaybackDiagnostics
-    let close: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Text("Playback check").font(.system(size: 44, weight: .bold))
-                Spacer()
-                Button("Done", action: close).buttonStyle(.plain).font(.system(size: 26)).padding(16)
-                    .background(.white.opacity(0.15), in: Capsule())
-            }
-            Text("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)").font(.system(size: 22))
-            Text(check.displays).font(.system(size: 22))
+            Text("Playback check").font(.tv(.title3, emphasized: true))
+            Text("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)").font(.tv(.caption1))
+            Text(check.displays).font(.tv(.caption1))
             Text(check.result).font(.system(size: 19, design: .monospaced)).textSelection(.enabled)
             Text("These checks detect capabilities. Actual resolution, HDR and HDCP are not verified.")
-                .font(.system(size: 23, weight: .semibold))
+                .font(.tv(.caption1, emphasized: true))
             Text("Netflix: check your plan, Safari compatibility and the display/cable requirements. Other services may limit embedded players. If a title fails, try Safari. Sign-in and subscription checks remain with each service.")
-                .font(.system(size: 22)).foregroundStyle(.white.opacity(0.75))
-            Text("Back closes this screen.").font(.system(size: 20))
-        }.padding(50).frame(width: 1380).tvGlass(in: RoundedRectangle(cornerRadius: 40))
+                .font(.tv(.caption1)).foregroundStyle(.white.opacity(0.75))
+            InputHintsBar(tv: tv, set: .info)
+        }.padding(50).frame(width: 1380)
+            .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
             .foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

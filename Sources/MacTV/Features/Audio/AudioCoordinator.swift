@@ -355,16 +355,7 @@ struct AudioPickerSheet: View {
         let soundSliderRow = tv.audioDevices.count + 1
 
         VStack(alignment: .leading, spacing: 22) {
-            HStack {
-                Text("Audio Output").font(.tv(.title3, emphasized: true))
-                Spacer()
-                Button("Done") { tv.audioPicker = nil }
-                    .buttonStyle(.plain)
-                    .font(.tv(.caption1, emphasized: true))
-                    .padding(.horizontal, 24)
-                    .frame(height: 48)
-                    .background(.white.opacity(0.12), in: Capsule())
-            }
+            Text("Audio Output").font(.tv(.title3, emphasized: true))
 
             Text("Choose where sound plays from this Mac. Connect AirPods in System Settings › Bluetooth.")
                 .font(.tv(.caption1))
@@ -431,19 +422,19 @@ struct AudioPickerSheet: View {
                 }
             }
 
-            let hint: String = {
+            Group {
                 if panel.row == masterSliderRow {
-                    return "Use ◀ ▶ to change volume, Select to mute, Esc or Back closes."
+                    InputHintsBar(tv: tv, actions: [.moveHorizontal("Volume"), .select("Mute"), .back("Close")])
                 } else if panel.row == soundSliderRow {
-                    return "Use ◀ ▶ to change sound effects volume, Select to mute, Esc or Back closes."
+                    InputHintsBar(tv: tv, actions: [.moveHorizontal("Sound effects"), .select("Mute"), .back("Close")])
                 } else {
-                    return "Press Select to switch audio output. Esc or Back closes."
+                    InputHintsBar(tv: tv, set: .custom([
+                        .moveVertical("Choose"),
+                        .select("Select output"),
+                        .back("Close"),
+                    ]))
                 }
-            }()
-
-            Text(hint)
-                .font(.tv(.caption2))
-                .foregroundStyle(.white.opacity(0.55))
+            }
         }
         .padding(52)
         .frame(width: 820, alignment: .leading)

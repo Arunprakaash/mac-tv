@@ -145,11 +145,17 @@ struct ControlCenterView: View {
                     }
                 }
             }
-            Text(caption(panel))
-                .font(.tv(.caption2))
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(width: Self.column * 2 + Self.gap, alignment: .center)
-                .contentTransition(.opacity)
+            // Nav hints live in the home status bar; here only explain unlabeled round buttons.
+            let detail = caption(panel)
+            if !detail.isEmpty {
+                Text(detail)
+                    .font(.tv(.caption2))
+                    .padding(.horizontal, 20)
+                    .frame(height: 44)
+                    .tvGlass(in: Capsule())
+                    .frame(width: Self.column * 2 + Self.gap, alignment: .center)
+                    .contentTransition(.opacity)
+            }
         }
         .foregroundStyle(.white)
         // Just under the home screen's status row, which stays in place above it.
@@ -159,15 +165,15 @@ struct ControlCenterView: View {
         .animation(Motion.focus, value: panel)
     }
 
-    /// What the focused round button does, shown under the cluster since those buttons have no label.
+    /// What the focused unlabeled control does (round buttons / sleep confirm).
     private func caption(_ panel: ControlCenterPanel) -> String {
         switch panel.item {
         case .controller: tv.controller?.name ?? "No controller connected"
         case .screenOff: "Turn Screen Off"
         case .lid: tv.lidOverride ? "Stays awake with the lid closed" : "Sleeps when the lid closes"
         case .settings: "All Settings"
-        case .sleepMac: panel.confirmingSleep ? "Press again to sleep the Mac" : "Sleep Mac"
-        default: " "
+        case .sleepMac: panel.confirmingSleep ? "Press again to sleep the Mac" : ""
+        default: ""
         }
     }
 
