@@ -77,7 +77,9 @@ struct HomeView: View {
                         .onTapGesture { tv.activateStatus(.lid) }
                         .tvGlassID("lid", in: pills)
                 }
-                HomeInputHints(tv: tv).tvGlassID("input-hints", in: pills)
+                if let controller = tv.controller {
+                    ControllerHints(info: controller).tvGlassID("controller", in: pills)
+                }
                 // Control Center: white while it's open or focused, like Apple TV's.
                 let lit = tv.focus == .status(.controlCenter) || tv.controlCenter != nil
                 Image(systemName: "switch.2")
@@ -97,7 +99,7 @@ struct HomeView: View {
             } }
                 .animation(Motion.focus, value: tv.focus)
                 .animation(Motion.appear, value: tv.lidSleepOff)
-                .animation(Motion.appear, value: tv.lastInputKind)
+                .animation(Motion.appear, value: tv.controller)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 96)
                 .padding(.top, 56)

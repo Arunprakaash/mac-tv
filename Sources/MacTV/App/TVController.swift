@@ -328,7 +328,8 @@ final class TVController: NSObject, ObservableObject {
     // MARK: - Command Dispatch
 
     func handle(_ command: RemoteCommand, from source: Feedback.Source = .keyboard) {
-        lastInputKind = InputKind(source)
+        // Only on a change: this redraws every screen watching the controller.
+        if InputKind(source) != lastInputKind { lastInputKind = InputKind(source) }
         if source == .remote {
             noteRemoteConnection()
             if displaysSleeping {

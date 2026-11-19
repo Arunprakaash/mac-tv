@@ -38,6 +38,8 @@ enum InputKind: Equatable {
 
 /// A footer legend entry: stable verb, device-specific glyph.
 enum HintAction: Equatable {
+    /// All four directions, for grids.
+    case move(String)
     case moveVertical(String)
     case moveHorizontal(String)
     case select(String)
@@ -47,7 +49,7 @@ enum HintAction: Equatable {
 
     var label: String {
         switch self {
-        case .moveVertical(let s), .moveHorizontal(let s), .select(let s), .back(let s), .symbol(_, let s): s
+        case .move(let s), .moveVertical(let s), .moveHorizontal(let s), .select(let s), .back(let s), .symbol(_, let s): s
         }
     }
 }
@@ -112,7 +114,14 @@ struct InputHintsBar: View {
         let kind = forceKind ?? tv.lastInputKind
         HStack(spacing: 18) {
             ForEach(Array(set.actions.enumerated()), id: \.offset) { _, action in
-                InputHint(action: action, kind: kind, controller: tv.controller)
+                if case .back = action {
+                    // The way out with a mouse or trackpad, now that sheets have no Done button.
+                    InputHint(action: action, kind: kind, controller: tv.controller)
+                        .contentShape(Rectangle())
+                        .onTapGesture { tv.handle(.back, from: .pointer) }
+                } else {
+                    InputHint(action: action, kind: kind, controller: tv.controller)
+                }
             }
             if let note {
                 Text("· \(note)")
@@ -137,15 +146,23 @@ struct InputHint: View {
 
     @ViewBuilder private var badge: some View {
         switch action {
+        case .move:
+            switch kind {
+            case .remote: HStack(spacing: 4) { remoteChevrons(vertical: true); remoteChevrons(vertical: false) }
+            case .keyboard: framedText("↑↓←→")
+            case .controller: symbolBadge("dpad.fill")
+            }
         case .moveVertical:
             switch kind {
             case .remote: remoteChevrons(vertical: true)
-            case .keyboard, .controller: framedText("↑↓")
+            case .keyboard: framedText("↑↓")
+            case .controller: symbolBadge("dpad.fill")
             }
         case .moveHorizontal:
             switch kind {
             case .remote: remoteChevrons(vertical: false)
-            case .keyboard, .controller: framedText("←→")
+            case .keyboard: framedText("←→")
+            case .controller: symbolBadge("dpad.fill")
             }
         case .select:
             faceBadge(select: true)

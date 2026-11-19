@@ -175,8 +175,9 @@ struct SetupScreen: View {
 
     private func setupHints(_ flow: SetupFlow) -> HintSet {
         switch flow.step {
-        case .welcome: .custom([.select("Select")])
-        case .apps: .custom([.moveVertical("Choose"), .moveHorizontal("Choose"), .select("Select")])
+        // The first screen also shows how to get around.
+        case .welcome: .custom([.move("Move"), .select("Select"), .back("Back")])
+        case .apps: .custom([.move("Choose"), .select("Select")])
         case .remote: .custom([.select("Continue")])
         case .privacy: .pick
         case .done: .custom([.select("Start")])
