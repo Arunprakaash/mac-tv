@@ -46,7 +46,9 @@ struct SettingsPanel: Equatable {
             case .sleepMac: "Sleep"
             case .report: "Copy"
             case .update: "Update"
-            case .pairingCode, .controller, .version, .source: "Select"
+            case .controller: "Select"
+            // OK does nothing on these, so there's no OK hint.
+            case .pairingCode, .version, .source: ""
             }
         }
     }
@@ -365,7 +367,7 @@ struct SettingsSheet: View {
         } else if row.adjustsWithArrows {
             // Multi-value steppers: ←→ is the real control; OK also advances.
             actions.append(.moveHorizontal("Change"))
-        } else {
+        } else if !ok.isEmpty {
             actions.append(.select(ok))
         }
         actions.append(.back("Close"))

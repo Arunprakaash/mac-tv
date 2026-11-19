@@ -327,26 +327,10 @@ struct MoviesScreen: View {
                 .padding(.leading, PosterLayout.left)
                 .frame(height: PosterLayout.rowsTop - 40, alignment: .bottomLeading)
 
-            HStack(spacing: 14) {
-                if browser.folderRow == nil, browser.shareForm == nil, browser.resuming == nil {
-                    InputHintsBar(
-                        tv: tv,
-                        set: .custom([
-                            .moveVertical("Choose"),
-                            .moveHorizontal("Choose"),
-                            .select("Open"),
-                            .back("Close"),
-                        ])
-                    )
-                    .padding(.horizontal, 20)
-                    .frame(height: 50)
-                    .tvGlass(in: Capsule())
-                }
-                ClockPill()
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.trailing, 96)
-            .padding(.top, 56)
+            ClockPill()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 96)
+                .padding(.top, 56)
 
             VStack(alignment: .leading, spacing: 56) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
@@ -866,12 +850,7 @@ struct MoviePlayerView: View {
             InputHintsBar(
                 tv: tv,
                 set: columns.count > 1
-                    ? .custom([
-                        .moveVertical("Choose"),
-                        .moveHorizontal("Choose"),
-                        .select("Select"),
-                        .back("Close"),
-                    ])
+                    ? .custom([.move("Choose"), .select("Select"), .back("Close")])
                     : .list
             )
         }

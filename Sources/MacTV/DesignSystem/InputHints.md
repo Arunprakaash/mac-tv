@@ -5,10 +5,12 @@ Footer legends for every focus-navigable sheet and modal. Implementation: `Input
 ## Rules
 
 1. Use `InputHintsBar` — never plain-text legends (`Esc or Back…`, `↑ ↓ Choose…`).
-2. **No header Done.** Dismiss with Back/Close; glyphs follow the active input.
+2. **No header Done.** Dismiss with Back/Close; glyphs follow the active input. The Close hint is clickable, so mouse and trackpad users still have a way out.
 3. Prefer a `HintSet` preset over a custom action list.
 4. Glyphs track `TVController.lastInputKind` (last command source). Mouse/trackpad → keyboard.
-5. Remote glyphs match the phone remote (OK disc, chevron Back, clickpad chevrons).
+5. Remote glyphs match the phone remote (OK disc, chevron Back, clickpad chevrons). Controllers show the d-pad for moves.
+6. Grids use one `move` hint (all four directions), never two "Choose" hints.
+7. Home and Movies keep their status rows as they were: no always-on legend there (Home shows the controller strip only while one is connected).
 
 ## Hint sets
 
