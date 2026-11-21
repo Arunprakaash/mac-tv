@@ -579,6 +579,29 @@ final class TVController: NSObject, ObservableObject {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// Comes back in front after another app's window closed, onto the Space Mac TV's full-screen window is in.
+    /// Opening Mac TV through Launch Services activates it the way a Dock click does, Space switch included;
+    /// if macOS still leaves it in the background, it marks itself frontmost through Accessibility.
+    func takeFocusBack() {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, error in
+            if let error { Log.app.failure("Reopening Mac TV", error) }
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self else { return }
+            if !NSApp.isActive {
+                _ = AXUIElementSetAttributeValue(AXUIElementCreateApplication(getpid()),
+                                                 kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+            }
+            // Ordering the window front once Mac TV is active moves to the Space it's in.
+            if self.window?.isOnActiveSpace == false { self.bringToFront() }
+            try? await Task.sleep(for: .milliseconds(700))
+            Log.app.notice("Taking focus back: active \(NSApp.isActive, privacy: .public), window on this Space \(self.window?.isOnActiveSpace ?? false, privacy: .public)")
+        }
+    }
+
     func showVolume(_ level: VolumeLevel) { notices.showVolume(level) }
 
     func startControllers() {
