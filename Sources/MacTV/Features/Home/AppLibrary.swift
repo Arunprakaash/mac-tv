@@ -83,15 +83,20 @@ final class AppLibrary {
     }
 
     var hasHiddenBuiltIns: Bool { !saved.hidden.isEmpty }
+    /// The removed built-in apps that restoring would bring back to this Mac's home screen.
+    var hiddenBuiltInCount: Int { Catalog.services.filter { saved.hidden.contains($0.id) && $0.isAvailable }.count }
     /// The user has added or removed an app at some point.
     var hasSavedApps: Bool { FileManager.default.fileExists(atPath: file.path) }
 
     func isHidden(_ id: String) -> Bool { saved.hidden.contains(id) }
 
-    /// Shows or hides a built-in app, for first-run setup.
-    func setHidden(_ id: String, _ hidden: Bool) {
+    /// Shows or hides a built-in app, for first-run setup. False when the change couldn't be saved.
+    @discardableResult
+    func setHidden(_ id: String, _ hidden: Bool) -> Bool {
+        let previous = saved.hidden
         if hidden { saved.hidden.insert(id) } else { saved.hidden.remove(id) }
-        save()
+        guard save() else { saved.hidden = previous; return false }
+        return true
     }
 
     func services() -> [Service] {
@@ -193,25 +198,34 @@ final class AppLibrary {
         SteamShelfArt.forget(heroFile(for: id))
     }
 
-    /// Removes an added app, or hides a built-in one.
-    func remove(_ id: String) {
+    /// Removes an added app, or hides a built-in one. False when there's no such app to remove, or
+    /// the change couldn't be saved; the library is then left as it was.
+    @discardableResult
+    func remove(_ id: String) -> Bool {
+        let previous = saved
         if let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added.remove(at: index)
             saved.order.removeAll { $0 == id }
             saved.pinned.remove(id)
+            guard save() else { saved = previous; return false }
             try? FileManager.default.removeItem(at: iconFile(for: id))
             try? FileManager.default.removeItem(at: heroFile(for: id))
             SteamShelfArt.forget(heroFile(for: id))
-        } else if Catalog.services.contains(where: { $0.id == id && $0.kind != .settings && $0.kind != .addApp }) {
-            saved.hidden.insert(id)
+            return true
         }
-        save()
+        guard Catalog.services.contains(where: { $0.id == id && Self.canArrange($0) }) else { return false }
+        saved.hidden.insert(id)
+        guard save() else { saved = previous; return false }
+        return true
     }
 
     /// Brings back any built-in apps the user removed.
-    func restoreBuiltIns() {
+    @discardableResult
+    func restoreBuiltIns() -> Bool {
+        let previous = saved.hidden
         saved.hidden = []
-        save()
+        guard save() else { saved.hidden = previous; return false }
+        return true
     }
 
     @discardableResult
