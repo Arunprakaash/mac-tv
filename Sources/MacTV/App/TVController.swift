@@ -105,7 +105,7 @@ final class TVController: NSObject, ObservableObject {
     var localMoviePlayer: String { playbackCoordinator.localMoviePlayer }
     var iinaPlaybackError: String? { playbackCoordinator.iinaPlaybackError }
     var iinaPlaybackStatus: String { playbackCoordinator.iinaPlaybackStatus }
-    var externalBrowser: BraveSession? { playbackCoordinator.externalBrowser }
+    var externalBrowser: BrowserSession? { playbackCoordinator.externalBrowser }
     var externalBrowserService: Service? { playbackCoordinator.externalBrowserService }
     var externalBrowserError: String? { playbackCoordinator.externalBrowserError }
     var externalBrowserOpening: Bool { playbackCoordinator.externalBrowserOpening }
@@ -452,7 +452,11 @@ final class TVController: NSObject, ObservableObject {
         playbackCoordinator.closeIINAPlayback()
         playbackCoordinator.closeExternalBrowser()
         var opened = ["app": analyticsAppName(service)]
-        if case .web = service.kind { opened["player"] = browserPreferences.choice(for: profile.id).rawValue }
+        if case .web = service.kind {
+            // A fixed word for other browsers: bundle ids aren't sent.
+            let choice = browserPreferences.choice(for: profile.id)
+            if case .app = choice { opened["player"] = "other" } else { opened["player"] = choice.rawValue }
+        }
         Analytics.send(.appOpened, opened)
         playbackCoordinator.resetPlaybackRequest()
         sheets.closeDismissible()
@@ -498,20 +502,50 @@ final class TVController: NSObject, ObservableObject {
         (screensaver || displaysSleeping) && mode == .launcher && setup == nil && !playbackCoordinator.isAnyPlaybackActive
     }
 
-    var braveInstalled: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") != nil }
-    var websitePlayerName: String { browserPreferences.choice(for: profile.id) == .brave ? "Brave" : "Built-in" }
+    var braveInstalled: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: BrowserChoice.braveBundleID) != nil }
+
+    /// The browsers installed on this Mac. Tests replace it so they don't depend on what the machine has.
+    var browserLookup: () -> [InstalledBrowser] = BrowserDiscovery.installed { didSet { browserCache = nil } }
+    private var browserCache: (browsers: [InstalledBrowser], at: Date)?
+
+    /// Built-in, then Brave if it's installed, then the other browsers on this Mac.
+    var websitePlayers: [(choice: BrowserChoice, name: String)] {
+        if browserCache == nil || browserCache!.at.timeIntervalSinceNow < -10 {
+            browserCache = (browserLookup(), Date())
+        }
+        let browsers = browserCache!.browsers
+        var players: [(choice: BrowserChoice, name: String)] = [(.embedded, "Built-in")]
+        if browsers.contains(where: { $0.bundleID == BrowserChoice.braveBundleID }) { players.append((.brave, "Brave")) }
+        players += browsers.filter { $0.bundleID != BrowserChoice.braveBundleID }.map { (.app($0.bundleID), $0.name) }
+        return players
+    }
+
+    var websitePlayerName: String {
+        let choice = browserPreferences.choice(for: profile.id)
+        if let player = websitePlayers.first(where: { $0.choice == choice }) { return player.name }
+        // A browser that has since been removed: websites play in Mac TV.
+        return choice == .brave ? "Brave" : "Built-in"
+    }
 
     @discardableResult
     func setWebsitePlayer(_ raw: String) -> Bool {
-        guard let choice = BrowserChoice(rawValue: raw), choice != .brave || braveInstalled else { return false }
+        guard let choice = BrowserChoice(rawValue: raw), websitePlayers.contains(where: { $0.choice == choice }) else {
+            return false
+        }
         browserPreferences.setChoice(choice, for: profile.id)
         objectWillChange.send()
         return true
     }
 
-    func stepWebsitePlayer() {
-        let next = browserPreferences.choice(for: profile.id) == .embedded ? BrowserChoice.brave : .embedded
-        if !setWebsitePlayer(next.rawValue) { showToast("Install Brave Browser to select it.") }
+    func stepWebsitePlayer(forward: Bool = true) {
+        let players = websitePlayers
+        guard players.count > 1 else {
+            showToast("Install a browser such as Brave to choose it.")
+            return
+        }
+        let current = players.firstIndex { $0.choice == browserPreferences.choice(for: profile.id) } ?? 0
+        let next = (current + (forward ? 1 : players.count - 1)) % players.count
+        setWebsitePlayer(players[next].choice.rawValue)
     }
 
     private func pairingChanged() {
