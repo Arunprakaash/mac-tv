@@ -240,20 +240,26 @@ final class BraveSession {
             let bounds = try windowBounds(force: true)
             let p = pointer ?? CGPoint(x: bounds.midX, y: bounds.midY)
             guard bounds.contains(p) else { pointer = nil; throw SessionError.noWindow }
+            // A real click where the pointer is: the browser ignores clicks posted to its process, and one
+            // without a click count. The window was just brought in front, so the click lands on it.
+            CGWarpMouseCursorPosition(p)
             for type in [CGEventType.leftMouseDown, .leftMouseUp] {
                 guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left) else { throw SessionError.eventCreation }
-                event.postToPid(app.processIdentifier)
+                event.setIntegerValueField(.mouseEventClickState, value: 1)
+                event.post(tap: .cghidEventTap)
             }
             return true
         case .scroll(let dy):
             guard dy.isFinite else { return true }
-            try activate()
-            let bounds = try windowBounds(force: true)
+            try activateForPointer(app)
+            let bounds = try windowBounds()
             let p = pointer.flatMap { bounds.contains($0) ? $0 : nil } ?? CGPoint(x: bounds.midX, y: bounds.midY)
             let amount = Int32(max(-1000, min(1000, -dy)))
             guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: amount, wheel2: 0, wheel3: 0) else { throw SessionError.eventCreation }
+            // Scrolling goes to whatever is under the cursor, so it's posted there like a trackpad's.
+            CGWarpMouseCursorPosition(p)
             event.location = p
-            event.postToPid(app.processIdentifier)
+            event.post(tap: .cghidEventTap)
             return true
         default: return false
         }
