@@ -191,7 +191,7 @@ async function readState() {
     $('#lid-override').checked = s.lidOverride;
     $('#lid-status').textContent = s.lidStatus || '';
     if (!displayChanging) updateDisplays(s.displaySetup);
-    renderPlayerChoices(s.websitePlayer === 'brave' ? 'brave' : 'embedded', s.braveInstalled === true);
+    renderPlayerChoices(typeof s.websitePlayer === 'string' ? s.websitePlayer : 'embedded', s.braveInstalled === true, s.websitePlayers);
     const player = s.externalPlayer && s.externalPlayer.name === 'IINA' ? s.externalPlayer : null;
     $('#iina-controls').hidden = !player;
     const iinaStatus = player && typeof player.status === 'string' ? player.status : '';
@@ -208,7 +208,8 @@ async function readState() {
     $('#browser-retry').hidden = !browserError;
     $('#browser-retry').disabled = !!(browser && browser.opening);
     $('#browser-control-note').textContent = browser && browser.accessibilityAllowed === false
-      ? 'Allow Accessibility access for Mac TV to send input to Brave. Automation access is also needed to open and control its window.' : '';
+      ? `Allow Mac TV in Privacy & Security > ${browser.permissionPane || 'Accessibility'} to open, place and send input to ${browser.name || 'the browser'}.` : '';
+    $('#browser-return').textContent = `Return to ${browser && browser.name ? browser.name : 'Browser'}`;
     const sig = JSON.stringify([s.apps, s.canRestore]);
     if (sig !== appsShown) {
       appsShown = sig;
@@ -248,11 +249,19 @@ function updateDisplays(setup) {
     : [choiceRow('No displays available', '', false, true, () => {})]));
 }
 
-function renderPlayerChoices(current, braveInstalled) {
-  $('#website-player-value').textContent = current === 'brave' ? 'Brave' : 'Built-in';
-  $('#website-player').replaceChildren(
-    choiceRow('Built-in', '', current === 'embedded', false, () => choosePlayer('embedded')),
-    choiceRow('Brave', braveInstalled ? '' : 'Not installed', current === 'brave', !braveInstalled && current !== 'brave', () => choosePlayer('brave')));
+// The browsers on this Mac, as the Mac lists them; an older Mac TV sends no list, so offer Built-in and Brave.
+function renderPlayerChoices(current, braveInstalled, players) {
+  if (!Array.isArray(players) || !players.length) {
+    $('#website-player-value').textContent = current === 'brave' ? 'Brave' : 'Built-in';
+    $('#website-player').replaceChildren(
+      choiceRow('Built-in', '', current !== 'brave', false, () => choosePlayer('embedded')),
+      choiceRow('Brave', braveInstalled ? '' : 'Not installed', current === 'brave', !braveInstalled && current !== 'brave', () => choosePlayer('brave')));
+    return;
+  }
+  const selected = players.find(player => player.id === current) || players[0];
+  $('#website-player-value').textContent = selected.name;
+  $('#website-player').replaceChildren(...players.map(player =>
+    choiceRow(player.name, '', player === selected, false, () => choosePlayer(player.id))));
 }
 
 // Apps sheet: launch tiles, or accessible controls for arranging the same apps.
