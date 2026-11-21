@@ -47,6 +47,10 @@ final class BrowserSession {
     private var validatedFocusedWindow: AXUIElement?
     private var lastFocusValidation: TimeInterval = 0
     private var invalidated = false
+    /// Called once when the window goes away without Mac TV closing it: closed in the browser, or the browser quit.
+    var onClose: (() -> Void)?
+    private var observer: AXObserver?
+    private var terminationObserver: NSObjectProtocol?
 
     init(bundleID: String, name: String) {
         self.bundleID = bundleID
@@ -102,6 +106,7 @@ final class BrowserSession {
             if let new = Self.windows(of: bundleID).first(where: { item in !before.contains { CFEqual($0, item.window) } }) {
                 application = new.app
                 window = new.window
+                watch(new.window, of: new.app)
                 return
             }
             try await Task.sleep(for: .milliseconds(150))
@@ -195,9 +200,57 @@ final class BrowserSession {
         try activate()
     }
 
+    /// Watches for the window closing or the browser quitting, so Mac TV can come back in front,
+    /// as it does when the built-in player closes.
+    private func watch(_ window: AXUIElement, of app: NSRunningApplication) {
+        var created: AXObserver?
+        let callback: AXObserverCallback = { _, _, _, refcon in
+            guard let refcon else { return }
+            let session = Unmanaged<BrowserSession>.fromOpaque(refcon).takeUnretainedValue()
+            MainActor.assumeIsolated { session.windowWentAway() }
+        }
+        if AXObserverCreate(app.processIdentifier, callback, &created) == .success, let created {
+            let refcon = Unmanaged.passUnretained(self).toOpaque()
+            if AXObserverAddNotification(created, window, kAXUIElementDestroyedNotification as CFString, refcon) == .success {
+                CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
+                observer = created
+            }
+        }
+        Log.playback.notice("Watching \(self.name, privacy: .public) window: \(self.observer == nil ? "observer refused" : "observer set", privacy: .public)")
+        let pid = app.processIdentifier
+        terminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let quit = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard quit?.processIdentifier == pid else { return }
+            MainActor.assumeIsolated { self?.windowWentAway() }
+        }
+    }
+
+    private func stopWatching() {
+        if let observer {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
+        observer = nil
+        if let terminationObserver { NSWorkspace.shared.notificationCenter.removeObserver(terminationObserver) }
+        terminationObserver = nil
+    }
+
+    func windowWentAway() {
+        guard !invalidated else { return }
+        invalidated = true
+        window = nil
+        application = nil
+        stopWatching()
+        let handler = onClose
+        onClose = nil
+        handler?()
+    }
+
     /// Closes only the window this session opened, with its own close button.
     func close() throws {
         invalidated = true
+        stopWatching()
+        onClose = nil
         validatedFocusedWindow = nil
         lastFocusValidation = 0
         cachedBounds = nil

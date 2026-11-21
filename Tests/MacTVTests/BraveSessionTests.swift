@@ -19,6 +19,21 @@ import Testing
         }
     }
 
+    @Test func theWindowGoingAwayReportsOnceButClosingItDoesNot() {
+        let session = BrowserSession(bundleID: "com.brave.Browser", name: "Brave")
+        var reports = 0
+        session.onClose = { reports += 1 }
+        session.windowWentAway()
+        session.windowWentAway()
+        #expect(reports == 1)
+
+        let closed = BrowserSession(bundleID: "com.brave.Browser", name: "Brave")
+        closed.onClose = { reports += 1 }
+        try? closed.close()
+        closed.windowWentAway()
+        #expect(reports == 1)
+    }
+
     @Test func permissionPaneFollowsTheMacOSVersion() {
         #expect(BrowserSession.paneName(for: .init(majorVersion: 26, minorVersion: 4, patchVersion: 0)) == "Accessibility")
         #expect(BrowserSession.paneName(for: .init(majorVersion: 27, minorVersion: 0, patchVersion: 1)) == "Device Control and Data Access")
