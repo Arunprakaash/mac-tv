@@ -83,6 +83,8 @@ final class AppLibrary {
     }
 
     var hasHiddenBuiltIns: Bool { !saved.hidden.isEmpty }
+    /// The removed built-in apps that restoring would bring back to this Mac's home screen.
+    var hiddenBuiltInCount: Int { Catalog.services.filter { saved.hidden.contains($0.id) && $0.isAvailable }.count }
     /// The user has added or removed an app at some point.
     var hasSavedApps: Bool { FileManager.default.fileExists(atPath: file.path) }
 

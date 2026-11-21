@@ -46,10 +46,12 @@ enum HintAction: Equatable {
     case back(String)
     /// Always an SF Symbol badge (Menu / Home on the controller strip).
     case symbol(String, String)
+    /// The Delete key: ⌫ on a keyboard, the phone remote's delete key.
+    case delete(String)
 
     var label: String {
         switch self {
-        case .move(let s), .moveVertical(let s), .moveHorizontal(let s), .select(let s), .back(let s), .symbol(_, let s): s
+        case .move(let s), .moveVertical(let s), .moveHorizontal(let s), .select(let s), .back(let s), .symbol(_, let s), .delete(let s): s
         }
     }
 }
@@ -170,6 +172,8 @@ struct InputHint: View {
             faceBadge(select: false)
         case .symbol(let name, _):
             symbolBadge(name)
+        case .delete:
+            if kind == .keyboard { framedText("⌫") } else { symbolBadge("delete.left") }
         }
     }
 
