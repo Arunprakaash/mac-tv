@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// What the TV shows behind Mac TV's Brave window: seen while Brave opens, after an error, or when
+/// What the TV shows behind the browser's window: seen while it opens, after an error, or when
 /// Mac TV is brought back in front.
 struct BravePlaybackView: View {
     @ObservedObject var tv: TVController
@@ -21,7 +21,7 @@ struct BravePlaybackView: View {
                 HStack(spacing: 24) {
                     let buttons = tv.browserButtons
                     ForEach(Array(buttons.enumerated()), id: \.element) { index, button in
-                        ShelfButton(title: button.title, focused: tv.browserFocusIndex == index, glass: false) {
+                        ShelfButton(title: button.title(browser: tv.externalBrowser?.name ?? "Browser"), focused: tv.browserFocusIndex == index, glass: false) {
                             tv.activateBrowserButton(button)
                         }
                     }
@@ -36,8 +36,9 @@ struct BravePlaybackView: View {
 
     private var message: String {
         if let error = tv.externalBrowserError { return error }
-        if tv.externalBrowserOpening { return "Opening in Brave…" }
-        return "Playing in Brave."
+        let browser = tv.externalBrowser?.name ?? "the browser"
+        if tv.externalBrowserOpening { return "Opening in \(browser)…" }
+        return "Playing in \(browser)."
     }
 }
 
@@ -45,10 +46,10 @@ extension TVController {
     enum BrowserButton: Hashable {
         case retry, returnToBrave, home
 
-        var title: String {
+        func title(browser: String) -> String {
             switch self {
             case .retry: "Try Again"
-            case .returnToBrave: "Return to Brave"
+            case .returnToBrave: "Return to \(browser)"
             case .home: "Home"
             }
         }
@@ -70,7 +71,7 @@ extension TVController {
         }
     }
 
-    /// The remote, while Mac TV's own Brave screen is in front rather than the Brave window.
+    /// The remote, while Mac TV's own screen is in front rather than the browser's window.
     func handleBrowserScreen(_ command: RemoteCommand) {
         let buttons = browserButtons
         switch command {

@@ -21,8 +21,8 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     @Published private(set) var iinaPlaybackError: String?
     @Published private(set) var iinaPlaybackStatus = ""
 
-    // External Browser (Brave)
-    @Published private(set) var externalBrowser: BraveSession?
+    // External Browser: an app-mode window of Brave or another Chromium browser
+    @Published private(set) var externalBrowser: BrowserSession?
     @Published private(set) var externalBrowserService: Service?
     @Published private(set) var externalBrowserError: String?
     @Published private(set) var externalBrowserOpening = false
@@ -64,9 +64,18 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     // MARK: - Web Playback
 
     func playWeb(_ service: Service, url: URL) {
-        if tv?.browserPreferences.choice(for: tv?.profile.id ?? "").rawValue == BrowserChoice.brave.rawValue {
-            playInBrave(service, url: url)
+        var notice = "Home on your phone remote, or ⌘⇧H, comes back here"
+        switch tv?.browserPreferences.choice(for: tv?.profile.id ?? "") {
+        case .brave:
+            playInBrowser(BrowserChoice.braveBundleID, name: "Brave", service: service, url: url)
             return
+        case .app(let bundleID):
+            if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil {
+                playInBrowser(bundleID, name: tv?.websitePlayerName ?? "the browser", service: service, url: url)
+                return
+            }
+            notice = "The chosen browser isn't installed, so Mac TV is playing \(service.name)"
+        default: break
         }
         playbackRequest = UUID()
         currentLocalMovie = nil
@@ -79,7 +88,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(service.name) in Mac TV")
         tv?.bringToFront()
         Task { @MainActor [weak self] in self?.tv?.window?.makeFirstResponder(web) }
-        tv?.showToast("Home on your phone remote, or ⌘⇧H, comes back here")
+        tv?.showToast(notice)
     }
 
     func closeWebPlayback() {
@@ -452,9 +461,10 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         return false
     }
 
-    // MARK: - External Browser (Brave)
+    // MARK: - External Browser
 
-    func playInBrave(_ service: Service, url: URL) {
+    /// Plays the site in the chosen browser's app-mode window, placed on the TV like Mac TV's own player.
+    func playInBrowser(_ bundleID: String, name: String, service: Service, url: URL) {
         closeExternalBrowser()
         webView?.pauseAllMediaPlayback(completionHandler: nil)
         webView?.stopLoading()
@@ -464,35 +474,22 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         moviePlayer?.stop()
         moviePlayer = nil
         tv?.setLaunchedAppID(nil)
-        let session = BraveSession()
+        let session = BrowserSession(bundleID: bundleID, name: name)
         externalBrowser = session
         tv?.browserFocus = 0
         externalBrowserService = service
         tv?.setMode(.player(service))
-        tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(service.name) in Brave")
+        tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(service.name) in \(name)")
         openExternalBrowser(session, url: url)
     }
 
     func retryExternalBrowser() {
-        guard !externalBrowserOpening, externalBrowser != nil,
+        guard !externalBrowserOpening, let browser = externalBrowser,
               let service = externalBrowserService, case .web(let url) = service.kind else { return }
-        playInBrave(service, url: url)
+        playInBrowser(browser.bundleID, name: browser.name, service: service, url: url)
     }
 
-    func navigateExternalBrowser(service: Service, url: URL) throws {
-        guard let browser = externalBrowser else { return }
-        externalBrowserService = service
-        do { try browser.navigate(to: url) }
-        catch {
-            externalBrowserError = error.localizedDescription
-            Log.playback.failure("Brave", error)
-            throw error
-        }
-        externalBrowserError = nil
-        tv?.setMode(.player(service))
-    }
-
-    private func openExternalBrowser(_ session: BraveSession, url: URL) {
+    private func openExternalBrowser(_ session: BrowserSession, url: URL) {
         let request = UUID()
         playbackRequest = request
         externalBrowserError = nil
@@ -516,7 +513,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 self.externalBrowserOpening = false
                 self.tv?.displayCoordinator.releasePlaybackKeepAwake()
                 self.externalBrowserError = error.localizedDescription
-                Log.playback.failure("Brave", error)
+                Log.playback.failure("Browser", error)
                 self.tv?.bringToFront()
             }
         }
@@ -528,7 +525,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             externalBrowserError = nil
         } catch {
             externalBrowserError = error.localizedDescription
-            Log.playback.failure("Brave", error)
+            Log.playback.failure("Browser", error)
             tv?.showToast(error.localizedDescription)
         }
     }
@@ -540,11 +537,11 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         externalBrowserError = nil
         externalBrowserOpening = false
         do { try previous?.close() }
-        catch BraveSession.SessionError.noWindow {}
-        catch BraveSession.SessionError.unavailable {}
+        catch BrowserSession.SessionError.noWindow {}
+        catch BrowserSession.SessionError.unavailable {}
         catch {
-            Log.playback.failure("Closing Brave window", error)
-            tv?.showToast("Could not close the Mac TV Brave window. Close it manually in Brave.")
+            Log.playback.failure("Closing browser window", error)
+            tv?.showToast("Could not close Mac TV's \(previous?.name ?? "browser") window. Close it there.")
         }
     }
 
@@ -553,7 +550,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         do { _ = try browser.handle(command) }
         catch {
             externalBrowserError = error.localizedDescription
-            Log.playback.failure("Brave", error)
+            Log.playback.failure("Browser", error)
             tv?.showToast(error.localizedDescription)
         }
     }

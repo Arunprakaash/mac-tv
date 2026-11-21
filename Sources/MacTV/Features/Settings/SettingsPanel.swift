@@ -212,7 +212,7 @@ extension TVController {
         case .preferredDisplay: stepTVDisplay(forward ? 1 : -1)
         case .launchAtLogin: setLaunchAtLogin(forward)
         case .sleepTimer: stepSleepTimer(by: forward ? 1 : -1, wrap: false)
-        case .websitePlayer: stepWebsitePlayer()
+        case .websitePlayer: stepWebsitePlayer(forward: forward)
         case .wallpaper: ScreenSaverSettings.step(forward ? 1 : -1)
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(forward ? 1 : -1)
         case .saverDelay: ScreenSaverSettings.stepDelay(forward ? 1 : -1)
