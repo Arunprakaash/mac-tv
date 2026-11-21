@@ -480,7 +480,6 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             Log.playback.notice("\(name, privacy: .public) window closed outside Mac TV")
             guard let self, let session, self.externalBrowser === session else { return }
             self.tv?.goHome()
-            self.tv?.takeFocusBack()
         }
         externalBrowser = session
         tv?.browserFocus = 0

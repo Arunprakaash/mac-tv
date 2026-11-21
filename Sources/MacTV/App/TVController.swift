@@ -482,6 +482,8 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func goHome() {
+        // Leaving a browser window lands on the desktop Space, so coming back needs more than activating.
+        let leavingBrowser = playbackCoordinator.externalBrowser != nil
         playbackCoordinator.closeIINAPlayback()
         playbackCoordinator.closeExternalBrowser()
         playbackCoordinator.resetPlaybackRequest()
@@ -495,7 +497,7 @@ final class TVController: NSObject, ObservableObject {
         pointer = nil
         launchedAppID = nil
         displayCoordinator.releasePlaybackKeepAwake()
-        bringToFront()
+        if leavingBrowser { takeFocusBack() } else { bringToFront() }
     }
 
     var idleForUpdate: Bool {
