@@ -50,6 +50,9 @@ final class BrowserSession {
     /// Called once when the window goes away without Mac TV closing it: closed in the browser, or the browser quit.
     var onClose: (() -> Void)?
     private var observer: AXObserver?
+    /// The observer's callback finds the session through a raw pointer, so the session keeps itself alive
+    /// while it's watched and lets go in `stopWatching`.
+    private var watchedSelf: Unmanaged<BrowserSession>?
     private var terminationObserver: NSObjectProtocol?
 
     init(bundleID: String, name: String) {
@@ -210,10 +213,14 @@ final class BrowserSession {
             MainActor.assumeIsolated { session.windowWentAway() }
         }
         if AXObserverCreate(app.processIdentifier, callback, &created) == .success, let created {
-            let refcon = Unmanaged.passUnretained(self).toOpaque()
-            if AXObserverAddNotification(created, window, kAXUIElementDestroyedNotification as CFString, refcon) == .success {
+            let retained = Unmanaged.passRetained(self)
+            if AXObserverAddNotification(created, window, kAXUIElementDestroyedNotification as CFString,
+                                         retained.toOpaque()) == .success {
                 CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
                 observer = created
+                watchedSelf = retained
+            } else {
+                retained.release()
             }
         }
         Log.playback.notice("Watching \(self.name, privacy: .public) window: \(self.observer == nil ? "observer refused" : "observer set", privacy: .public)")
@@ -231,6 +238,8 @@ final class BrowserSession {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
         }
         observer = nil
+        watchedSelf?.release()
+        watchedSelf = nil
         if let terminationObserver { NSWorkspace.shared.notificationCenter.removeObserver(terminationObserver) }
         terminationObserver = nil
     }
