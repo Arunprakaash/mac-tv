@@ -130,16 +130,17 @@ extension TVController {
     }
 
     /// False when the app isn't one that can be removed, or the change couldn't be saved.
+    /// `announce` false leaves the message to the caller, for deleting several apps at once.
     @discardableResult
-    func removeApp(_ id: String) -> Bool {
+    func removeApp(_ id: String, announce: Bool = true) -> Bool {
         guard let service = arrangedServices.first(where: { $0.id == id }) else { return false }
         guard library.remove(id) else {
-            showToast("Couldn't remove \(service.name). Check available storage and folder permissions.")
+            if announce { showToast("Couldn't remove \(service.name). Check available storage and folder permissions.") }
             return false
         }
         Icons.forget(id)
         reloadServices()
-        showToast("Removed \(service.name)")
+        if announce { showToast("Removed \(service.name)") }
         return true
     }
 

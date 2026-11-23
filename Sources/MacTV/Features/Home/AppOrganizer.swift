@@ -12,6 +12,8 @@ struct AppOrganizer: Equatable {
     var action: Action = .pin
     /// Apps ticked for deleting, by identity.
     var checked: Set<String> = []
+    /// Delete was pressed once: the next press deletes, anything else changes nothing.
+    var confirmingDelete = false
 }
 
 extension TVController {
@@ -39,6 +41,7 @@ extension TVController {
         guard var panel = organizer else { return }
         let apps = arrangedServices
         let index = apps.firstIndex { $0.id == panel.selectedID } ?? 0
+        if case .deleteBackward = command {} else { panel.confirmingDelete = false }
         switch command {
         case .back:
             organizer = nil
@@ -57,6 +60,12 @@ extension TVController {
             activateOrganizerAction(panel.action, for: id)
             return
         case .deleteBackward:
+            // Added apps can't be brought back, so Delete asks for a second press, like Sleep Mac.
+            guard !panel.checked.isEmpty else { return }
+            guard panel.confirmingDelete else {
+                panel.confirmingDelete = true
+                break
+            }
             deleteCheckedApps()
             return
         default:
@@ -80,6 +89,7 @@ extension TVController {
     func toggleChecked(_ id: String) {
         guard organizer != nil, arrangedServices.contains(where: { $0.id == id }) else { return }
         organizer?.checked.formSymmetricDifference([id])
+        organizer?.confirmingDelete = false
     }
 
     /// Deletes the ticked apps: added apps go, built-in ones are hidden until restored in Settings.
@@ -89,8 +99,17 @@ extension TVController {
         let apps = arrangedServices
         let index = apps.firstIndex { $0.id == panel.selectedID } ?? 0
         var failed = Set<String>()
+        var deleted: [String] = []
         for app in apps where panel.checked.contains(app.id) {
-            if !removeApp(app.id) { failed.insert(app.id) }
+            if removeApp(app.id, announce: false) { deleted.append(app.name) } else { failed.insert(app.id) }
+        }
+        // One message for the lot.
+        if !failed.isEmpty {
+            showToast("Couldn't delete \(failed.count == 1 ? "1 app" : "\(failed.count) apps"). Check available storage and folder permissions.")
+        } else if deleted.count == 1 {
+            showToast("Deleted \(deleted[0])")
+        } else if !deleted.isEmpty {
+            showToast("Deleted \(deleted.count) apps")
         }
         let remaining = arrangedServices
         let keep = remaining.contains { $0.id == panel.selectedID }
@@ -98,6 +117,7 @@ extension TVController {
             : apps[index...].first { remaining.map(\.id).contains($0.id) }?.id ?? remaining.last?.id
         organizer?.selectedID = keep
         organizer?.checked = failed
+        organizer?.confirmingDelete = false
     }
 }
 
@@ -141,11 +161,12 @@ struct AppOrganizerSheet: View {
                 InputHintsBar(tv: tv, set: .arrange)
                 Spacer(minLength: 24)
                 // The bulk, destructive action sits apart from the navigation hints, in system red.
-                if let count = tv.organizer?.checked.count, count > 0 {
-                    InputHint(action: .delete(count == 1 ? "Delete 1 app" : "Delete \(count) apps"),
+                if let panel = tv.organizer, !panel.checked.isEmpty {
+                    let apps = panel.checked.count == 1 ? "1 app" : "\(panel.checked.count) apps"
+                    InputHint(action: .delete(panel.confirmingDelete ? "Press again to delete \(apps)" : "Delete \(apps)"),
                               kind: tv.lastInputKind, controller: tv.controller)
-                        .font(.tv(.caption2))
-                        .foregroundStyle(Color.red)
+                        .font(.tv(.caption2, emphasized: panel.confirmingDelete))
+                        .foregroundStyle(Color(hex: "#FF453A"))
                         .contentShape(Rectangle())
                         .onTapGesture { tv.handle(.deleteBackward, from: .pointer) }
                         .accessibilityAddTraits(.isButton)
@@ -233,8 +254,8 @@ struct AppOrganizerSheet: View {
     }
 }
 
-/// A macOS checkbox at TV size: a quiet outline when off, the accent colour with a white checkmark when on.
-/// Remote focus draws a focus ring around it; a mouse click leaves no highlight behind.
+/// A checkbox at TV size: a quiet outline when off, white with a dark checkmark when on, like Mac TV's
+/// other focus and selection. Remote focus draws a white ring around it; a mouse click leaves no highlight behind.
 struct OrganizerCheckbox: View {
     let checked: Bool
     let focused: Bool
@@ -242,17 +263,17 @@ struct OrganizerCheckbox: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
         ZStack {
-            shape.fill(checked ? Color.accentColor : .white.opacity(0.06))
+            shape.fill(checked ? Color.white : .white.opacity(0.06))
             shape.strokeBorder(checked ? .clear : .white.opacity(0.3), lineWidth: 1.5)
             if checked {
-                Image(systemName: "checkmark").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                Image(systemName: "checkmark").font(.system(size: 17, weight: .bold)).foregroundStyle(.black)
             }
         }
         .frame(width: 28, height: 28)
         .padding(4)
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.accentColor.opacity(focused ? 0.9 : 0), lineWidth: 3)
+                .strokeBorder(Color.white.opacity(focused ? 0.9 : 0), lineWidth: 3)
         }
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
