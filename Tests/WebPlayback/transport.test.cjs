@@ -23,7 +23,7 @@ const context = vm.createContext({
   haptic() {}, online: ok => errors.push(ok),
   readState: () => { readCount++; return new Promise(resolve => { finishRead = resolve; }); },
 });
-vm.runInContext("let key = 'original'; let appMutationPending = false;" + transport + refresh, context);
+vm.runInContext("let key = 'original'; let base = ''; let appMutationPending = false;" + transport + refresh, context);
 const run = code => vm.runInContext(code, context);
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 (async () => {

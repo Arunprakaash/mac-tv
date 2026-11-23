@@ -25,6 +25,9 @@ final class RemoteCoordinator: ObservableObject {
     /// Every address a phone can reach this Mac at, for the phone to move between and for the server's
     /// cross-origin checks.
     private(set) var origins: [String] = []
+    /// The address a phone should save the remote at: the Mac's name, which keeps working when its IP
+    /// changes. Nil off the home network.
+    private(set) var homeOrigin: String?
     private var codeTimer: Timer?
     private var startupPairingPending = false
     private var startupPairingVisible = false
@@ -33,6 +36,13 @@ final class RemoteCoordinator: ObservableObject {
     var phonePaired: Bool {
         get { UserDefaults.standard.bool(forKey: "phonePaired") }
         set { UserDefaults.standard.set(newValue, forKey: "phonePaired") }
+    }
+
+    /// The port paired phones last reached the remote on. Their saved remotes only work there, so
+    /// it's the port Mac TV listens on first next time.
+    var phonePort: Int {
+        get { UserDefaults.standard.integer(forKey: "remotePort") }
+        set { UserDefaults.standard.set(newValue, forKey: "remotePort") }
     }
 
     init(tv: TVController? = nil) {
@@ -71,6 +81,7 @@ final class RemoteCoordinator: ObservableObject {
         if let ip { found.append(("Same Wi-Fi", "http://\(name ?? ip):\(remotePort)", name == nil ? nil : "\(ip):\(remotePort)")) }
         if let tailscale { found.append(("Tailscale", "http://\(tailscale):\(remotePort)", nil)) }
         origins = ([name, ip, tailscale].compactMap { $0 }).map { "http://\($0):\(remotePort)" }
+        homeOrigin = name.map { "http://\($0):\(remotePort)" }
         guard codeChanged || found.map(\.address) != remoteLinks.map(\.address)
             || found.map(\.fallback) != remoteLinks.map(\.fallback) else { return }
         remoteLinks = found.map { label, address, fallback in
@@ -112,6 +123,7 @@ final class RemoteCoordinator: ObservableObject {
     func remoteState() -> [String: Any] {
         guard let tv else { return [:] }
         phonePaired = true
+        if remotePort != 0, phonePort != Int(remotePort) { phonePort = Int(remotePort) }
         noteRemoteConnection()
         tv.notePhoneDuringSetup()
 
@@ -120,6 +132,7 @@ final class RemoteCoordinator: ObservableObject {
         var state: [String: Any] = [
             "device": tv.deviceName,
             "addresses": origins,
+            "home": homeOrigin ?? "",
             "mode": "launcher",
             "audioDevice": tv.currentAudioDevice?.name ?? "",
             "apps": tv.arrangedServices.map { service -> [String: Any] in

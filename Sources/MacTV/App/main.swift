@@ -335,7 +335,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             routes: { [weak self] in self?.tv.handleAppsRequest($0) },
             onGuestCommand: { [weak self] in self?.tv.handleGuestCommand($0) ?? false },
             ownOrigins: { [weak self] in self?.tv.remoteCoordinator.origins ?? [] })
-        server.start(ports: Array(8765...8775)) { [weak self] port in self?.tv.remotePort = port }
+        server.start(ports: RemoteServer.ports(remembering: tv.remoteCoordinator.phonePort), waitForFirst: 10) { [weak self] port in
+            self?.tv.remotePort = port
+        }
         self.server = server
     }
 
