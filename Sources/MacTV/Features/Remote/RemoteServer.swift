@@ -27,6 +27,8 @@ final class RemoteServer {
     /// belong to one address and port, so after that the server only ever comes back on this port.
     private(set) var listeningPort: UInt16?
     private var allPorts: [UInt16] = []
+    /// Bumped on each restart, so a retry left waiting from before doesn't start a second listener.
+    private var attempt = 0
     private var onReady: (@MainActor (UInt16) -> Void)?
     private var failedAttempts: [Date] = []
     struct Limits {
@@ -91,8 +93,18 @@ final class RemoteServer {
         return currentGuestCode
     }
 
-    /// Listens on the first free port in `ports`.
-    func start(ports: [UInt16], onReady: @escaping @MainActor (UInt16) -> Void) {
+    /// The ports the remote tries, the one it settled on before first. A phone's saved remote belongs
+    /// to one address and port, so Mac TV comes back on the same port each time it opens.
+    static func ports(remembering remembered: Int, in range: ClosedRange<UInt16> = 8765...8775) -> [UInt16] {
+        let all = Array(range)
+        guard let port = UInt16(exactly: remembered), range.contains(port) else { return all }
+        return [port] + all.filter { $0 != port }
+    }
+
+    /// Listens on the first free port in `ports`. When the first is busy, it's tried again for up to
+    /// `waitForFirst` seconds before moving on: the Mac TV that just quit can hold it for a moment, and
+    /// moving would leave every phone's saved remote at the old port.
+    func start(ports: [UInt16], waitForFirst: TimeInterval = 0, onReady: @escaping @MainActor (UInt16) -> Void) {
         guard !stopped else { return }
         if allPorts.isEmpty { allPorts = ports }
         self.onReady = onReady
@@ -101,6 +113,21 @@ final class RemoteServer {
             return
         }
         let next = Array(ports.dropFirst())
+        let attempt = self.attempt
+        let tryNext = { @MainActor [weak self] in
+            guard let self, !self.stopped, self.attempt == attempt else { return }
+            guard waitForFirst > 0 else { self.start(ports: next, onReady: onReady); return }
+            let delay = min(0.5, waitForFirst)
+            if waitForFirst <= delay {
+                Log.remote.notice("Port \(port, privacy: .public) is still in use; the phone remote moves to another")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                MainActor.assumeIsolated {
+                    guard !self.stopped, self.attempt == attempt else { return }
+                    self.start(ports: ports, waitForFirst: waitForFirst - delay, onReady: onReady)
+                }
+            }
+        }
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
@@ -129,7 +156,7 @@ final class RemoteServer {
                                 MainActor.assumeIsolated { self.restart() }
                             }
                         } else {
-                            self.start(ports: next, onReady: onReady)
+                            tryNext()
                         }
                     default: break
                     }
@@ -138,7 +165,7 @@ final class RemoteServer {
             listener.start(queue: .main)
             self.listener = listener
         } catch {
-            start(ports: next, onReady: onReady)
+            tryNext()
         }
     }
 
@@ -157,6 +184,7 @@ final class RemoteServer {
 
     private func restart(onReady: (@MainActor (UInt16) -> Void)? = nil) {
         guard !stopped, let onReady = onReady ?? self.onReady else { return }
+        attempt += 1
         listener?.stateUpdateHandler = nil
         listener?.cancel()
         listener = nil
@@ -290,7 +318,7 @@ final class RemoteServer {
         if request.method == "GET", request.path == "/manifest.webmanifest" {
             let manifest: [String: Any] = [
                 "name": "Mac TV Remote", "short_name": "Mac TV", "display": "standalone",
-                "background_color": "#0a0b0e", "theme_color": "#0a0b0e", "start_url": "/",
+                "background_color": "#0a0b0e", "theme_color": "#0a0b0e", "start_url": "/", "id": "/", "scope": "/",
                 "icons": [["src": "/appicon.png", "sizes": "1024x1024", "type": "image/png"]],
             ]
             var response = HTTPResponse.json(manifest)
