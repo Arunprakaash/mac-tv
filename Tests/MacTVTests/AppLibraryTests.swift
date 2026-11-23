@@ -236,4 +236,60 @@ struct AppLibraryTests {
         }
     }
 
+    @Test func failedWritesLeaveRemovedAndHiddenAppsInPlace() throws {
+        try withFolder { folder in
+            let library = AppLibrary(folder: folder)
+            let added = library.add(name: "Keeper", url: URL(string: "https://keeper.example"), bundleID: nil)
+            try Data("icon".utf8).write(to: library.iconFile(for: added.id))
+            let file = folder.appendingPathComponent("apps.json")
+            try FileManager.default.removeItem(at: file)
+            // A directory at the file path reliably rejects an atomic file replacement.
+            try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+            let before = library.services().map(\.id)
+            #expect(!library.remove(added.id))
+            #expect(!library.remove("netflix"))
+            #expect(!library.setHidden("youtube", true))
+            #expect(library.services().map(\.id) == before)
+            #expect(!library.hasHiddenBuiltIns)
+            #expect(FileManager.default.fileExists(atPath: library.iconFile(for: added.id).path))
+
+            let tv = TVController(library: library)
+            #expect(!tv.removeApp(added.id))
+            #expect(tv.services.map(\.id) == before)
+            let request = HTTPRequest(method: "POST", path: "/apps/remove", query: [:], headers: [:],
+                body: Data(#"{"id":"netflix"}"#.utf8))
+            #expect(tv.handleAppsRequest(request)?.status == "500 Internal Server Error")
+        }
+    }
+
+    @Test func removingAppsReportsWhatHappened() throws {
+        try withFolder { folder in
+            let tv = TVController(library: AppLibrary(folder: folder))
+            @MainActor func remove(_ json: String) -> String? {
+                tv.handleAppsRequest(HTTPRequest(method: "POST", path: "/apps/remove", query: [:], headers: [:], body: Data(json.utf8)))?.status
+            }
+            let added = tv.library.add(name: "Disposable", url: URL(string: "https://disposable.example"), bundleID: nil)
+            tv.reloadServices()
+            try Data("icon".utf8).write(to: tv.library.iconFile(for: added.id))
+            let before = tv.services.map(\.id)
+            for body in [#"{}"#, #"{"id":7}"#, #"{"id":"missing"}"#, #"{"id":"settings"}"#, #"{"id":"add-app"}"#] {
+                #expect(remove(body) == "400 Bad Request")
+            }
+            #expect(tv.services.map(\.id) == before)
+            #expect(!tv.removeApp("settings"))
+            #expect(!tv.library.remove("missing"))
+
+            #expect(remove(#"{"id":"\#(added.id)"}"#) == "200 OK")
+            #expect(!tv.services.contains { $0.id == added.id })
+            #expect(!FileManager.default.fileExists(atPath: tv.library.iconFile(for: added.id).path))
+            #expect(!tv.library.hasHiddenBuiltIns)
+
+            #expect(remove(#"{"id":"netflix"}"#) == "200 OK")
+            #expect(!tv.services.contains { $0.id == "netflix" })
+            #expect(tv.library.hasHiddenBuiltIns)
+            #expect(remove(#"{"id":"netflix"}"#) == "400 Bad Request")
+            #expect(tv.restoreBuiltInApps())
+            #expect(tv.services.contains { $0.id == "netflix" })
+        }
+    }
 }

@@ -2,24 +2,34 @@ import AppKit
 import ApplicationServices
 import Carbon
 
-/// Owns one normal Brave window. Brave's own profile and Shields settings apply to it.
+/// Owns one app-mode window of a Chromium browser: the site with no tabs or toolbar, as an installed web
+/// app opens, using that browser's own profile, sign-ins, extensions and ad blocking (Brave's Shields).
+/// The window is found, placed and focused through Accessibility; the browser needs no Automation access.
 @MainActor
-final class BraveSession {
+final class BrowserSession {
     enum SessionError: LocalizedError {
-        case invalidURL, unavailable, noWindow, permission, automationDenied, placement, focus, script(String), eventCreation
+        case invalidURL, unavailable, noWindow, permission, placement, focus, closing, eventCreation
         var errorDescription: String? {
             switch self {
-            case .invalidURL: return "Only HTTP and HTTPS streaming addresses can be opened in Brave."
-            case .unavailable: return "Brave Browser is unavailable or has quit."
-            case .noWindow: return "The Mac TV Brave window is no longer available."
-            case .permission: return "Allow Mac TV to control your computer in Privacy & Security > Accessibility."
-            case .automationDenied: return "Allow Mac TV to control Brave Browser in Privacy & Security > Automation > Mac TV."
-            case .placement: return "Could not place the Mac TV Brave window on the selected display. Check Accessibility access and try again."
-            case .focus: return "Could not focus the Mac TV Brave window. Return to Brave and try again."
-            case .script(let message): return "Brave could not be controlled: \(message)"
+            case .invalidURL: return "Only HTTP and HTTPS addresses can be opened in a browser."
+            case .unavailable: return "The browser is unavailable or has quit."
+            case .noWindow: return "Mac TV's browser window is no longer open."
+            case .permission: return "Allow Mac TV in Privacy & Security > \(BrowserSession.permissionPane) to open and control the browser window."
+            case .placement: return "Could not place the browser window on the selected display. Check \(BrowserSession.permissionPane) in Privacy & Security and try again."
+            case .focus: return "Could not bring the browser window to the front. Try again."
+            case .closing: return "Could not close Mac TV's browser window."
             case .eventCreation: return "The remote input event could not be created."
             }
         }
+    }
+
+    /// The Privacy & Security pane that grants Accessibility access: renamed in macOS 27 (Golden Gate).
+    nonisolated static var permissionPane: String {
+        paneName(for: ProcessInfo.processInfo.operatingSystemVersion)
+    }
+
+    nonisolated static func paneName(for version: OperatingSystemVersion) -> String {
+        version.majorVersion >= 27 ? "Device Control and Data Access" : "Accessibility"
     }
 
     struct KeyStroke: Equatable {
@@ -27,18 +37,23 @@ final class BraveSession {
         var flags: CGEventFlags = []
     }
 
+    let bundleID: String
+    let name: String
     private var application: NSRunningApplication?
-    private var windowID: String?
-    private var ownershipToken: String?
+    private var window: AXUIElement?
     private var cachedBounds: CGRect?
     private var lastBoundsRead = Date.distantPast
     private var pointer: CGPoint?
-    private var compiledScript: NSAppleScript?
     private var validatedFocusedWindow: AXUIElement?
     private var lastFocusValidation: TimeInterval = 0
     private var invalidated = false
 
-    /// YouTube's TV page expects a TV user agent; Brave should use its normal desktop page.
+    init(bundleID: String, name: String) {
+        self.bundleID = bundleID
+        self.name = name
+    }
+
+    /// YouTube's TV page expects a TV user agent; a browser should use the normal desktop page.
     static func streamingURL(_ url: URL) throws -> URL {
         guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
               let host = url.host?.lowercased(), !host.isEmpty else { throw SessionError.invalidURL }
@@ -65,88 +80,79 @@ final class BraveSession {
         }
     }
 
+    /// Opens the site with `--app`, the way a Chromium browser opens an installed web app. A second launch
+    /// hands the flag to the copy that's already running, so the window joins the browser's usual profile.
     func open(_ url: URL) async throws {
         let destination = try Self.streamingURL(url)
         guard !invalidated else { throw CancellationError() }
-        if windowID != nil { throw SessionError.noWindow }
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.brave.Browser") else {
+        if window != nil { throw SessionError.noWindow }
+        guard AXIsProcessTrusted() else { throw SessionError.permission }
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             throw SessionError.unavailable
         }
+        let before = Self.windows(of: bundleID).map(\.window)
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
-        let app = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
-        guard !invalidated else { throw CancellationError() }
-        let token = "Mac TV \(UUID().uuidString)"
-        application = app
-        ownershipToken = token
-        do {
-            let result = try runScript("create", value: destination.absoluteString)
-            guard let id = result.stringValue, !id.isEmpty else { throw SessionError.noWindow }
-            windowID = id
-        } catch {
-            application = nil
-            ownershipToken = nil
-            throw error
+        config.createsNewApplicationInstance = true
+        config.arguments = ["--app=\(destination.absoluteString)"]
+        _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
+        for _ in 0..<60 {
+            guard !invalidated else { throw CancellationError() }
+            // Front to back: the app window opens in front of any windows the browser restores.
+            if let new = Self.windows(of: bundleID).first(where: { item in !before.contains { CFEqual($0, item.window) } }) {
+                application = new.app
+                window = new.window
+                return
+            }
+            try await Task.sleep(for: .milliseconds(150))
+        }
+        throw SessionError.noWindow
+    }
+
+    /// The browser's standard windows, front to back, across its running copies.
+    private static func windows(of bundleID: String) -> [(app: NSRunningApplication, window: AXUIElement)] {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).filter { !$0.isTerminated }.flatMap { app in
+            var list: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(app.processIdentifier),
+                                                kAXWindowsAttribute as CFString, &list) == .success,
+                  let windows = list as? [AXUIElement] else { return [(app: NSRunningApplication, window: AXUIElement)]() }
+            return windows.filter { attribute($0, kAXSubroleAttribute) as? String == kAXStandardWindowSubrole as String }
+                .map { (app: app, window: $0) }
         }
     }
 
-    /// Reuse the owned window, retaining its full-screen state and browser history.
-    func navigate(to url: URL) throws {
-        let destination = try Self.streamingURL(url)
-        _ = try runScript("navigate", value: destination.absoluteString)
-        validatedFocusedWindow = nil
-        cachedBounds = nil
-        pointer = nil
+    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
     }
 
-    /// Place only the UUID-named owned window, then verify its location before reporting success.
+    /// Places the window on the TV, checks it arrived, then makes it full screen like Mac TV's own player.
     func fit(to screen: NSScreen) async throws {
         guard AXIsProcessTrusted() else { throw SessionError.permission }
-        guard let app = application, !app.isTerminated, let token = ownershipToken else { throw SessionError.unavailable }
+        guard let app = application, !app.isTerminated, let window else { throw SessionError.unavailable }
         let screenID = screen.displayID
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        var restoreFullscreen = false
         for _ in 0..<40 {
             guard !invalidated, !app.isTerminated else { throw CancellationError() }
             guard let target = NSScreen.screens.first(where: { $0.displayID == screenID }) else { throw SessionError.placement }
-            var list: CFTypeRef?
-            if AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &list) == .success,
-               let windows = list as? [AXUIElement] {
-                let matching = windows.filter { windowTitle($0)?.contains(token) == true }
-                if matching.count == 1, let window = matching.first {
-                    let key = "AXFullScreen" as CFString
-                    var fullscreen: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(window, key, &fullscreen) == .success,
-                       (fullscreen as? Bool) == true {
-                        restoreFullscreen = true
-                        _ = AXUIElementSetAttributeValue(window, key, kCFBooleanFalse)
-                    } else {
-                        let area = target.visibleFrame
-                        let primaryHeight = NSScreen.screens.first?.frame.height ?? area.maxY
-                        var origin = CGPoint(x: area.minX, y: primaryHeight - area.maxY)
-                        var size = CGSize(width: area.width, height: area.height)
-                        if let point = AXValueCreate(.cgPoint, &origin), let sizeValue = AXValueCreate(.cgSize, &size),
-                           AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, point) == .success,
-                           AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue) == .success {
-                            try await Task.sleep(for: .milliseconds(150))
-                            guard !invalidated, !app.isTerminated else { throw CancellationError() }
-                            var position: CFTypeRef?
-                            if AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
-                               let position, CFGetTypeID(position) == AXValueGetTypeID() {
-                                var actual = CGPoint.zero
-                                if AXValueGetValue(position as! AXValue, .cgPoint, &actual),
-                                   abs(actual.x - origin.x) < 12, abs(actual.y - origin.y) < 12 {
-                                    if restoreFullscreen && AXUIElementSetAttributeValue(window, key, kCFBooleanTrue) != .success {
-                                        throw SessionError.placement
-                                    }
-                                    cachedBounds = nil
-                                    pointer = nil
-                                    validatedFocusedWindow = nil
-                                    return
-                                }
-                            }
-                        }
-                    }
+            let area = target.visibleFrame
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? area.maxY
+            var origin = CGPoint(x: area.minX, y: primaryHeight - area.maxY)
+            var size = CGSize(width: area.width, height: area.height)
+            if let point = AXValueCreate(.cgPoint, &origin), let sizeValue = AXValueCreate(.cgSize, &size),
+               AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, point) == .success,
+               AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue) == .success {
+                try await Task.sleep(for: .milliseconds(150))
+                guard !invalidated, !app.isTerminated else { throw CancellationError() }
+                var actual = CGPoint.zero
+                if let position = Self.attribute(window, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
+                   AXValueGetValue(position as! AXValue, .cgPoint, &actual),
+                   abs(actual.x - origin.x) < 12, abs(actual.y - origin.y) < 12 {
+                    // Best effort: a window that can't go full screen still fills the display.
+                    _ = AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanTrue)
+                    cachedBounds = nil
+                    pointer = nil
+                    validatedFocusedWindow = nil
+                    return
                 }
             }
             try await Task.sleep(for: .milliseconds(150))
@@ -157,27 +163,29 @@ final class BraveSession {
     func activate() throws {
         validatedFocusedWindow = nil
         lastFocusValidation = 0
-        _ = try runScript("activate")
-        if let app = application, app.isActive, let token = ownershipToken,
-           let focused = focusedWindow(of: app), windowTitle(focused)?.contains(token) == true {
-            validatedFocusedWindow = focused
-            lastFocusValidation = ProcessInfo.processInfo.systemUptime
+        guard let app = application, !app.isTerminated else { throw SessionError.unavailable }
+        guard let window else { throw SessionError.noWindow }
+        _ = AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        _ = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementSetAttributeValue(AXUIElementCreateApplication(app.processIdentifier),
+                                         kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        // Bringing an app forward settles within a few frames.
+        for _ in 0..<10 {
+            if let focused = focusedWindow(of: app), CFEqual(focused, window) {
+                validatedFocusedWindow = focused
+                lastFocusValidation = ProcessInfo.processInfo.systemUptime
+                return
+            }
+            usleep(20_000)
         }
-        guard validatedFocusedWindow != nil else { throw SessionError.focus }
+        throw SessionError.focus
     }
 
     private func focusedWindow(of app: NSRunningApplication) -> AXUIElement? {
-        var value: CFTypeRef?
-        let element = AXUIElementCreateApplication(app.processIdentifier)
-        guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        guard let value = Self.attribute(AXUIElementCreateApplication(app.processIdentifier), kAXFocusedWindowAttribute),
+              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return (value as! AXUIElement)
-    }
-
-    private func windowTitle(_ window: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value) == .success else { return nil }
-        return value as? String
     }
 
     private func activateForPointer(_ app: NSRunningApplication) throws {
@@ -187,23 +195,28 @@ final class BraveSession {
         try activate()
     }
 
+    /// Closes only the window this session opened, with its own close button.
     func close() throws {
         invalidated = true
         validatedFocusedWindow = nil
         lastFocusValidation = 0
-        guard windowID != nil else { return }
-        _ = try runScript("close")
-        application = nil
-        windowID = nil
-        ownershipToken = nil
         cachedBounds = nil
         pointer = nil
+        guard let window else { return }
+        self.window = nil
+        guard let app = application, !app.isTerminated else { throw SessionError.unavailable }
+        application = nil
+        guard let button = Self.attribute(window, kAXCloseButtonAttribute) else { throw SessionError.noWindow }
+        guard CFGetTypeID(button) == AXUIElementGetTypeID(),
+              AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString) == .success else {
+            throw SessionError.closing
+        }
     }
 
-    /// Returns false for commands managed by Mac TV rather than Brave.
+    /// Returns false for commands managed by Mac TV rather than the browser.
     @discardableResult
     func handle(_ command: RemoteCommand) throws -> Bool {
-        guard let app = application, !app.isTerminated, windowID != nil else { throw SessionError.noWindow }
+        guard let app = application, !app.isTerminated, window != nil else { throw SessionError.noWindow }
         guard AXIsProcessTrusted() else { throw SessionError.permission }
         if let key = Self.keyStroke(for: command) {
             try activate()
@@ -275,107 +288,17 @@ final class BraveSession {
 
     private func windowBounds(force: Bool = false) throws -> CGRect {
         if !force, let bounds = cachedBounds, Date().timeIntervalSince(lastBoundsRead) < 0.25 { return bounds }
-        let result = try runScript("bounds")
-        guard result.numberOfItems == 4,
-              let l = result.atIndex(1), let t = result.atIndex(2),
-              let r = result.atIndex(3), let b = result.atIndex(4) else { throw SessionError.noWindow }
-        let bounds = CGRect(x: Int(l.int32Value), y: Int(t.int32Value),
-                            width: Int(r.int32Value - l.int32Value), height: Int(b.int32Value - t.int32Value))
+        guard let window else { throw SessionError.noWindow }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard let position = Self.attribute(window, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
+              let extent = Self.attribute(window, kAXSizeAttribute), CFGetTypeID(extent) == AXValueGetTypeID(),
+              AXValueGetValue(position as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(extent as! AXValue, .cgSize, &size) else { throw SessionError.noWindow }
+        let bounds = CGRect(origin: origin, size: size)
         guard bounds.width > 2, bounds.height > 2 else { throw SessionError.noWindow }
         cachedBounds = bounds
         lastBoundsRead = Date()
         return bounds
-    }
-
-    // Values are AppleEvent descriptors, never interpolated into AppleScript source. The target
-    // is Brave, guarded by the original process still running and a random window ownership name.
-    static let scriptSource = """
-        on perform_action(operation, windowID, marker, valueText)
-          using terms from application "Brave Browser"
-            tell application id "com.brave.Browser"
-              if operation is "create" then
-                set w to make new window
-                try
-                  set given name of w to marker
-                  set URL of active tab of w to valueText
-                  set index of w to 1
-                  activate
-                  return id of w
-                on error messageText number errorNumber
-                  try
-                    close w
-                  end try
-                  error messageText number errorNumber
-                end try
-              end if
-              set matches to every window whose id is windowID and given name is marker
-              if (count of matches) is not 1 then error "Mac TV's Brave window no longer exists." number -1728
-              set w to item 1 of matches
-              if operation is "close" then
-                close w
-              else if operation is "activate" then
-                set minimized of w to false
-                set index of w to 1
-                activate
-              else if operation is "navigate" then
-                set URL of active tab of w to valueText
-                set minimized of w to false
-                set index of w to 1
-                activate
-              else if operation is "position" then
-                set bounds of w to valueText
-              else if operation is "bounds" then
-                return bounds of w
-              end if
-            end tell
-          end using terms from
-        end perform_action
-        """
-    static func compileScript() throws -> NSAppleScript {
-        guard let script = NSAppleScript(source: scriptSource) else { throw SessionError.eventCreation }
-        var error: NSDictionary?
-        guard script.compileAndReturnError(&error) else { throw scriptError(error) }
-        return script
-    }
-
-    private static func scriptError(_ error: NSDictionary?) -> SessionError {
-        if (error?[NSAppleScript.errorNumber] as? NSNumber)?.intValue == -1743 {
-            return .automationDenied
-        }
-        if (error?[NSAppleScript.errorNumber] as? NSNumber)?.intValue == -1728 {
-            return .noWindow
-        }
-        if (error?[NSAppleScript.errorNumber] as? NSNumber)?.intValue == -1712 {
-            return .script("Brave did not respond in time. Check that it is running and try again.")
-        }
-        return .script(error?[NSAppleScript.errorMessage] as? String ?? "Apple Events permission or a browser error")
-    }
-
-    private func runScript(_ action: String, value: String = "", bounds: NSRect? = nil) throws -> NSAppleEventDescriptor {
-        guard let app = application, !app.isTerminated, let token = ownershipToken else { throw SessionError.unavailable }
-        let script: NSAppleScript
-        if let cached = compiledScript { script = cached }
-        else { script = try Self.compileScript(); compiledScript = script }
-        let event = NSAppleEventDescriptor(eventClass: AEEventClass(kASAppleScriptSuite), eventID: AEEventID(kASSubroutineEvent), targetDescriptor: nil, returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
-        event.setParam(NSAppleEventDescriptor(string: "perform_action"), forKeyword: AEKeyword(keyASSubroutineName))
-        let args = NSAppleEventDescriptor.list()
-        args.insert(NSAppleEventDescriptor(string: action), at: 1)
-        args.insert(NSAppleEventDescriptor(string: windowID ?? ""), at: 2)
-        args.insert(NSAppleEventDescriptor(string: token), at: 3)
-        if let bounds {
-            let rect = NSAppleEventDescriptor.list()
-            for (index, value) in [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].enumerated() {
-                rect.insert(NSAppleEventDescriptor(int32: Int32(clamping: Int(value))), at: index + 1)
-            }
-            args.insert(rect, at: 4)
-        } else { args.insert(NSAppleEventDescriptor(string: value), at: 4) }
-        event.setParam(args, forKeyword: AEKeyword(keyDirectObject))
-        var error: NSDictionary?
-        let result = script.executeAppleEvent(event, error: &error)
-        if let error {
-            if CommandLine.arguments.contains("--selftest-brave") { print("Brave AppleEvent error: \(error)") }
-            throw Self.scriptError(error)
-        }
-        return result
     }
 }
