@@ -52,7 +52,15 @@ struct AppRemovalTests {
 
             tv.activateOrganizerAction(.check, for: "prime")
             tv.activateOrganizerAction(.check, for: added.id)
+            // The first press only asks; moving away cancels it.
             tv.handleOrganizer(.deleteBackward)
+            #expect(tv.organizer?.confirmingDelete == true)
+            #expect(tv.arrangedServices.map(\.id) == before)
+            tv.handleOrganizer(.move(.down))
+            #expect(tv.organizer?.confirmingDelete == false)
+            tv.handleOrganizer(.deleteBackward)
+            tv.handleOrganizer(.deleteBackward)
+            #expect(tv.notices.toast == "Deleted 2 apps")
             #expect(tv.arrangedServices.map(\.id) == before.filter { $0 != "prime" && $0 != added.id })
             #expect(tv.library.isHidden("prime"))
             #expect(!tv.library.containsAddedApp(added.id))
@@ -68,12 +76,14 @@ struct AppRemovalTests {
             tv.activateOrganizerAction(.check, for: apps[2])
             #expect(tv.organizer?.selectedID == apps[2])
             tv.handleOrganizer(.deleteBackward)
+            tv.handleOrganizer(.deleteBackward)
             #expect(tv.organizer?.selectedID == apps[3])
 
             // The last row falls back to the one before it.
             let last = try #require(tv.arrangedServices.last?.id)
             let previous = try #require(tv.arrangedServices.dropLast().last?.id)
             tv.activateOrganizerAction(.check, for: last)
+            tv.handleOrganizer(.deleteBackward)
             tv.handleOrganizer(.deleteBackward)
             #expect(tv.organizer?.selectedID == previous)
 
@@ -90,6 +100,7 @@ struct AppRemovalTests {
             let builtIn = tv.arrangedServices.map(\.id)
             tv.openOrganizer()
             for id in builtIn { tv.activateOrganizerAction(.check, for: id) }
+            tv.handleOrganizer(.deleteBackward)
             tv.handleOrganizer(.deleteBackward)
             #expect(tv.arrangedServices.isEmpty)
             #expect(tv.organizer?.selectedID == nil)
