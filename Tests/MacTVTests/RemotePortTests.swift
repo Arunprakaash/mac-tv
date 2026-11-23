@@ -62,7 +62,11 @@ import Testing
         AudioCoordinator.readVolume = { VolumeLevel(level: 50, muted: false) }
         let tv = TVController(library: AppLibrary(folder: folder))
         let saved = tv.remoteCoordinator.phonePort
-        defer { tv.remoteCoordinator.phonePort = saved }
+        let paired = UserDefaults.standard.object(forKey: "phonePaired")
+        defer {
+            tv.remoteCoordinator.phonePort = saved
+            UserDefaults.standard.set(paired, forKey: "phonePaired")
+        }
 
         tv.remoteCoordinator.phonePort = 8765
         tv.remotePort = 8766
