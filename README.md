@@ -39,7 +39,7 @@ Requires macOS 14 or later, on an Apple silicon or Intel Mac.
 - **Profiles:** each person gets their own apps and sign-ins.
 - **Power:** keeps the Mac awake for the remote, and can stay awake with the lid closed.
 - **Updates:** installs new versions by itself while nothing is playing, or when you choose in Settings › About.
-- **Brave (optional):** open websites in Brave instead of the built-in player, with Brave's sign-ins and Shields.
+- **Your browser (optional):** open websites in Brave, Chrome, Edge or another Chromium browser instead of the built-in player, with that browser's sign-ins, extensions and ad blocking. Close its window and you're back on Mac TV.
 
 ## Privacy
 
