@@ -9,8 +9,6 @@ struct AppOrganizer: Equatable {
 
     var selectedID: String?
     var action: Action = .pin
-    /// 0…1 while holding Select on Remove; 0 when idle.
-    var removeHoldProgress: CGFloat = 0
 }
 
 extension TVController {
@@ -39,7 +37,6 @@ extension TVController {
         if !arrangedServices.contains(where: { $0.id == panel.selectedID }) {
             cancelRemoveHold()
             panel.selectedID = arrangedServices.first?.id
-            panel.removeHoldProgress = 0
             organizer = panel
         }
     }
@@ -53,7 +50,7 @@ extension TVController {
             cancelRemoveHold()
             organizer = nil
             return
-        case .selectDown:
+        case .selectDown, .select:
             guard let id = panel.selectedID else { return }
             if panel.action == .remove {
                 beginRemoveHold(for: id)
@@ -63,15 +60,6 @@ extension TVController {
             return
         case .selectUp:
             cancelRemoveHold()
-            return
-        case .select:
-            guard let id = panel.selectedID else { return }
-            if panel.action == .remove {
-                // Edge Select (assistive tap): start a hold that completes unless cancelled by move.
-                beginRemoveHold(for: id)
-            } else {
-                activateOrganizerAction(panel.action, for: id)
-            }
             return
         case .move(.up), .move(.down):
             cancelRemoveHold()
@@ -117,24 +105,24 @@ extension TVController {
         if removeHoldID == id, removeHoldTimer != nil { return }
         cancelRemoveHold()
         removeHoldID = id
+        removeHoldProgress = 0
         var panel = organizer ?? AppOrganizer()
         panel.selectedID = id
         panel.action = .remove
-        panel.removeHoldProgress = 0
         organizer = panel
         let duration = Self.removeHoldDuration
         let started = Date()
-        // `.common` so progress keeps moving during AppKit mouse tracking.
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        // ~12 Hz into `removeHoldProgress` (not `sheets`) so hold doesn't thrash SheetStack.
+        // `.common` so ticks continue during AppKit mouse tracking.
+        let timer = Timer(timeInterval: 1.0 / 12.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                guard self.removeHoldID == id, var panel = self.organizer else {
+                guard self.removeHoldID == id, self.organizer != nil else {
                     self.cancelRemoveHold()
                     return
                 }
                 let progress = min(CGFloat(Date().timeIntervalSince(started) / duration), 1)
-                panel.removeHoldProgress = progress
-                self.organizer = panel
+                self.removeHoldProgress = progress
                 if progress >= 1 { self.commitRemoveHold() }
             }
         }
@@ -147,10 +135,7 @@ extension TVController {
         removeHoldTimer?.invalidate()
         removeHoldTimer = nil
         removeHoldID = nil
-        if var panel = organizer, panel.removeHoldProgress != 0 {
-            panel.removeHoldProgress = 0
-            organizer = panel
-        }
+        if removeHoldProgress != 0 { removeHoldProgress = 0 }
     }
 
     /// True while Select is held on Remove (tests and UI).
@@ -164,10 +149,7 @@ extension TVController {
         removeHoldTimer?.invalidate()
         removeHoldTimer = nil
         removeHoldID = nil
-        if var panel = organizer {
-            panel.removeHoldProgress = 0
-            organizer = panel
-        }
+        removeHoldProgress = 0
         activateOrganizerAction(.remove, for: id)
     }
 
@@ -297,7 +279,7 @@ struct AppOrganizerSheet: View {
 
     private func removeButton(_ service: Service) -> some View {
         let focused = tv.organizer?.selectedID == service.id && tv.organizer?.action == .remove
-        let progress = (tv.organizer?.selectedID == service.id) ? (tv.organizer?.removeHoldProgress ?? 0) : 0
+        let progress = (tv.organizer?.selectedID == service.id) ? tv.removeHoldProgress : 0
         let holding = progress > 0
         let ring = Color(hex: "#FF453A").opacity(0.45 + 0.55 * Double(progress))
         return Image(systemName: "trash")
@@ -364,12 +346,6 @@ private final class OrganizerPointerHoldView: NSView {
                 }
             }
         }
-        onPressed?(false)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        guard down else { return }
-        down = false
         onPressed?(false)
     }
 }

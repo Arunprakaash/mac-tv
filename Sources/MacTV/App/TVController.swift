@@ -182,9 +182,10 @@ final class TVController: NSObject, ObservableObject {
 
     private var controllerInput: ControllerInput?
     private var launchedAppID: String?
-    /// Arrange Apps hold-to-remove; timer lives here so `AppOrganizer` stays a plain value.
+    /// Arrange Apps hold-to-remove; timer/progress live here so `AppOrganizer` stays a plain value.
     var removeHoldTimer: Timer?
     var removeHoldID: String?
+    @Published var removeHoldProgress: CGFloat = 0
     /// A Steam game just launched from Mac TV: watched so Mac TV comes back when it quits.
     var steamWatchUntil: Date?
     var steamGamePID: pid_t?
@@ -444,12 +445,14 @@ final class TVController: NSObject, ObservableObject {
         switch mode {
         case .launcher:
             let before = feedbackState
+            let holdAlready = isHoldingRemove
             handleInLauncher(command)
             let changed = feedbackState != before
             switch command {
             case .move where changed: feedback.play(.move, from: source)
             case .select: feedback.play(.select, from: source)
-            case .selectDown where !isHoldingRemove: feedback.play(.select, from: source)
+            // One click on first Down; repeats / continued hold stay quiet.
+            case .selectDown where !holdAlready: feedback.play(.select, from: source)
             case .back where changed: feedback.play(.back, from: source)
             default: break
             }

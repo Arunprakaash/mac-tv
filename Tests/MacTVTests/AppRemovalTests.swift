@@ -44,10 +44,10 @@ struct AppRemovalTests {
             tv.organizer?.action = .remove
             tv.handleOrganizer(.selectDown)
             #expect(tv.isHoldingRemove)
-            #expect((tv.organizer?.removeHoldProgress ?? 0) >= 0)
+            #expect(tv.removeHoldProgress >= 0)
             tv.handleOrganizer(.selectUp)
             #expect(!tv.isHoldingRemove)
-            #expect(tv.organizer?.removeHoldProgress == 0)
+            #expect(tv.removeHoldProgress == 0)
             #expect(tv.arrangedServices.map(\.id) == apps)
         }
     }

@@ -86,9 +86,13 @@ final class ControllerInput {
     private func press(_ button: GCControllerButtonInput, _ command: RemoteCommand) {
         button.pressedChangedHandler = { [weak self] _, _, pressed in
             MainActor.assumeIsolated {
-                // Select needs up so Arrange Apps can cancel hold-to-remove on release.
+                // Arrange Remove needs Down/Up; everywhere else Select stays a single edge.
                 if case .select = command {
-                    self?.send(pressed ? .selectDown : .selectUp)
+                    if self?.tv?.organizer != nil {
+                        self?.send(pressed ? .selectDown : .selectUp)
+                    } else if pressed {
+                        self?.send(.select)
+                    }
                 } else if pressed {
                     self?.send(command)
                 }
