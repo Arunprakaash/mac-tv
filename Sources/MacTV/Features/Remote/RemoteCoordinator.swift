@@ -143,12 +143,14 @@ final class RemoteCoordinator: ObservableObject {
         state["displaysSleeping"] = tv.displaysSleeping
         state["websitePlayer"] = tv.browserPreferences.choice(for: tv.profile.id).rawValue
         state["braveInstalled"] = tv.braveInstalled
+        state["websitePlayers"] = tv.websitePlayers.map { ["id": $0.choice.rawValue, "name": $0.name] }
 
         if tv.externalBrowser != nil {
             state["externalBrowser"] = [
-                "name": "Brave",
+                "name": tv.externalBrowser?.name ?? "Browser",
                 "service": tv.externalBrowserService?.name ?? "Website",
                 "accessibilityAllowed": AXIsProcessTrusted(),
+                "permissionPane": BrowserSession.permissionPane,
                 "error": tv.externalBrowserError ?? "",
                 "opening": tv.externalBrowserOpening
             ]
@@ -206,21 +208,14 @@ final class RemoteCoordinator: ObservableObject {
                 return .json(["error": "Wait for the website to open, then try again."], status: "409 Conflict")
             }
             let service = Service(id: "browser-session", name: url.host ?? "Website", kind: .web(url))
-            if tv.browserPreferences.choice(for: tv.profile.id) == .brave, tv.externalBrowser != nil {
-                do {
-                    try tv.playbackCoordinator.navigateExternalBrowser(service: service, url: url)
-                } catch {
-                    return .json(["error": error.localizedDescription], status: "409 Conflict")
-                }
-            } else {
-                tv.open(service)
-            }
+            // An app-mode window has no address bar, so a new address opens a new window.
+            tv.open(service)
             return .json(["ok": true])
         }
         if request.method == "POST", request.path == "/browser/preference" {
             guard let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any],
                   let raw = body["player"] as? String, tv.setWebsitePlayer(raw) else {
-                return .json(["error": "Install Brave to choose it."], status: "400 Bad Request")
+                return .json(["error": "That website player isn't installed on this Mac."], status: "400 Bad Request")
             }
             return .json(["ok": true])
         }

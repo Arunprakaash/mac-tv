@@ -1,13 +1,13 @@
 import AppKit
 
-/// Explicit opt-in smoke check: opens a fresh owned Brave window, then closes just that window.
+/// Explicit opt-in smoke check: opens a fresh app-mode Brave window, then closes just that window.
 @MainActor enum BraveSessionProbe {
     private static func report(_ message: String) {
         try? FileHandle.standardOutput.write(contentsOf: Data((message + "\n").utf8))
     }
     static func start(_ url: URL) {
         Task { @MainActor in
-            let session = BraveSession()
+            let session = BrowserSession(bundleID: BrowserChoice.braveBundleID, name: "Brave")
             do {
                 try await session.open(url)
                 report("Brave window opened")
