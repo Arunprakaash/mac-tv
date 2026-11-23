@@ -56,6 +56,23 @@ const addresses = {
   set(list) { try { localStorage.setItem('mactvAddresses', JSON.stringify(list)); } catch {} },
 };
 
+// A remote saved to the home screen always opens at the address it was saved from, and keeps its key
+// there. Opening another address would leave it, so it asks the Mac there instead, from where it is.
+const installed = (() => {
+  try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch { return false; }
+})();
+// Where requests go: this address, or another of the Mac's when an installed remote can't reach it here.
+let base = '';
+const isOrigin = origin => typeof origin === 'string' && /^http:\/\/[^/]+$/.test(origin);
+
+async function answers(origin, fetcher) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    return (await fetcher(origin + '/state', { headers: { 'X-Couch-Key': key }, signal: controller.signal })).ok;
+  } catch { return false; } finally { clearTimeout(timer); }
+}
+
 // When this address stops answering (the Mac's IP changed while it slept, say), try its other
 // addresses and move to the first one that still knows this phone, taking the key along.
 let unanswered = 0, moving = false;
@@ -63,17 +80,31 @@ async function moveToAnotherAddress(fetcher = fetch, go = url => location.replac
   if (moving || !key) return false;
   moving = true;
   try {
-    for (const origin of addresses.get()) {
-      if (typeof origin !== 'string' || origin === location.origin || !/^http:\/\/[^/]+$/.test(origin)) continue;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2500);
-      try {
-        const res = await fetcher(origin + '/state', { headers: { 'X-Couch-Key': key }, signal: controller.signal });
-        if (res.ok) { go(origin + '/#key=' + encodeURIComponent(key)); return true; }
-      } catch {} finally { clearTimeout(timer); }
+    const here = base || location.origin;
+    // An installed remote asking from elsewhere tries its own address again too.
+    const list = base ? [location.origin, ...addresses.get()] : addresses.get();
+    for (const origin of list) {
+      if (!isOrigin(origin) || origin === here || !await answers(origin, fetcher)) continue;
+      if (installed) base = origin === location.origin ? '' : origin;
+      else go(origin + '/#key=' + encodeURIComponent(key));
+      return true;
     }
     return false;
   } finally { moving = false; }
+}
+
+// The Mac's IP can change; its name doesn't. A remote opened at the IP on the home network moves to
+// the name when the phone can reach it there, so the one saved to the home screen keeps working.
+// Tailscale addresses stay put: they don't change, and also work away from home.
+let settled = false;
+async function settleOnHome(home, fetcher = fetch, go = url => location.replace(url)) {
+  if (settled || installed || !key || !isOrigin(home) || home === location.origin) return false;
+  const ip = location.hostname.split('.').map(Number);
+  if (ip.length !== 4 || ip.some(n => !Number.isInteger(n)) || ip[0] === 127 || (ip[0] === 100 && ip[1] >= 64 && ip[1] <= 127)) return false;
+  settled = true;
+  if (!await answers(home, fetcher)) return false;
+  go(home + '/#key=' + encodeURIComponent(key));
+  return true;
 }
 
 // Keep a reachable sleeping display distinct from an offline Mac.
@@ -99,7 +130,7 @@ async function request(path, body, authenticated = true, cancelSignal = null) {
   });
   try {
     return await Promise.race([interrupted, (async () => {
-      const res = await fetch(path, {
+      const res = await fetch(base + path, {
         method: body ? 'POST' : 'GET',
         headers: authenticated ? { 'Content-Type': 'application/json', 'X-Couch-Key': credential } : { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
@@ -175,6 +206,7 @@ async function readState() {
     if (generation !== stateGeneration) return false;
     unanswered = 0;
     if (Array.isArray(s.addresses) && s.addresses.length) addresses.set(s.addresses);
+    settleOnHome(s.home);
     online(true, s.displaysSleeping === true);
     document.body.classList.toggle('guest', s.guest === true);
     if (s.guest === true) document.querySelectorAll('.scrim.show').forEach(sheet => sheet.classList.remove('show'));
@@ -277,7 +309,7 @@ function appArt(app) {
   art.className = 'art';
   if (app.icon) {
     const img = document.createElement('img');
-    img.src = `/icon/${encodeURIComponent(app.id)}?v=${encodeURIComponent(appsShown.length)}`;
+    img.src = `${base}/icon/${encodeURIComponent(app.id)}?v=${encodeURIComponent(appsShown.length)}`;
     img.alt = '';
     art.appendChild(img);
   } else {
