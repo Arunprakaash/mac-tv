@@ -37,8 +37,8 @@ struct AppBanner: View {
         self.expanded = expanded
     }
 
-    /// A Steam game's own art, for when there are no shows: its store screenshot or library hero,
-    /// else its dock tile. Other apps keep their colour wash: their icons are too small to fill the screen.
+    /// A Steam game's own art when it has no show feed: store screenshot or library hero, else its
+    /// dock tile. Other apps keep their colour wash: their icons are too small to fill the screen.
     private var steamArt: (id: String, image: NSImage)? {
         guard case .steam = service.kind else { return nil }
         if let hero = SteamShelfArt.image(at: tv.library.heroFile(for: service.id)) { return ("\(service.id)-hero", hero) }

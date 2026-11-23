@@ -75,19 +75,9 @@ final class TopShelfFeed: ObservableObject {
         return lists.filter { musicApps.contains($0.key) }
     }
 
-    /// An app's own shows; apps with none (websites, Mac apps, games) get the top of every app's.
+    /// Only this app's feed — never borrow Netflix/Prime art for Steam or unrelated tiles.
     func shows(for serviceID: String) -> [Show] {
-        if let own = ready[serviceID], !own.isEmpty { return own }
-        return mix
-    }
-
-    /// Every app's most popular shows taken in turn: the first of each, then the second of each…
-    private var mix: [Show] {
-        let lists = ready.keys.sorted().compactMap { ready[$0]?.filter { !$0.square } }.filter { !$0.isEmpty }
-        let longest = lists.map(\.count).max() ?? 0
-        var seen = Set<Int>()
-        return (0..<longest).flatMap { rank in lists.compactMap { rank < $0.count ? $0[rank] : nil } }
-            .filter { seen.insert($0.id).inserted }
+        ready[serviceID] ?? []
     }
 
     func currentShow(for serviceID: String) -> Show? {
