@@ -134,7 +134,7 @@ struct AddAppSheet: View {
     fileprivate static var listStride: CGFloat { listRow + listGap }
     private static let iconSlot = CGSize(width: 44, height: 44)
 
-    /// Dim label/badge only — icons stay full opacity even when already on TV.
+    /// Dim label/badge for apps still addable; On TV stays full white. Icons always full opacity.
     private func labelOpacity(dimmed: Bool, onPlate: Bool) -> Double {
         dimmed && !onPlate ? 0.55 : 1
     }
@@ -222,7 +222,7 @@ struct AddAppSheet: View {
                                     onHome: onHome,
                                     removed: removed,
                                     onPlate: onPlate,
-                                    dimmed: onHome && !removed
+                                    dimmed: !onHome || removed
                                 )
                             }
                             .modifier(AdderRowTap(enabled: !onPlate) {
@@ -317,7 +317,7 @@ struct AddAppSheet: View {
                     let added = tv.isOnHomeScreen(game)
                     let removed = tv.adderRemovedFlash(for: game.appID)
                     listRowStyle(onPlate: onPlate) {
-                        steamLabel(game: game, added: added, removed: removed, onPlate: onPlate, dimmed: added && !removed)
+                        steamLabel(game: game, added: added, removed: removed, onPlate: onPlate, dimmed: !added || removed)
                     }
                     .modifier(AdderRowTap(enabled: !onPlate) {
                         tv.adder?.row = 1
@@ -373,7 +373,7 @@ struct AddAppSheet: View {
                         let added = tv.isOnHomeScreen(app)
                         let removed = tv.adderRemovedFlash(for: app.bundleID)
                         listRowStyle(onPlate: onPlate) {
-                            macLabel(app: app, added: added, removed: removed, onPlate: onPlate, dimmed: added && !removed)
+                            macLabel(app: app, added: added, removed: removed, onPlate: onPlate, dimmed: !added || removed)
                         }
                         .modifier(AdderRowTap(enabled: !onPlate) {
                             tv.adder?.row = 2
