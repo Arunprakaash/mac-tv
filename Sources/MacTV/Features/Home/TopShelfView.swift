@@ -37,15 +37,16 @@ struct AppBanner: View {
         self.expanded = expanded
     }
 
-    /// A Steam game's own art, for when there are no shows: its store screenshot or library hero,
-    /// else its dock tile. Other apps keep their colour wash: their icons are too small to fill the screen.
+    /// A Steam game's own art: its store screenshot or library hero, else its dock tile. It comes before
+    /// the shows every app without its own get, which would otherwise always cover it. Other apps keep
+    /// their colour wash: their icons are too small to fill the screen.
     private var steamArt: (id: String, image: NSImage)? {
         guard case .steam = service.kind else { return nil }
         if let hero = SteamShelfArt.image(at: tv.library.heroFile(for: service.id)) { return ("\(service.id)-hero", hero) }
         return Icons.tile(for: service).map { ("\(service.id)-tile", $0) }
     }
 
-    /// What the Top Shelf shows now: Movies art, popular shows, or a Steam game's own art.
+    /// What the Top Shelf shows now: Movies art, a Steam game's own art, or popular shows.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -56,11 +57,11 @@ struct AppBanner: View {
                         pick.image, pick.image.size.height > pick.image.size.width, false)
             }
         }
-        if let show = feed.currentShow(for: service), let image = feed.image(for: show.id) {
-            return (String(show.id), show.name, image, show.square, false)
-        }
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
+        }
+        if let show = feed.currentShow(for: service), let image = feed.image(for: show.id) {
+            return (String(show.id), show.name, image, show.square, false)
         }
         return nil
     }
