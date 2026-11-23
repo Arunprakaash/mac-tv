@@ -242,11 +242,13 @@ final class RemoteCoordinator: ObservableObject {
             guard let app else { return .json(["error": "Couldn't add that. Check the address."], status: "400 Bad Request") }
             return .json(["ok": true, "id": app.id, "name": app.name])
         case ("POST", "/apps/remove"):
-            guard let id = body["id"] as? String else { return .json(["error": "Missing app"], status: "400 Bad Request") }
-            tv.removeApp(id)
+            guard let id = body["id"] as? String, tv.arrangedServices.contains(where: { $0.id == id }) else {
+                return .json(["error": "Choose an app on the home screen."], status: "400 Bad Request")
+            }
+            guard tv.removeApp(id) else { return .json(["error": "Couldn't remove that app. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
             return .json(["ok": true])
         case ("POST", "/apps/restore"):
-            tv.restoreBuiltInApps()
+            guard tv.restoreBuiltInApps() else { return .json(["error": "Couldn't restore the built-in apps. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
             return .json(["ok": true])
         case ("POST", "/apps/pin"):
             guard let id = body["id"] as? String, let value = body["pinned"] as? NSNumber,
