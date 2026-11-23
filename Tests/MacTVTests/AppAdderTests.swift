@@ -51,7 +51,6 @@ struct AppAdderTests {
         }
     }
 
-
     @Test func suggestedListsAllBuiltInsAndKeepsSitesOnHome() {
         let previous = Catalog.suggestionRegionOverride
         Catalog.suggestionRegionOverride = "DE"
@@ -83,7 +82,7 @@ struct AppAdderTests {
         #expect(section(of: "disney", in: tv) == "Included")
         #expect(section(of: "joyn", in: tv) == "Suggested for you")
         #expect(section(of: "itvx", in: tv) == nil)
-        #expect(section(of: "hotstar", in: tv) == nil)
+        #expect(section(of: "hotstar", in: tv) == "Included")
         #expect(section(of: "hulu", in: tv) == nil)
         #expect(tv.adderSuggestionRows.contains { if case .moreServices = $0 { return true }; return false })
 
@@ -93,7 +92,8 @@ struct AppAdderTests {
         #expect(section(of: "disney", in: tv) == "Included")
 
         Catalog.suggestionRegionOverride = "IN"
-        #expect(section(of: "hotstar", in: tv) == "Suggested for you")
+        #expect(section(of: "hotstar", in: tv) == "Included")
+        #expect(section(of: "sonyliv", in: tv) == "Suggested for you")
         #expect(section(of: "disney", in: tv) == "Included")
 
         Catalog.suggestionRegionOverride = "US"
@@ -110,7 +110,7 @@ struct AppAdderTests {
         #expect(tv.adder?.moreServicesExpanded == true)
         #expect(section(of: "joyn", in: tv) == nil) // still under More, not Suggested for you
         #expect(tv.adderSuggestions.contains { if case .website(let s) = $0 { return s.id == "joyn" }; return false })
-        #expect(tv.adderSuggestions.contains { if case .restore(let s) = $0 { return s.id == "hotstar" }; return false })
+        #expect(tv.adderSuggestions.contains { if case .restore(let s) = $0 { return s.id == "itvx" }; return false })
     }
 
     @Test func regionGatedBuiltInAddsAsWebsiteWhenLocaleMismatch() {
@@ -211,4 +211,30 @@ struct AppAdderTests {
         #expect(!Catalog.matchesSuggestionRegion(joyn, region: "US"))
     }
 
+    @Test func newShelfLanguagesAreAddedOnceAndStayOffWhenTurnedOff() {
+        let defaults = UserDefaults.standard
+        let savedPreferences = defaults.object(forKey: "topShelfPreferences")
+        let savedFlag = defaults.object(forKey: "topShelfAddedLanguages")
+        defer {
+            defaults.set(savedPreferences, forKey: "topShelfPreferences")
+            defaults.set(savedFlag, forKey: "topShelfAddedLanguages")
+        }
+        defaults.removeObject(forKey: "topShelfAddedLanguages")
+        ShelfPreferences(region: "", languages: ["English", "Hindi"]).save()
+        #expect(ShelfPreferences.load().languages == ["Dutch", "English", "French", "German", "Hindi", "Italian", "Portuguese"])
+
+        var preferences = ShelfPreferences.load()
+        preferences.languages.removeAll { $0 == "French" }
+        preferences.save()
+        #expect(!ShelfPreferences.load().languages.contains("French"))
+        #expect(!ShelfPreferences.load().languages.contains("French"))
+
+        // A new install starts with them, so turning one off there sticks too.
+        defaults.removeObject(forKey: "topShelfPreferences")
+        defaults.removeObject(forKey: "topShelfAddedLanguages")
+        var fresh = ShelfPreferences.load()
+        fresh.languages.removeAll { $0 == "German" }
+        fresh.save()
+        #expect(!ShelfPreferences.load().languages.contains("German"))
+    }
 }

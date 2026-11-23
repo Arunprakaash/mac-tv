@@ -271,13 +271,18 @@ enum IconFinder {
         return rep.representation(using: .png, properties: [:])
     }
 
+    /// The App Store icon alone, for previews that shouldn't contact the site itself.
+    static func storeIcon(named name: String, regions: Set<String>? = nil) async -> Data? {
+        await appStoreIcon(named: name, regions: regions)
+    }
+
+    /// Searches the storefronts where the service streams, then the Mac's, then the US.
     private static func appStoreIcon(named name: String, regions: Set<String>? = nil) async -> Data? {
         let wanted = normalized(name)
         guard !wanted.isEmpty else { return nil }
         var countries: [String] = []
         var seen = Set<String>()
-        for code in Array(regions ?? []) + [Locale.current.region?.identifier ?? "US",
-                                            "US", "GB", "DE", "FR", "AU", "CA", "IN", "IT", "NL", "JP", "BR"] {
+        for code in (regions ?? []).sorted() + [Locale.current.region?.identifier ?? "US", "US"] {
             let upper = code.uppercased()
             if seen.insert(upper).inserted { countries.append(upper) }
         }

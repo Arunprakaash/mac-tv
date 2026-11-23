@@ -88,7 +88,7 @@ final class TopShelfFeed: ObservableObject {
         "videoland.com": "videoland", "npostart.nl": "npostart", "nlziet.nl": "nlziet",
     ]
     /// Series only: sports, talk shows, news and reality TV make poor Top Shelf art.
-    private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary", "Reality"]
+    private static let kinds: Set<String> = ["Scripted", "Animation", "Documentary"]
     private static let perApp = 8
 
     /// Shows whose image is ready, by app id.
@@ -162,26 +162,10 @@ final class TopShelfFeed: ObservableObject {
         return service.id
     }
 
-
     /// Search routes are used only for services with known search pages, not direct playback.
     func searchURL(for service: Service) -> URL? {
         guard case .web = service.kind, let show = currentShow(for: service) else { return nil }
         return ShelfSearch.url(serviceID: feedID(for: service), query: show.name)
-    }
-
-    /// Markets we curate Suggested locals for — Worldwide must query them or their shelves stay empty.
-    private static let catalogRegions = ["DE", "AT", "CH", "FR", "GB", "US", "CA", "IN", "AU", "JP", "BR", "IT", "NL"]
-
-    static func scheduleQueries(for region: String, macRegion: String? = Locale.current.region?.identifier) -> [String] {
-        if region.isEmpty {
-            var seen = Set<String>()
-            var queries = [""]
-            for code in ["IN", "US", "DE"] + catalogRegions + [macRegion].compactMap({ $0 }) {
-                if seen.insert(code).inserted { queries.append("&country=\(code)") }
-            }
-            return queries
-        }
-        return ["&country=", "&country=\(region)"]
     }
 
     /// Shows the last list straight away, then fetches a fresh one if it's a day old.

@@ -67,7 +67,6 @@ enum AdderSuggestionRow: Identifiable, Hashable {
     }
 }
 
-
 extension TVController {
     var adderMatches: [InstalledApps.App] { InstalledApps.matching(adder?.query ?? "") }
 
@@ -80,7 +79,6 @@ extension TVController {
 
     /// Steam Big Picture, then every installed game.
     var adderSteamGames: [SteamLibrary.Game] { [SteamLibrary.bigPicture] + SteamLibrary.installedGames() }
-
 
     /// Actionable Suggested rows currently on screen (no section headers).
     var adderSuggestions: [AdderSuggestion] {
@@ -343,11 +341,6 @@ extension TVController {
         guard addSteamGame(pick) != nil else { return }
         clearRemovedFlash(pick.appID)
     }
-
-
-
-
-
 
     func addSelectedSuggestion() {
         guard var a = adder else { return }

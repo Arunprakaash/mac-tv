@@ -16,28 +16,24 @@ struct ShelfPreferences: Codable, Equatable {
     static let languageOptions = ["English", "German", "French", "Dutch", "Italian", "Portuguese",
                                   "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada",
                                   "Bengali", "Marathi", "Japanese", "Korean", "Spanish"]
-    /// Languages Suggested locals need; older installs only had the India/DE set.
-    private static let curatedLanguages = ["Dutch", "French", "German", "Italian", "Portuguese"]
-    /// Worldwide by default; DACH still gets local catalogue via the Mac's region in scheduleQueries.
-    /// Forcing region=DE here used to disagree with the on-disk cache and blank the shelf on launch.
-    static func defaults(macRegion: String? = Locale.current.region?.identifier) -> ShelfPreferences {
-        _ = macRegion
-        return ShelfPreferences()
-    }
+    /// Languages added for the Suggested apps' own shows. Older choices get them once, so a language
+    /// someone turns off afterwards stays off.
+    private static let addedLanguages = ["Dutch", "French", "German", "Italian", "Portuguese"]
+    private static let addedLanguagesKey = "topShelfAddedLanguages"
     func includes(language: String?) -> Bool {
         languages.isEmpty || language.map { languages.contains($0) } == true
     }
     static func load() -> ShelfPreferences {
+        let addedBefore = UserDefaults.standard.bool(forKey: addedLanguagesKey)
+        // Defaults already have them, so a first choice made from the defaults never gets them back.
+        UserDefaults.standard.set(true, forKey: addedLanguagesKey)
         guard let data = UserDefaults.standard.data(forKey: "topShelfPreferences"),
-              var value = try? JSONDecoder().decode(ShelfPreferences.self, from: data) else { return defaults() }
-        // Older installs omitted local catalogue languages (German first, then FR/IT/NL/PT).
-        if !value.languages.isEmpty {
-            let missing = curatedLanguages.filter { !value.languages.contains($0) }
-            if !missing.isEmpty {
-                value.languages.append(contentsOf: missing)
-                value.languages.sort()
-                value.save()
-            }
+              var value = try? JSONDecoder().decode(ShelfPreferences.self, from: data) else { return ShelfPreferences() }
+        guard !addedBefore else { return value }
+        let missing = addedLanguages.filter { !value.languages.contains($0) }
+        if !value.languages.isEmpty, !missing.isEmpty {
+            value.languages = (value.languages + missing).sorted()
+            value.save()
         }
         return value
     }

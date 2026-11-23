@@ -80,7 +80,7 @@ enum Catalog {
         Service(id: "prime", name: "Prime Video", kind: .web(URL(string: "https://www.primevideo.com")!),
                 icon: "prime.png", accent: "#1A98FF", deep: "#05213F"),
         Service(id: "hotstar", name: "JioHotstar", kind: .web(URL(string: "https://www.hotstar.com")!),
-                icon: "hotstar.png", accent: "#2C6BED", deep: "#081538", regions: ["IN"]),
+                icon: "hotstar.png", accent: "#2C6BED", deep: "#081538"),
         Service(id: "appletv", name: "Apple TV", kind: .web(URL(string: "https://tv.apple.com")!),
                 icon: "appletv.png", accent: "#9A9AA2", deep: "#18181B"),
         Service(id: "spotify", name: "Spotify", kind: .web(URL(string: "https://open.spotify.com")!),
@@ -100,12 +100,12 @@ enum Catalog {
 
     /// Extra streaming sites under Add App › Suggested (not on the home screen by default).
     /// `regions: nil` = worldwide (*Included*); otherwise local (*Suggested for you* when the
-    /// Mac's region matches, else behind *More services*). See `plans/suggested-catalog.md`.
+    /// Mac's region matches, else behind *More services*).
     static let websiteSuggestions: [Service] = [
         // Global
         Service(id: "disney", name: "Disney+", kind: .web(URL(string: "https://www.disneyplus.com")!),
                 accent: "#113CCF", deep: "#06103A"),
-        Service(id: "max", name: "Max", kind: .web(URL(string: "https://www.max.com")!),
+        Service(id: "max", name: "HBO Max", kind: .web(URL(string: "https://www.hbomax.com")!),
                 accent: "#002BE7", deep: "#01082E"),
         Service(id: "paramount", name: "Paramount+", kind: .web(URL(string: "https://www.paramountplus.com")!),
                 accent: "#0064FF", deep: "#021433"),
@@ -217,10 +217,13 @@ enum Catalog {
     }
 }
 
-/// Fetched brand icons for Add App › Suggested (App Store / site icons), cached on disk.
+/// Brand icons for Add App › Suggested, from the App Store only, cached on disk. Browsing the list
+/// doesn't contact the streaming sites; adding one finds its icon the usual way.
 @MainActor
 enum SuggestionIcons {
     private static var memory: [String: NSImage] = [:]
+    /// Services the App Store had no icon for, so reopening the list doesn't ask again this session.
+    private static var missing: Set<String> = []
 
     private static func file(for id: String) -> URL {
         AppFolder.url.appendingPathComponent("Icons", isDirectory: true)
@@ -242,11 +245,10 @@ enum SuggestionIcons {
     /// Pulls missing logos in list order so the first rows fill first.
     static func prefetch(_ services: [Service], onEach: @MainActor () -> Void = {}) async {
         for service in services {
-            guard case .web(let url) = service.kind else { continue }
-            if image(for: service) != nil { continue }
-            guard let data = await IconFinder.icon(forSite: url, name: service.iconQuery ?? service.name,
-                                                   regions: service.regions),
-                  let image = NSImage(data: data) else { continue }
+            guard case .web = service.kind else { continue }
+            if image(for: service) != nil || missing.contains(service.id) { continue }
+            guard let data = await IconFinder.storeIcon(named: service.iconQuery ?? service.name, regions: service.regions),
+                  let image = NSImage(data: data) else { missing.insert(service.id); continue }
             Log.app.attempt("Saving a suggested app icon") {
                 try data.write(to: file(for: service.id), options: .atomic)
             }
