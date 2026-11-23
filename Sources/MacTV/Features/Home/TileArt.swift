@@ -102,6 +102,30 @@ enum TileArt {
         return String(format: "#%02X%02X%02X", Int(color[0] * 255), Int(color[1] * 255), Int(color[2] * 255))
     }
 
+    /// Accent for launch / shelf washes: prefer the icon, else the service's catalog colour.
+    @MainActor
+    static func brandAccent(for service: Service) -> String {
+        if let cg = Icons.image(for: service)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+           let hex = brandColor(from: cg) {
+            return hex
+        }
+        return service.accent
+    }
+
+    /// Dark wash behind a brand accent (same curve user-added apps already use).
+    static func brandDeep(fromAccent hex: String) -> String {
+        let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0
+        let r = Double((value >> 16) & 0xFF) * 0.18
+        let g = Double((value >> 8) & 0xFF) * 0.18
+        let b = Double(value & 0xFF) * 0.18
+        return String(format: "#%02X%02X%02X", Int(r), Int(g), Int(b))
+    }
+
+    @MainActor
+    static func brandDeep(for service: Service) -> String {
+        brandDeep(fromAccent: brandAccent(for: service))
+    }
+
     /// The image drawn at `size` with `edge` points at each side faded to transparent.
     private static func fade(_ image: CGImage, size: CGSize, edge: CGFloat) -> CGImage? {
         let width = max(Int(size.width.rounded()), 1), height = max(Int(size.height.rounded()), 1)

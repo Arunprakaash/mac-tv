@@ -45,6 +45,8 @@ final class TVController: NSObject, ObservableObject {
 
     @Published private(set) var mode: Mode = .launcher
     @Published private(set) var focus: Focus = .app(0)
+    /// Invalidates a pending launch-cancel watchdog so a new start isn't killed by the previous cancel.
+    private var launchCancelGeneration = UUID()
     /// Suppresses mouse hover focus changes during scrolling or keyboard navigation until the pointer actually moves.
     var suppressHover = false
     /// The top-row app whose content the Top Shelf shows.
@@ -100,7 +102,18 @@ final class TVController: NSObject, ObservableObject {
 
     // Playback
     var webView: WKWebView? { playbackCoordinator.webView }
+    var webStarting: Bool { playbackCoordinator.webStarting }
+    var webContentReady: Bool { playbackCoordinator.webContentReady }
+    var webLaunchCanceling: Bool { playbackCoordinator.webLaunchCanceling }
     var moviePlayer: MoviePlayer? { playbackCoordinator.moviePlayer }
+
+    func finishWebLaunch() { playbackCoordinator.finishWebStart() }
+
+    /// Launch cover finished reversing — tear down immediately (no half-state that can stick).
+    func completeWebLaunchCancel() { finishGoingHome() }
+
+    /// Drop any pending cancel watchdog (new launch must not inherit the previous cancel's timer).
+    func invalidateLaunchCancelWatchdog() { launchCancelGeneration = UUID() }
     var currentLocalMovie: Movie? { playbackCoordinator.currentLocalMovie }
     var localMoviePlayer: String { playbackCoordinator.localMoviePlayer }
     var iinaPlaybackError: String? { playbackCoordinator.iinaPlaybackError }
@@ -497,6 +510,25 @@ final class TVController: NSObject, ObservableObject {
     }
 
     func goHome() {
+        // First Home during launch: play reverse animation. Second Home (or stuck cancel): force tear-down.
+        if playbackCoordinator.webStarting, !playbackCoordinator.webLaunchCanceling {
+            let generation = UUID()
+            launchCancelGeneration = generation
+            _ = playbackCoordinator.requestWebLaunchCancel()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(1200))
+                guard let self, self.launchCancelGeneration == generation else { return }
+                if self.playbackCoordinator.webStarting || self.playbackCoordinator.webLaunchCanceling {
+                    self.finishGoingHome()
+                }
+            }
+            return
+        }
+        finishGoingHome()
+    }
+
+    private func finishGoingHome() {
+        launchCancelGeneration = UUID()
         // Leaving a browser window lands on the desktop Space, so coming back needs more than activating.
         let leavingBrowser = playbackCoordinator.externalBrowser != nil
         playbackCoordinator.closeIINAPlayback()
