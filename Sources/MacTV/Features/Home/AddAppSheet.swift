@@ -65,13 +65,13 @@ struct AddAppSheet: View {
     private func footer(for a: AppAdder) -> String {
         switch a.tab {
         case .suggested:
-            "Select adds or removes. Esc or Back closes."
+            "Select adds or removes."
         case .steam:
-            "Select adds or removes. Games open through Steam; Mac TV returns when you quit. Esc or Back closes."
+            "Select adds or removes. Games open through Steam; Mac TV returns when you quit."
         case .macApp:
-            "Select adds or removes. Type to filter. Esc or Back closes."
+            "Select adds or removes. Type to filter."
         case .website:
-            "Type with the keyboard or the remote's typing box. Esc or Back closes."
+            "Type with the keyboard or the remote's typing box."
         }
     }
 
