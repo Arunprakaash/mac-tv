@@ -22,7 +22,8 @@ import Testing
             #expect(a.id != b.id)
             #expect(first.setPinned("youtube", true))
             #expect(other.setPinned("netflix", true))
-            #expect(first.move("hotstar", by: -1))
+            // Worldwide built-in: region-gated ones (hotstar/IN, itvx/GB) may be absent on CI.
+            #expect(first.move("prime", by: -1))
             let expected = first.services().map(\.id)
             #expect(AppLibrary(folder: folder).services().map(\.id) == expected)
             #expect(!other.isPinned("youtube"))
