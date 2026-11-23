@@ -140,7 +140,6 @@ final class RemoteCoordinator: ObservableObject {
                  "pinned": tv.isPinned(service.id), "canMoveEarlier": tv.canMoveApp(service.id, by: -1),
                  "canMoveLater": tv.canMoveApp(service.id, by: 1)]
             },
-            "canRestore": tv.library.hasHiddenBuiltIns,
             "profile": tv.profile.name,
             "focus": String(describing: tv.focus),
             "sheet": sheetName,
@@ -259,9 +258,6 @@ final class RemoteCoordinator: ObservableObject {
                 return .json(["error": "Choose an app on the home screen."], status: "400 Bad Request")
             }
             guard tv.removeApp(id) else { return .json(["error": "Couldn't remove that app. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
-            return .json(["ok": true])
-        case ("POST", "/apps/restore"):
-            guard tv.restoreBuiltInApps() else { return .json(["error": "Couldn't restore the built-in apps. Check storage and folder permissions on the Mac."], status: "500 Internal Server Error") }
             return .json(["ok": true])
         case ("POST", "/apps/pin"):
             guard let id = body["id"] as? String, let value = body["pinned"] as? NSNumber,

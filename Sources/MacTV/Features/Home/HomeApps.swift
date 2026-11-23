@@ -151,16 +151,6 @@ extension TVController {
         return true
     }
 
-    @discardableResult
-    func restoreBuiltInApps() -> Bool {
-        guard library.restoreBuiltIns() else {
-            showToast("Couldn't restore the built-in apps. Check available storage and folder permissions.")
-            return false
-        }
-        reloadServices()
-        return true
-    }
-
     func iconPNG(for id: String) -> Data? {
         services.first { $0.id == id }.flatMap { Icons.png(for: $0) }
     }

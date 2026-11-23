@@ -60,7 +60,7 @@ async function run() {
   await call('Page.enable'); await call('Runtime.enable');
   await call('Page.addScriptToEvaluateOnNewDocument', { source: `
     localStorage.setItem('mactvKey', 'a'.repeat(64));
-    window.testState = { apps: [], canRestore: false, autoSkip: false, autoNext: false,
+    window.testState = { apps: [], autoSkip: false, autoNext: false,
       keepMacAwake: false, lidOverride: false, displaySetup: { displays: [] } };
     window.sentCommands = [];
     window.fetch = async (path, options) => {

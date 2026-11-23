@@ -86,7 +86,7 @@
   .app-actions button { min-height:44px; min-width:44px; padding:10px 8px; border:0; border-radius:12px; background:rgba(255,255,255,.1); font-size:14px; font-weight:600; }
   .app-actions .pin[aria-pressed="true"] { color:#ffe991; background:rgba(255,214,10,.13); }
   .app-actions .remove { color:#ffd0d0; background:rgba(255,107,107,.13); }
-  .app-actions button:disabled, #edit-apps:disabled, #restore:disabled { opacity:.4; cursor:default; }
+  .app-actions button:disabled, #edit-apps:disabled { opacity:.4; cursor:default; }
   #apps-sheet button:focus-visible { outline:3px solid #8ec7ff; outline-offset:3px; }
   #apps-sheet .pill { min-height:44px; }
   .app.add .art { background:transparent; border:2px dashed rgba(255,255,255,.25); box-shadow:none; color:var(--dim); font-weight:400; font-size:34px; }

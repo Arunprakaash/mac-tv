@@ -183,7 +183,7 @@ function send(a, extra, kind = 'tick') {
 }
 
 // State: connection, the app list, settings.
-let appsShown = '', apps = [], canRestore = false, currentLocalMovie = null, iinaInstalled = false;
+let appsShown = '', apps = [], currentLocalMovie = null, iinaInstalled = false;
 let stateGeneration = 0, appMutationPending = false, displayChanging = false, availableDisplays = [];
 let stateInFlight = null;
 async function refresh(duringMutation = false) {
@@ -212,7 +212,6 @@ async function readState() {
     if (s.guest === true) document.querySelectorAll('.scrim.show').forEach(sheet => sheet.classList.remove('show'));
     const focused = appFocus();
     apps = s.apps;
-    canRestore = s.canRestore;
     currentLocalMovie = s.currentLocalMovie || null;
     iinaInstalled = !!s.iinaInstalled;
     updateMovieOptions();
@@ -242,7 +241,7 @@ async function readState() {
     $('#browser-control-note').textContent = browser && browser.accessibilityAllowed === false
       ? `Allow Mac TV in Privacy & Security > ${browser.permissionPane || 'Accessibility'} to open, place and send input to ${browser.name || 'the browser'}.` : '';
     $('#browser-return').textContent = `Return to ${browser && browser.name ? browser.name : 'Browser'}`;
-    const sig = JSON.stringify([s.apps, s.canRestore]);
+    const sig = JSON.stringify(s.apps);
     if (sig !== appsShown) {
       appsShown = sig;
       if (!appMutationPending) renderApps(focused);
@@ -338,7 +337,6 @@ async function changeApp(path, body, message) {
   $('#apps').setAttribute('aria-busy', 'true');
   $('#apps').querySelectorAll('button').forEach(button => { button.disabled = true; });
   $('#edit-apps').disabled = true;
-  $('#restore').disabled = true;
   appMessage('Saving…');
   haptic('tap');
   try {
@@ -353,8 +351,8 @@ async function changeApp(path, body, message) {
   } finally {
     appMutationPending = false;
     // Do not take focus back if the user moved to Done or another sheet while waiting.
-    const canRestoreFocus = focused && (document.activeElement === focused.element || document.activeElement === document.body);
-    renderApps(canRestoreFocus ? focused : null);
+    const keepFocus = focused && (document.activeElement === focused.element || document.activeElement === document.body);
+    renderApps(keepFocus ? focused : null);
   }
 }
 function renderApps(focused = appFocus()) {
@@ -429,8 +427,6 @@ function renderApps(focused = appFocus()) {
   $('#edit-apps').classList.toggle('on', editing);
   $('#edit-apps').disabled = appMutationPending;
   $('#edit-note').hidden = !editing;
-  $('#restore').hidden = !(editing && canRestore);
-  $('#restore').disabled = appMutationPending;
   $('#apps-title').textContent = editing ? 'Edit apps' : 'Open on TV';
   if (focused && $('#apps-sheet').classList.contains('show') && !$('#pair').classList.contains('show')) {
     const buttons = [...box.querySelectorAll('button[data-app-id]')];
@@ -443,7 +439,6 @@ function renderApps(focused = appFocus()) {
   sheet.scrollTop = scrollTop;
 }
 $('#edit-apps').onclick = () => { haptic('tick'); editing = !editing; appMessage(''); renderApps(); };
-$('#restore').onclick = () => changeApp('/apps/restore', {}, 'Restored built-in apps.');
 
 // File IDs come from the server and remain opaque; names are always rendered as text.
 let fileTrail = [], fileEntries = [], fileNext = null, selectedMovie = null, fileGeneration = 0;

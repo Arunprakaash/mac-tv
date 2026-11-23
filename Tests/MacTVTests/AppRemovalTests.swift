@@ -109,7 +109,7 @@ struct AppRemovalTests {
             tv.handleOrganizer(.back)
             #expect(tv.organizer == nil)
 
-            // Settings > Apps no longer has a bulk restore row: Add App › Suggested toggles them back.
+            // Bulk restore (Settings / phone remote) is gone: Add App › Suggested toggles them back.
             #expect(SettingsPanel.Section.apps.rows == [.addApp, .arrangeApps, .topShelfPreferences])
             #expect(tv.library.hiddenBuiltInCount == builtIn.count)
 

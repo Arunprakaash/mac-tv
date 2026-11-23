@@ -23,7 +23,7 @@ struct AppLibraryTests {
             #expect(library.hasHiddenBuiltIns)
             #expect(!library.services().contains { $0.id == "netflix" })
             #expect(library.services().contains { $0.id == "user-legacy" })
-            library.restoreBuiltIns()
+            #expect(library.setHidden("netflix", false))
             let reloaded = AppLibrary(folder: folder)
             #expect(reloaded.services().contains { $0.id == "netflix" })
             #expect(reloaded.services().contains { $0.id == "user-legacy" })
@@ -88,7 +88,7 @@ struct AppLibraryTests {
             library.remove("netflix")
             #expect(!library.services().contains { $0.id == "netflix" })
             let reloaded = AppLibrary(folder: folder)
-            reloaded.restoreBuiltIns()
+            #expect(reloaded.setHidden("netflix", false))
             #expect(reloaded.isPinned("netflix"))
             #expect(reloaded.services().filter { reloaded.isPinned($0.id) }.map(\.id) == reordered)
 
@@ -291,7 +291,8 @@ struct AppLibraryTests {
             #expect(!tv.services.contains { $0.id == "netflix" })
             #expect(tv.library.hasHiddenBuiltIns)
             #expect(remove(#"{"id":"netflix"}"#) == "400 Bad Request")
-            #expect(tv.restoreBuiltInApps())
+            #expect(tv.library.setHidden("netflix", false))
+            tv.reloadServices()
             #expect(tv.services.contains { $0.id == "netflix" })
         }
     }
