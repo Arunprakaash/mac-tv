@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Pin / earlier / later keep the same app selected so the row moves with it; remove keeps the slot.
@@ -123,7 +124,8 @@ extension TVController {
         organizer = panel
         let duration = Self.removeHoldDuration
         let started = Date()
-        removeHoldTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        // `.common` so progress keeps moving during AppKit mouse tracking.
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 guard self.removeHoldID == id, var panel = self.organizer else {
@@ -136,6 +138,8 @@ extension TVController {
                 if progress >= 1 { self.commitRemoveHold() }
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        removeHoldTimer = timer
     }
 
     /// Releases an in-progress hold without removing.
@@ -302,20 +306,70 @@ struct AppOrganizerSheet: View {
             .foregroundStyle(focused || holding ? Color(hex: "#FF453A") : .white)
             .background(focused || holding ? .white : .white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
             .overlay {
-                Circle()
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .trim(from: 0, to: progress)
-                    .stroke(ring, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .padding(-5)
+                    .stroke(ring, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in tv.beginRemoveHold(for: service.id) }
-                    .onEnded { _ in tv.cancelRemoveHold() }
-            )
+            .overlay {
+                // AppKit press tracking: SwiftUI Button/ScrollView drop isPressed on redraw.
+                OrganizerPointerHold { pressed in
+                    if pressed { tv.beginRemoveHold(for: service.id) }
+                    else { tv.cancelRemoveHold() }
+                }
+            }
             .accessibilityLabel("Hold to remove \(service.name)")
             .accessibilityAddTraits(.isButton)
             .animation(reduceMotion ? nil : Motion.focus, value: focused)
+    }
+}
+
+/// Mouse down/up for hold-to-remove; survives SwiftUI redraws while progress updates.
+private struct OrganizerPointerHold: NSViewRepresentable {
+    var onPressed: (Bool) -> Void
+
+    func makeNSView(context: Context) -> OrganizerPointerHoldView {
+        let view = OrganizerPointerHoldView()
+        view.onPressed = onPressed
+        return view
+    }
+
+    func updateNSView(_ nsView: OrganizerPointerHoldView, context: Context) {
+        nsView.onPressed = onPressed
+    }
+}
+
+private final class OrganizerPointerHoldView: NSView {
+    var onPressed: ((Bool) -> Void)?
+    private var down = false
+
+    override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        down = true
+        onPressed?(true)
+        // Track until release so ScrollView / redraws don't swallow the up.
+        while down {
+            guard let next = window?.nextEvent(matching: [.leftMouseUp, .leftMouseDragged],
+                                               until: .distantFuture,
+                                               inMode: .eventTracking,
+                                               dequeue: true) else { break }
+            if next.type == .leftMouseUp {
+                down = false
+            } else {
+                let loc = convert(next.locationInWindow, from: nil)
+                if !bounds.insetBy(dx: -4, dy: -4).contains(loc) {
+                    down = false
+                }
+            }
+        }
+        onPressed?(false)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard down else { return }
+        down = false
+        onPressed?(false)
     }
 }

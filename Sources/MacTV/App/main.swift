@@ -434,7 +434,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 124: tv.handle(.move(.right))
             case 125: tv.handle(.move(.down))
             case 126: tv.handle(.move(.up))
-            case 36, 76, 49: tv.handle(.selectDown)
+            case 36, 76, 49:
+                // Hold-to-remove needs one Down + Up; key repeat would re-fire Select and its click sound.
+                if event.isARepeat { return nil }
+                tv.handle(.selectDown)
             case 53: tv.handle(.back)
             default: return event
             }

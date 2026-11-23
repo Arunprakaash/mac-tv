@@ -448,7 +448,8 @@ final class TVController: NSObject, ObservableObject {
             let changed = feedbackState != before
             switch command {
             case .move where changed: feedback.play(.move, from: source)
-            case .select, .selectDown: feedback.play(.select, from: source)
+            case .select: feedback.play(.select, from: source)
+            case .selectDown where !isHoldingRemove: feedback.play(.select, from: source)
             case .back where changed: feedback.play(.back, from: source)
             default: break
             }
