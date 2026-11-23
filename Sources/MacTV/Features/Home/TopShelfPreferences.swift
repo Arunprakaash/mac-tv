@@ -4,16 +4,37 @@ import SwiftUI
 /// Out of the box: worldwide (plus India and the US), in languages people here watch.
 struct ShelfPreferences: Codable, Equatable {
     var region = ""
-    var languages: [String] = ["Bengali", "English", "Hindi", "Japanese", "Kannada", "Korean", "Malayalam",
-                               "Marathi", "Spanish", "Tamil", "Telugu"]
-    static let regions: [(code: String, name: String)] = [("", "Worldwide"), ("GB", "United Kingdom"), ("IN", "India"), ("US", "United States"), ("CA", "Canada"), ("AU", "Australia")]
-    static let languageOptions = ["English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi", "Japanese", "Korean", "Spanish", "French"]
+    var languages: [String] = ["Bengali", "Dutch", "English", "French", "German", "Hindi", "Italian",
+                               "Japanese", "Kannada", "Korean", "Malayalam", "Marathi", "Portuguese",
+                               "Spanish", "Tamil", "Telugu"]
+    static let regions: [(code: String, name: String)] = [
+        ("", "Worldwide"), ("DE", "Germany"), ("AT", "Austria"), ("CH", "Switzerland"),
+        ("FR", "France"), ("GB", "United Kingdom"), ("IN", "India"), ("US", "United States"),
+        ("CA", "Canada"), ("AU", "Australia"), ("JP", "Japan"), ("BR", "Brazil"), ("IT", "Italy"),
+        ("NL", "Netherlands"),
+    ]
+    static let languageOptions = ["English", "German", "French", "Dutch", "Italian", "Portuguese",
+                                  "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada",
+                                  "Bengali", "Marathi", "Japanese", "Korean", "Spanish"]
+    /// Languages added for the Suggested apps' own shows. Older choices get them once, so a language
+    /// someone turns off afterwards stays off.
+    private static let addedLanguages = ["Dutch", "French", "German", "Italian", "Portuguese"]
+    private static let addedLanguagesKey = "topShelfAddedLanguages"
     func includes(language: String?) -> Bool {
         languages.isEmpty || language.map { languages.contains($0) } == true
     }
     static func load() -> ShelfPreferences {
+        let addedBefore = UserDefaults.standard.bool(forKey: addedLanguagesKey)
+        // Defaults already have them, so a first choice made from the defaults never gets them back.
+        UserDefaults.standard.set(true, forKey: addedLanguagesKey)
         guard let data = UserDefaults.standard.data(forKey: "topShelfPreferences"),
-              let value = try? JSONDecoder().decode(ShelfPreferences.self, from: data) else { return ShelfPreferences() }
+              var value = try? JSONDecoder().decode(ShelfPreferences.self, from: data) else { return ShelfPreferences() }
+        guard !addedBefore else { return value }
+        let missing = addedLanguages.filter { !value.languages.contains($0) }
+        if !value.languages.isEmpty, !missing.isEmpty {
+            value.languages = (value.languages + missing).sorted()
+            value.save()
+        }
         return value
     }
     func save() {

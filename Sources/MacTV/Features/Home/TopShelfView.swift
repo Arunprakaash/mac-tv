@@ -56,7 +56,7 @@ struct AppBanner: View {
                         pick.image, pick.image.size.height > pick.image.size.width, false)
             }
         }
-        if let show = feed.currentShow(for: service.id), let image = feed.image(for: show.id) {
+        if let show = feed.currentShow(for: service), let image = feed.image(for: show.id) {
             return (String(show.id), show.name, image, show.square, false)
         }
         if let art = steamArt {
