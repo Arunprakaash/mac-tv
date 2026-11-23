@@ -91,42 +91,31 @@ extension TVController {
     }
 
     /// Included (worldwide only) → Suggested for you (region locals) → More.
+    /// One pass per catalogue; callers that navigate should reuse the array for the keypress.
     var adderSuggestionRows: [AdderSuggestionRow] {
         let region = Catalog.suggestionRegion
-        let includedBuiltIns = Catalog.services.compactMap { service -> AdderSuggestion? in
-            guard service.kind != .addApp, service.kind != .settings else { return nil }
-            guard service.isInstalled, service.regions == nil else { return nil }
-            return .restore(service)
+        var included: [AdderSuggestion] = []
+        var forYou: [AdderSuggestion] = []
+        var more: [AdderSuggestion] = []
+
+        func place(_ suggestion: AdderSuggestion, regions: Set<String>?) {
+            guard suggestion.service.isInstalled else { return }
+            if regions == nil {
+                included.append(suggestion)
+            } else if Catalog.matchesSuggestionRegion(suggestion.service, region: region) {
+                forYou.append(suggestion)
+            } else {
+                more.append(suggestion)
+            }
         }
-        let includedGlobals = Catalog.websiteSuggestions.compactMap { service -> AdderSuggestion? in
-            guard service.isInstalled, service.regions == nil else { return nil }
-            return .website(service)
+
+        for service in Catalog.services {
+            guard service.kind != .addApp, service.kind != .settings else { continue }
+            place(.restore(service), regions: service.regions)
         }
-        let included = includedBuiltIns + includedGlobals
-        let forYouBuiltIns = Catalog.services.compactMap { service -> AdderSuggestion? in
-            guard service.kind != .addApp, service.kind != .settings else { return nil }
-            guard service.isInstalled, service.regions != nil,
-                  Catalog.matchesSuggestionRegion(service, region: region) else { return nil }
-            return .restore(service)
+        for service in Catalog.websiteSuggestions {
+            place(.website(service), regions: service.regions)
         }
-        let forYouSites = Catalog.websiteSuggestions.compactMap { service -> AdderSuggestion? in
-            guard service.isInstalled, service.regions != nil,
-                  Catalog.matchesSuggestionRegion(service, region: region) else { return nil }
-            return .website(service)
-        }
-        let forYou = forYouBuiltIns + forYouSites
-        let moreBuiltIns = Catalog.services.compactMap { service -> AdderSuggestion? in
-            guard service.kind != .addApp, service.kind != .settings else { return nil }
-            guard service.isInstalled, service.regions != nil,
-                  !Catalog.matchesSuggestionRegion(service, region: region) else { return nil }
-            return .restore(service)
-        }
-        let moreSites = Catalog.websiteSuggestions.compactMap { service -> AdderSuggestion? in
-            guard service.isInstalled, service.regions != nil,
-                  !Catalog.matchesSuggestionRegion(service, region: region) else { return nil }
-            return .website(service)
-        }
-        let more = moreBuiltIns + moreSites
 
         var rows: [AdderSuggestionRow] = []
         if !included.isEmpty {
@@ -148,11 +137,14 @@ extension TVController {
 
     /// First focusable Suggested row index (skips section headers).
     func firstFocusableSuggestionRow() -> Int {
-        adderSuggestionRows.firstIndex(where: \.isFocusable) ?? 0
+        firstFocusableSuggestionRow(in: adderSuggestionRows)
     }
 
-    private func nextFocusableSuggestionRow(from index: Int, step: Int) -> Int? {
-        let rows = adderSuggestionRows
+    private func firstFocusableSuggestionRow(in rows: [AdderSuggestionRow]) -> Int {
+        rows.firstIndex(where: \.isFocusable) ?? 0
+    }
+
+    private func nextFocusableSuggestionRow(in rows: [AdderSuggestionRow], from index: Int, step: Int) -> Int? {
         var i = index + step
         while rows.indices.contains(i) {
             if rows[i].isFocusable { return i }
@@ -228,21 +220,22 @@ extension TVController {
             // Shoulders always change the segment, even when focus is in a field below.
             let step = forward ? 1 : tabs.count - 1
             a.tab = tabs[(tabIndex + step) % tabs.count]
-            a.selected = a.tab == .suggested ? firstFocusableSuggestionRow() : 0
             a.moreServicesExpanded = false
+            a.selected = a.tab == .suggested ? firstFocusableSuggestionRow() : 0
             a.row = min(a.row, Self.lastRow(for: a.tab))
         case .move(let direction) where direction == .left || direction == .right:
             if a.row == 0 {
                 let step = direction == .right ? 1 : tabs.count - 1
                 a.tab = tabs[(tabIndex + step) % tabs.count]
-                a.selected = a.tab == .suggested ? firstFocusableSuggestionRow() : 0
                 a.moreServicesExpanded = false
+                a.selected = a.tab == .suggested ? firstFocusableSuggestionRow() : 0
             }
         case .move(.up):
             let inList = (a.tab == .macApp && a.row == 2)
                 || ((a.tab == .steam || a.tab == .suggested) && a.row == 1)
             if a.tab == .suggested, a.row == 1 {
-                if let next = nextFocusableSuggestionRow(from: a.selected, step: -1) {
+                let rows = adderSuggestionRows
+                if let next = nextFocusableSuggestionRow(in: rows, from: a.selected, step: -1) {
                     a.selected = next
                 } else {
                     a.row = 0
@@ -258,7 +251,8 @@ extension TVController {
             } else if a.tab == .steam, a.row == 1 {
                 a.selected = min(a.selected + 1, max(adderSteamGames.count - 1, 0))
             } else if a.tab == .suggested, a.row == 1 {
-                if let next = nextFocusableSuggestionRow(from: a.selected, step: 1) {
+                let rows = adderSuggestionRows
+                if let next = nextFocusableSuggestionRow(in: rows, from: a.selected, step: 1) {
                     a.selected = next
                 }
             } else if a.tab == .suggested, a.row == 0 {
@@ -273,8 +267,8 @@ extension TVController {
             case (_, 0):
                 a.tab = tabs[(tabIndex + 1) % tabs.count]
                 a.row = 1
-                a.selected = a.tab == .suggested ? firstFocusableSuggestionRow() : 0
                 a.moreServicesExpanded = false
+                a.selected = a.tab == .suggested ? firstFocusableSuggestionRow() : 0
             case (.website, 3): submitAdder(); return
             case (.macApp, 2): addSelectedMacApp(); return
             case (.steam, 1): addSelectedSteamGame(); return
@@ -364,10 +358,14 @@ extension TVController {
             return
         case .moreServices:
             a.moreServicesExpanded.toggle()
+            // Rebuild once after expand so focus can land on the first revealed row.
             adder = a
-            if a.moreServicesExpanded, let next = nextFocusableSuggestionRow(from: a.selected, step: 1) {
-                a.selected = next
-                adder = a
+            if a.moreServicesExpanded {
+                let expanded = adderSuggestionRows
+                if let next = nextFocusableSuggestionRow(in: expanded, from: a.selected, step: 1) {
+                    a.selected = next
+                    adder = a
+                }
             }
             return
         case .item(let pick):
