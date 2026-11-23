@@ -95,7 +95,7 @@ struct AppRemovalTests {
         }
     }
 
-    @Test func everyAppCanBeRemovedAndSettingsRestoresTheBuiltIns() throws {
+    @Test func everyAppCanBeRemovedAndSuggestedRestoresTheBuiltIns() throws {
         try withTV { tv in
             let builtIn = tv.arrangedServices.map(\.id)
             tv.openOrganizer()
@@ -109,14 +109,25 @@ struct AppRemovalTests {
             tv.handleOrganizer(.back)
             #expect(tv.organizer == nil)
 
-            #expect(SettingsPanel.Section.apps.rows.last == .restoreApps)
+            // Settings > Apps no longer has a bulk restore row: Add App › Suggested toggles them back.
+            #expect(SettingsPanel.Section.apps.rows == [.addApp, .arrangeApps, .topShelfPreferences])
             #expect(tv.library.hiddenBuiltInCount == builtIn.count)
-            tv.settings = SettingsPanel(section: .apps, open: true)
-            tv.activateSetting(.restoreApps)
+
+            tv.adder = AppAdder(tab: .suggested, row: 1, selected: 0)
+            for id in builtIn {
+                guard let index = tv.adderSuggestionRows.firstIndex(where: {
+                    if case .item(.restore(let service)) = $0 { return service.id == id }
+                    return false
+                }) else {
+                    Issue.record("missing Suggested restore for \(id)")
+                    continue
+                }
+                tv.adder?.selected = index
+                tv.addSelectedSuggestion()
+            }
             #expect(tv.library.hiddenBuiltInCount == 0)
             #expect(tv.arrangedServices.map(\.id) == builtIn)
-            tv.activateSetting(.restoreApps)
-            #expect(tv.arrangedServices.map(\.id) == builtIn)
+            #expect(tv.adder != nil)
         }
     }
 }
