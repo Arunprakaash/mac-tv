@@ -475,6 +475,12 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         moviePlayer = nil
         tv?.setLaunchedAppID(nil)
         let session = BrowserSession(bundleID: bundleID, name: name)
+        // Closing the window or quitting the browser comes back to Mac TV's home screen, like leaving the built-in player.
+        session.onClose = { [weak self, weak session] in
+            Log.playback.notice("\(name, privacy: .public) window closed outside Mac TV")
+            guard let self, let session, self.externalBrowser === session else { return }
+            self.tv?.goHome()
+        }
         externalBrowser = session
         tv?.browserFocus = 0
         externalBrowserService = service
