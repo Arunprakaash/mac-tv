@@ -182,6 +182,9 @@ final class TVController: NSObject, ObservableObject {
 
     private var controllerInput: ControllerInput?
     private var launchedAppID: String?
+    /// Arrange Apps hold-to-remove; timer lives here so `AppOrganizer` stays a plain value.
+    var removeHoldTimer: Timer?
+    var removeHoldID: String?
     /// A Steam game just launched from Mac TV: watched so Mac TV comes back when it quits.
     var steamWatchUntil: Date?
     var steamGamePID: pid_t?
@@ -303,12 +306,14 @@ final class TVController: NSObject, ObservableObject {
         }
         switch command {
         case .move(let direction): moveFocus(direction)
-        case .select:
+        case .select, .selectDown:
             switch focus {
             case .app(let index): if services.indices.contains(index) { open(services[index]) }
             case .shelf(let index): activateShelf(index)
             case .status(let item): activateStatus(item)
             }
+        case .selectUp:
+            break
         case .back:
             switch focus {
             case .status: setFocus(shelfCount > 0 ? .shelf(0) : .app(shelfAppIndex))
@@ -345,6 +350,12 @@ final class TVController: NSObject, ObservableObject {
         default: if dismissedScreensaver { return }
         }
         Analytics.noteInput(source)
+
+        // Select down/up only matter for Arrange hold-to-remove; elsewhere down is a normal Select.
+        var command = command
+        let arrangeHold = mode == .launcher && sheets.top == .organizer
+        if case .selectDown = command, !arrangeHold { command = .select }
+        if case .selectUp = command, !arrangeHold { return }
 
         switch command {
         case .pointer, .click, .scroll: break
@@ -437,7 +448,7 @@ final class TVController: NSObject, ObservableObject {
             let changed = feedbackState != before
             switch command {
             case .move where changed: feedback.play(.move, from: source)
-            case .select: feedback.play(.select, from: source)
+            case .select, .selectDown: feedback.play(.select, from: source)
             case .back where changed: feedback.play(.back, from: source)
             default: break
             }

@@ -947,9 +947,13 @@ try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
   const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
   pad.addEventListener('pointerdown', e => {
     pad.setPointerCapture(e.pointerId);
-    start = { x: e.clientX, y: e.clientY, zone: zoneAt(e.clientX, e.clientY) };
+    start = { x: e.clientX, y: e.clientY, zone: zoneAt(e.clientX, e.clientY), okHeld: false };
     repeated = false;
-    if (start.zone && start.zone !== 'ok') {
+    if (start.zone === 'ok') {
+      start.okHeld = true;
+      flash('ok');
+      send('okdown', {}, 'tap');
+    } else if (start.zone) {
       timer = setTimeout(() => {
         repeated = true;
         timer = setInterval(() => { flash(start.zone); send(start.zone, {}, 'repeat'); }, 130);
@@ -963,14 +967,23 @@ try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
     if (!start) return;
     stop();
     const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    const okHeld = start.okHeld;
     let zone = start.zone;
     start = null;
+    if (okHeld) {
+      send('okup', {}, 'tap');
+      return;
+    }
     if (Math.hypot(dx, dy) > 28) zone = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
     else if (repeated || !zone) return;
     flash(zone);
     send(zone, {}, zone === 'ok' ? 'tap' : 'tick');
   });
-  const cancelHold = () => { stop(); start = null; };
+  const cancelHold = () => {
+    if (start?.okHeld) send('okup', {}, 'tap');
+    stop();
+    start = null;
+  };
   pad.addEventListener('pointercancel', cancelHold);
   pad.addEventListener('lostpointercapture', cancelHold);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') cancelHold(); });

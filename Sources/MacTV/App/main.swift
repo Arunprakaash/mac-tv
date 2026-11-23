@@ -434,10 +434,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 124: tv.handle(.move(.right))
             case 125: tv.handle(.move(.down))
             case 126: tv.handle(.move(.up))
-            case 36, 76, 49: tv.handle(.select)
+            case 36, 76, 49: tv.handle(.selectDown)
             case 53: tv.handle(.back)
             default: return event
             }
+            return nil
+        }
+        NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
+            guard let tv = self?.tv, event.window === self?.window else { return event }
+            guard tv.mode == .launcher || tv.mode == .movie else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
+            guard mods.isEmpty, [36 as UInt16, 76, 49].contains(event.keyCode) else { return event }
+            tv.handle(.selectUp)
             return nil
         }
     }

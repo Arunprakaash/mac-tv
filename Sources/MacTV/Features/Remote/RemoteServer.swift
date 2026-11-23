@@ -438,7 +438,7 @@ final class RemoteServer {
 
     private static func guestAllows(_ command: RemoteCommand) -> Bool {
         switch command {
-        case .move, .select, .back, .home, .playPause, .seek, .volume, .mute,
+        case .move, .select, .selectDown, .selectUp, .back, .home, .playPause, .seek, .volume, .mute,
              .text, .deleteBackward, .pointer, .click, .scroll, .nextControl, .previousControl,
              .activateBrowser, .browserFullscreen, .retryBrowser:
             return true

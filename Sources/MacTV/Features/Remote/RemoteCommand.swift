@@ -4,7 +4,7 @@ import Foundation
 enum RemoteCommand {
     enum Direction: String { case up, down, left, right }
 
-    case move(Direction), select, back, home
+    case move(Direction), select, selectDown, selectUp, back, home
     case playPause, seek(forward: Bool)
     case volume(Int), mute
     case text(String), deleteBackward
@@ -21,6 +21,8 @@ enum RemoteCommand {
         switch action {
         case "up", "down", "left", "right": self = .move(Direction(rawValue: action)!)
         case "ok": self = .select
+        case "okdown": self = .selectDown
+        case "okup": self = .selectUp
         case "back": self = .back
         case "home": self = .home
         case "playpause": self = .playPause
