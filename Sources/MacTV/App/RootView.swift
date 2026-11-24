@@ -7,18 +7,25 @@ struct RootView: View {
     /// Home stays mounted under the launch cover so cancel can reveal it again without rebuilding.
     private var showsHomeCanvas: Bool {
         guard tv.externalBrowser == nil, tv.moviePlayer == nil, tv.movies == nil else { return false }
-        if tv.webStarting || tv.webLaunchCanceling { return true }
+        if tv.launchCover != nil { return true }
         if case .player = tv.mode { return false }
         if case .movie = tv.mode { return false }
         return true
     }
 
     private var homeCoveredByLaunch: Bool {
-        tv.webStarting && !tv.webLaunchCanceling
+        guard let cover = tv.launchCover else { return false }
+        return !cover.canceling
     }
 
     private var launchCoverActive: Bool {
-        tv.webStarting || tv.webLaunchCanceling
+        tv.launchCover != nil
+    }
+
+    /// WebView stays hidden until the cover hands off into the page.
+    private var webHiddenByLaunch: Bool {
+        guard let cover = tv.launchCover, case .player = tv.mode else { return false }
+        return cover.canceling || !cover.ready
     }
 
     var body: some View {
@@ -29,10 +36,10 @@ struct RootView: View {
                 MoviePlayerView(tv: tv, player: player).id(ObjectIdentifier(player))
             } else if case .player = tv.mode, let web = tv.webView {
                 WebViewHost(webView: web).id(ObjectIdentifier(web))
-                    .opacity(tv.webLaunchCanceling || (tv.webStarting && !tv.webContentReady) ? 0 : 1)
-                    .animation(Motion.launchExit, value: tv.webContentReady)
-                    .allowsHitTesting(tv.playerFailure == nil && !tv.webStarting && !tv.webLaunchCanceling)
-                    .accessibilityHidden(tv.playerFailure != nil || tv.webStarting || tv.webLaunchCanceling)
+                    .opacity(webHiddenByLaunch ? 0 : 1)
+                    .animation(Motion.launchExit, value: tv.launchCover?.ready == true)
+                    .allowsHitTesting(tv.playerFailure == nil && !launchCoverActive)
+                    .accessibilityHidden(tv.playerFailure != nil || launchCoverActive)
                 if tv.playerFailure != nil {
                     TVCanvas { PlaybackFailureView(tv: tv) }.ignoresSafeArea()
                 }
@@ -49,13 +56,13 @@ struct RootView: View {
                             .animation(nil, value: homeCoveredByLaunch)
                             .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver && !launchCoverActive)
                             .accessibilityHidden(tv.activeSheet != nil || tv.screensaver || launchCoverActive)
-                        if tv.webStarting, case .player(let service) = tv.mode {
-                            WebStartingView(
-                                service: service,
-                                ready: tv.webContentReady,
-                                canceling: tv.webLaunchCanceling,
-                                onFinished: { tv.finishWebLaunch() },
-                                onCancelled: { tv.completeWebLaunchCancel() }
+                        if let cover = tv.launchCover {
+                            LaunchCover(
+                                service: cover.service,
+                                ready: cover.ready,
+                                canceling: cover.canceling,
+                                onFinished: { tv.finishLaunchCover() },
+                                onCancelled: { tv.completeLaunchCoverCancel() }
                             )
                             .allowsHitTesting(false)
                             .accessibilityAddTraits(.updatesFrequently)

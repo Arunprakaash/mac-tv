@@ -47,6 +47,8 @@ final class TVController: NSObject, ObservableObject {
     @Published private(set) var focus: Focus = .app(0)
     /// Invalidates a pending launch-cancel watchdog so a new start isn't killed by the previous cancel.
     private var launchCancelGeneration = UUID()
+    /// Window level before pinning the launch cover above Steam/other apps.
+    private var launchCoverRestoredLevel: NSWindow.Level?
     /// Suppresses mouse hover focus changes during scrolling or keyboard navigation until the pointer actually moves.
     var suppressHover = false
     /// The top-row app whose content the Top Shelf shows.
@@ -65,6 +67,8 @@ final class TVController: NSObject, ObservableObject {
     @Published var playerFailure: PlayerFailure?
     /// The Movies app's screen, while it's open.
     @Published var movies: MoviesBrowser?
+    /// Tile zoom cover while a web player, Steam game, or Mac app is starting.
+    @Published var launchCover: LaunchCoverSession?
     /// Who's watching: their apps and their sign-ins.
     @Published var profile: Profile
 
@@ -102,18 +106,59 @@ final class TVController: NSObject, ObservableObject {
 
     // Playback
     var webView: WKWebView? { playbackCoordinator.webView }
-    var webStarting: Bool { playbackCoordinator.webStarting }
-    var webContentReady: Bool { playbackCoordinator.webContentReady }
-    var webLaunchCanceling: Bool { playbackCoordinator.webLaunchCanceling }
     var moviePlayer: MoviePlayer? { playbackCoordinator.moviePlayer }
-
-    func finishWebLaunch() { playbackCoordinator.finishWebStart() }
-
-    /// Launch cover finished reversing — tear down immediately (no half-state that can stick).
-    func completeWebLaunchCancel() { finishGoingHome() }
 
     /// Drop any pending cancel watchdog (new launch must not inherit the previous cancel's timer).
     func invalidateLaunchCancelWatchdog() { launchCancelGeneration = UUID() }
+
+    func beginLaunchCover(_ service: Service) {
+        invalidateLaunchCancelWatchdog()
+        launchCover = LaunchCoverSession(service: service)
+    }
+
+    func markLaunchCoverReady() {
+        guard var cover = launchCover, !cover.ready, !cover.canceling else { return }
+        cover.ready = true
+        launchCover = cover
+    }
+
+    /// Begin the reverse launch animation; returns false if there was nothing to cancel.
+    @discardableResult
+    func requestLaunchCoverCancel() -> Bool {
+        guard var cover = launchCover, !cover.canceling else { return false }
+        cover.canceling = true
+        cover.ready = false
+        launchCover = cover
+        return true
+    }
+
+    /// Cover exit finished — clear the session (web keeps playing; external apps stay in front).
+    func finishLaunchCover() {
+        launchCover = nil
+        unpinLaunchCover()
+    }
+
+    /// Draw the Starting cover above every other app so Steam can't flash through for a frame.
+    func pinLaunchCoverAboveApps() {
+        guard let window else { return }
+        if launchCoverRestoredLevel == nil { launchCoverRestoredLevel = window.level }
+        window.level = .screenSaver
+        window.orderFrontRegardless()
+    }
+
+    func unpinLaunchCover() {
+        guard let window else {
+            launchCoverRestoredLevel = nil
+            return
+        }
+        if let level = launchCoverRestoredLevel {
+            window.level = level
+            launchCoverRestoredLevel = nil
+        }
+    }
+
+    /// Launch cover finished reversing — tear down immediately (no half-state that can stick).
+    func completeLaunchCoverCancel() { finishGoingHome() }
     var currentLocalMovie: Movie? { playbackCoordinator.currentLocalMovie }
     var localMoviePlayer: String { playbackCoordinator.localMoviePlayer }
     var iinaPlaybackError: String? { playbackCoordinator.iinaPlaybackError }
@@ -299,6 +344,11 @@ final class TVController: NSObject, ObservableObject {
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
+        // External launch cover (Steam / Mac): Back cancels like Home; ignore other input.
+        if launchCover != nil {
+            if case .back = command { goHome() }
+            return
+        }
         switch sheets.top {
         case .setup: handleSetup(command); return
         case .profilePicker: handleProfiles(command); return
@@ -493,13 +543,54 @@ final class TVController: NSObject, ObservableObject {
             playbackCoordinator.playWeb(service, url: url)
         case .app(let bundleID):
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
+            beginLaunchCover(service)
             launchedAppID = bundleID
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            scheduleLaunchCoverTimeout()
+            pinLaunchCoverAboveApps()
+            holdLaunchCoverFocus()
+            // Same activate observer as Steam: reclaim focus if the app still steals it.
+            watchForSteamGame()
+            steamWatchUntil = nil
+            let generation = launchCancelGeneration
+            // Launch in the background — Mac TV keeps the cover until fullscreen hand-off.
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = false
+            NSWorkspace.shared.openApplication(at: url, configuration: config) { [weak self] app, error in
+                Task { @MainActor in
+                    guard let self, self.launchCancelGeneration == generation,
+                          self.launchCover != nil, self.launchCover?.canceling != true else { return }
+                    if let error {
+                        self.showToast(error.localizedDescription)
+                        self.finishGoingHome()
+                        return
+                    }
+                    guard let app else {
+                        self.finishGoingHome()
+                        return
+                    }
+                    self.steamGamePID = app.processIdentifier
+                    self.handOffExternalLaunch(pid: app.processIdentifier, generation: generation)
+                }
+            }
         case .steam(let appID):
-            NSWorkspace.shared.open(SteamLibrary.launchURL(for: appID))
+            beginLaunchCover(service)
             openedSteam = true
-            if appID != SteamLibrary.bigPicture.appID { watchForSteamGame() }
-            showToast("Opening \(service.name) in Steam")
+            pinLaunchCoverAboveApps()
+            holdLaunchCoverFocus()
+            // Hide Steam before the URL wakes it — covers the one-frame flash.
+            if appID != SteamLibrary.bigPicture.appID {
+                suppressSteamUIWhileLaunchingGame()
+            }
+            // Don't let Steam jump in front of the Starting cover; hand-off is Mac TV's call.
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = false
+            NSWorkspace.shared.open(SteamLibrary.launchURL(for: appID), configuration: config)
+            if appID == SteamLibrary.bigPicture.appID {
+                watchForSteamBigPicture()
+            } else {
+                watchForSteamGame()
+            }
+            scheduleLaunchCoverTimeout()
         case .movies:
             openMovies()
         case .addApp:
@@ -509,16 +600,107 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
+    /// After the process is up: wait for fullscreen, then mark the cover ready.
+    func handOffExternalLaunch(pid: pid_t, generation: UUID? = nil) {
+        let generation = generation ?? launchCancelGeneration
+        GameWindow.fillTV(pid: pid, screen: window?.screen) { [weak self] _ in
+            guard let self, self.launchCancelGeneration == generation,
+                  self.launchCover != nil, self.launchCover?.canceling != true else { return }
+            // Hand-off is Mac TV's call: hide Steam, game front, then drop the cover.
+            self.suppressSteamUIWhileLaunchingGame()
+            self.activateExternalApp(pid: pid)
+            self.markLaunchCoverReady()
+            self.protectExternalAppFocus(pid: pid, generation: generation)
+        }
+    }
+
+    /// Put the launched game/app in front (Steam must not win this race).
+    func activateExternalApp(pid: pid_t) {
+        guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else { return }
+        app.activate(options: [.activateIgnoringOtherApps])
+        _ = AXUIElementSetAttributeValue(
+            AXUIElementCreateApplication(pid),
+            kAXFrontmostAttribute as CFString,
+            kCFBooleanTrue)
+    }
+
+    /// Steam often reactivates right after a game goes fullscreen — keep the game in front for a bit.
+    func protectExternalAppFocus(pid: pid_t, generation: UUID) {
+        Task { @MainActor [weak self] in
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self, self.launchCancelGeneration == generation, self.steamGamePID == pid else { return }
+                let front = NSWorkspace.shared.frontmostApplication
+                if front?.processIdentifier == pid { continue }
+                // Only fight Steam / Mac TV — leave other apps alone if the user switched away.
+                let stolenBySteam = front?.bundleIdentifier.map {
+                    $0 == SteamLibrary.bundleID || $0.hasPrefix("com.valvesoftware.")
+                } ?? false
+                let stolenByUs = front?.bundleIdentifier == Bundle.main.bundleIdentifier
+                guard stolenBySteam || stolenByUs else { return }
+                if stolenBySteam { self.suppressSteamUIWhileLaunchingGame() }
+                self.activateExternalApp(pid: pid)
+            }
+        }
+    }
+
+    /// Cover stuck waiting for a game/app — dismiss so Home isn't locked behind Starting…
+    private func scheduleLaunchCoverTimeout() {
+        let generation = launchCancelGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(120))
+            guard let self, self.launchCancelGeneration == generation,
+                  let cover = self.launchCover, !cover.ready, !cover.canceling else { return }
+            self.showToast("\(cover.service.name) is taking a while. Press Home to stay here.")
+            self.markLaunchCoverReady()
+            self.steamWatchUntil = nil
+        }
+    }
+
+    /// While the cover is up, reclaim focus if Steam/Mac still activates (AX if needed).
+    func holdLaunchCoverFocus() {
+        bringToFront()
+        let generation = launchCancelGeneration
+        Task { @MainActor [weak self] in
+            while true {
+                try? await Task.sleep(for: .milliseconds(350))
+                guard let self, self.launchCancelGeneration == generation,
+                      let cover = self.launchCover, !cover.ready, !cover.canceling else { return }
+                if case .steam = cover.service.kind {
+                    self.suppressSteamUIWhileLaunchingGame()
+                }
+                if NSApp.isActive { continue }
+                self.claimFrontForLaunchCover()
+            }
+        }
+    }
+
+    /// Stronger than `bringToFront` alone — Steam often wins a plain activate race.
+    func claimFrontForLaunchCover() {
+        bringToFront()
+        window?.orderFrontRegardless()
+        _ = AXUIElementSetAttributeValue(
+            AXUIElementCreateApplication(getpid()),
+            kAXFrontmostAttribute as CFString,
+            kCFBooleanTrue)
+    }
+
     func goHome() {
         // First Home during launch: play reverse animation. Second Home (or stuck cancel): force tear-down.
-        if playbackCoordinator.webStarting, !playbackCoordinator.webLaunchCanceling {
+        if let cover = launchCover, !cover.canceling {
             let generation = UUID()
             launchCancelGeneration = generation
-            _ = playbackCoordinator.requestWebLaunchCancel()
+            _ = requestLaunchCoverCancel()
+            // Stop waiting for Steam/Mac without killing the app that may still be starting.
+            steamWatchUntil = nil
+            if case .player = mode {
+                playbackCoordinator.resetPlaybackRequest()
+                playbackCoordinator.webView?.stopLoading()
+            }
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(1200))
                 guard let self, self.launchCancelGeneration == generation else { return }
-                if self.playbackCoordinator.webStarting || self.playbackCoordinator.webLaunchCanceling {
+                if self.launchCover != nil {
                     self.finishGoingHome()
                 }
             }
@@ -529,6 +711,8 @@ final class TVController: NSObject, ObservableObject {
 
     private func finishGoingHome() {
         launchCancelGeneration = UUID()
+        launchCover = nil
+        unpinLaunchCover()
         // Leaving a browser window lands on the desktop Space, so coming back needs more than activating.
         let leavingBrowser = playbackCoordinator.externalBrowser != nil
         playbackCoordinator.closeIINAPlayback()
@@ -543,6 +727,8 @@ final class TVController: NSObject, ObservableObject {
         playerFailure = nil
         pointer = nil
         launchedAppID = nil
+        openedSteam = false
+        steamWatchUntil = nil
         displayCoordinator.releasePlaybackKeepAwake()
         if leavingBrowser { takeFocusBack() } else { bringToFront() }
     }

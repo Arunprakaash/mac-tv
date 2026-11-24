@@ -9,13 +9,17 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
 
     // Web Playback
     @Published private(set) var webView: WKWebView?
-    /// Covers the empty WKWebView until the first page finish; SPA tiles may still paint after.
-    @Published private(set) var webStarting = false
-    /// Page document is ready — launch overlay plays its exit, then clears `webStarting`.
-    @Published private(set) var webContentReady = false
-    /// Home was requested during launch — reverse the tile zoom, then tear down.
-    @Published private(set) var webLaunchCanceling = false
     private var popups: [NSWindow] = []
+
+    /// True while the shared launch cover is up for the built-in web player.
+    private var webLaunchActive: Bool {
+        guard tv?.launchCover != nil, case .player = tv?.mode else { return false }
+        return true
+    }
+
+    private var webLaunchCanceling: Bool {
+        tv?.launchCover?.canceling == true
+    }
 
     // Native Movie Playback
     @Published private(set) var moviePlayer: MoviePlayer?
@@ -83,17 +87,14 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             notice = "The chosen browser isn't installed, so Mac TV is playing \(service.name)"
         default: break
         }
-        tv?.invalidateLaunchCancelWatchdog()
         playbackRequest = UUID()
         currentLocalMovie = nil
         tv?.playerFailure = nil
         let web = makeWebView(for: service)
         web.load(URLRequest(url: url))
-        webStarting = true
-        webContentReady = false
-        webLaunchCanceling = false
         webView = web
         tv?.setMode(.player(service))
+        tv?.beginLaunchCover(service)
         tv?.clearPointer()
         tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(service.name) in Mac TV")
         tv?.bringToFront()
@@ -101,31 +102,19 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         tv?.showToast(notice)
     }
 
+    /// Retry after a player failure: show the cover again while the page reloads.
     func beginWebStart() {
-        webStarting = true
-        webContentReady = false
-        webLaunchCanceling = false
+        guard case .player(let service) = tv?.mode else { return }
+        tv?.beginLaunchCover(service)
     }
 
     func markWebContentReady() {
-        guard webStarting, !webContentReady, !webLaunchCanceling else { return }
-        webContentReady = true
-    }
-
-    /// Begin the reverse launch animation; returns false if there was nothing to cancel.
-    @discardableResult
-    func requestWebLaunchCancel() -> Bool {
-        guard webStarting, !webLaunchCanceling else { return false }
-        webLaunchCanceling = true
-        webContentReady = false
-        playbackRequest = UUID()
-        webView?.stopLoading()
-        return true
+        guard webLaunchActive, !webLaunchCanceling else { return }
+        tv?.markLaunchCoverReady()
     }
 
     func finishWebStart() {
-        webStarting = false
-        webContentReady = false
+        tv?.finishLaunchCover()
     }
 
     func closeWebPlayback() {
@@ -134,9 +123,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
             web.stopLoading()
         }
         webView = nil
-        webStarting = false
-        webContentReady = false
-        webLaunchCanceling = false
+        if case .player = tv?.mode { tv?.finishLaunchCover() }
         closePopups()
         tv?.displayCoordinator.releasePlaybackKeepAwake()
     }
@@ -221,7 +208,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
     func handleInPlayer(_ command: RemoteCommand, service: Service) {
         if tv?.playerFailure != nil { tv?.handlePlayerFailure(command); return }
         // Launch cover is up — Back cancels to home; ignore the rest until the page is in.
-        if webStarting || webLaunchCanceling {
+        if webLaunchActive {
             if case .back = command { tv?.goHome() }
             return
         }
@@ -655,7 +642,7 @@ extension PlaybackCoordinator: WKNavigationDelegate {
         guard webView === self.webView else { return }
         tv?.playerFailure = nil
         // Page document is in; Netflix/Prime may still draw tiles. Wait out sibling frames too.
-        if webStarting, !webView.isLoading { markWebContentReady() }
+        if webLaunchActive, !webView.isLoading { markWebContentReady() }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard navigationAction.targetFrame?.isMainFrame ?? true, let host = navigationAction.request.url?.host() else { return .allow }
