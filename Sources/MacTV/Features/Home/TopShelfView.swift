@@ -37,9 +37,12 @@ struct AppBanner: View {
         self.expanded = expanded
     }
 
-    private var isMacApp: Bool {
-        if case .app = service.kind { return true }
-        return false
+    /// Mac apps, Add App and Settings: TileArt shelf fill (no borrowed show mix).
+    private var usesTileArtShelf: Bool {
+        switch service.kind {
+        case .app, .addApp, .settings: return true
+        default: return false
+        }
     }
 
     /// A Steam game's own art: its store screenshot or library hero, else its dock tile. It comes before
@@ -50,13 +53,13 @@ struct AppBanner: View {
         return Icons.tile(for: service).map { ("\(service.id)-tile", $0) }
     }
 
-    /// Mac apps: same TileArt 5:3 as the dock, at shelf resolution (no macOS squircle fill).
-    private var macArt: (id: String, image: NSImage)? {
-        guard isMacApp else { return nil }
+    /// TileArt at shelf resolution (Mac icons or SF Symbol marks for Add App / Settings).
+    private var tileArtShelf: (id: String, image: NSImage)? {
+        guard usesTileArtShelf else { return nil }
         return Icons.shelfArt(for: service).map { ("\(service.id)-shelf", $0) }
     }
 
-    /// Movies / Steam heroes / Mac TileArt / show feeds. Mac never falls through to the borrowed mix (#18 / #29).
+    /// Movies / Steam heroes / TileArt system tiles / show feeds.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -70,9 +73,9 @@ struct AppBanner: View {
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
         }
-        // Mac apps only: TileArt fill. No show mix (icons are not a stand-in before shows load).
-        if isMacApp {
-            if let art = macArt {
+        // TileArt fill for Mac / Add App / Settings. No show mix (#18 / #29).
+        if usesTileArtShelf {
+            if let art = tileArtShelf {
                 return (art.id, service.name, art.image, false, true)
             }
             return nil
@@ -86,7 +89,7 @@ struct AppBanner: View {
     var body: some View {
         let show = backdrop
         ZStack(alignment: .topLeading) {
-            // Steam / Mac TileArt: art is the base layer, so it can't be lost under a stale show backdrop.
+            // Steam / TileArt: art is the base layer, so it can't be lost under a stale show backdrop.
             if let show, show.appOwned {
                 AppArtBackdrop(image: show.image)
                     .frame(width: canvas.width, height: canvas.height)
@@ -111,12 +114,12 @@ struct AppBanner: View {
                 }
             }
             // Legibility: a soft top-left wash for the name, a bottom wash for the dock or button.
-            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil || isMacApp ? 0.55 : 0.18)), location: 0),
+            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil || usesTileArtShelf ? 0.55 : 0.18)), location: 0),
                                    .init(color: .black.opacity(expanded ? 0.4 : 0.15), location: 0.4),
                                    .init(color: .clear, location: 0.65)],
                            startPoint: .leading, endPoint: .trailing)
             LinearGradient(stops: [.init(color: .clear, location: 0.45),
-                                   .init(color: .black.opacity(show == nil || isMacApp ? 0.75 : 0.85), location: 1)],
+                                   .init(color: .black.opacity(show == nil || usesTileArtShelf ? 0.75 : 0.85), location: 1)],
                            startPoint: .top, endPoint: .bottom)
             if show != nil {
                 LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)

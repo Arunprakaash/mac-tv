@@ -300,16 +300,7 @@ struct AppTile: View {
     }
 
     @ViewBuilder private var artwork: some View {
-        if case .addApp = service.kind {
-            ZStack {
-                Color.white.opacity(0.08)
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(.white.opacity(0.45), style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
-                Image(systemName: "plus")
-                    .font(.system(size: 64, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-            }
-        } else if case .movies = service.kind {
+        if case .movies = service.kind {
             ZStack {
                 LinearGradient(colors: [Color(hex: "#5E5CE6"), Color(hex: "#1F1A6B")],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -317,15 +308,8 @@ struct AppTile: View {
                     .font(.system(size: 70, weight: .medium))
                     .foregroundStyle(.white)
             }
-        } else if case .settings = service.kind {
-            ZStack {
-                LinearGradient(colors: [Color(hex: "#8E8E93"), Color(hex: "#3A3A3C")],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 76))
-                    .foregroundStyle(.white)
-            }
         } else if let tile = Icons.tile(for: service) {
+            // Built-ins, Mac apps, Add App and Settings: TileArt 5:3 (SF Symbol marks for system tiles).
             Image(nsImage: tile).resizable().interpolation(.high)
         } else {
             ZStack {

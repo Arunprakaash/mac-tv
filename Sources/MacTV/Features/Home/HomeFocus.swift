@@ -18,8 +18,8 @@ extension TVController {
     /// How many things in the Top Shelf can take focus: its Open button, for apps.
     var shelfCount: Int {
         switch shelfService.kind {
-        case .web, .app, .steam, .movies: return topShelf.searchURL(for: shelfService) == nil ? 1 : 2
-        case .addApp, .settings: return 0
+        case .web, .app, .steam, .movies, .addApp, .settings:
+            return topShelf.searchURL(for: shelfService) == nil ? 1 : 2
         }
     }
 

@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import SwiftUI
 
 struct Service: Identifiable, Hashable {
     enum Kind: Hashable {
@@ -94,8 +95,8 @@ enum Catalog {
         Service(id: "movies", name: "Movies", kind: .movies, accent: "#5E5CE6", deep: "#14133A"),
         Service(id: "iina", name: "IINA", kind: .app(bundleID: "com.colliderli.iina"),
                 icon: "iina.png"),
-        Service(id: "add-app", name: "Add App", kind: .addApp),
-        Service(id: "settings", name: "Settings", kind: .settings),
+        Service(id: "add-app", name: "Add App", kind: .addApp, accent: "#636366", deep: "#1C1C1E"),
+        Service(id: "settings", name: "Settings", kind: .settings, accent: "#8E8E93", deep: "#2C2C2E"),
     ]
 
     /// Extra streaming sites under Add App › Suggested (not on the home screen by default).
@@ -293,10 +294,52 @@ enum Icons {
 
     /// `cgImage(forProposedRect: nil)` often returns nil for workspace-drawn Mac icons; TIFF is the fallback.
     static func cgImage(for service: Service, maxPixels: Int = 1024) -> CGImage? {
+        if let system = systemSymbolImage(for: service) { return system }
         guard let image = sourceImage(for: service, maxPixels: maxPixels) else { return nil }
         var rect = NSRect(origin: .zero, size: image.size)
         return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
             ?? image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?.cgImage
+    }
+
+    /// Built-in Add App / Settings marks for TileArt (same path as Mac app icons).
+    private static func systemSymbolImage(for service: Service) -> CGImage? {
+        switch service.kind {
+        case .addApp:
+            return drawSymbol("plus", groundHex: service.deep, weight: .medium, pointSize: 420)
+        case .settings:
+            return drawSymbol("gearshape.fill", groundHex: service.accent, weight: .regular, pointSize: 400)
+        default:
+            return nil
+        }
+    }
+
+    private static func drawSymbol(_ name: String, groundHex: String, weight: NSFont.Weight, pointSize: CGFloat) -> CGImage? {
+        let side = 1024
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor(Color(hex: groundHex)).setFill()
+        NSRect(x: 0, y: 0, width: side, height: side).fill()
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else {
+            NSGraphicsContext.restoreGraphicsState()
+            return nil
+        }
+        let tinted = NSImage(size: symbol.size, flipped: false) { rect in
+            NSColor.white.set()
+            rect.fill()
+            symbol.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
+            return true
+        }
+        let size = tinted.size
+        let rect = NSRect(x: (CGFloat(side) - size.width) / 2, y: (CGFloat(side) - size.height) / 2,
+                          width: size.width, height: size.height)
+        tinted.draw(in: rect)
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.cgImage
     }
 
     private static var tiles: [String: NSImage] = [:]

@@ -34,6 +34,16 @@ struct SteamArtworkTests {
         #expect(TileArt.shelfMarkCenterY < 0.5)
         #expect(TileArt.shelfMarkCenterY == (TileArt.shelfSize.height - TileArt.shelfDockClearance) / (2 * TileArt.shelfSize.height))
     }
+
+    @Test @MainActor
+    func addAppAndSettingsHaveTileArt() {
+        let add = Catalog.services.first { $0.id == "add-app" }!
+        let settings = Catalog.services.first { $0.id == "settings" }!
+        #expect(Icons.tile(for: add) != nil)
+        #expect(Icons.shelfArt(for: add) != nil)
+        #expect(Icons.tile(for: settings) != nil)
+        #expect(Icons.shelfArt(for: settings) != nil)
+    }
 }
 
 @Suite @MainActor
