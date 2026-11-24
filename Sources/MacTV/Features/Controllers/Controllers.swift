@@ -85,8 +85,18 @@ final class ControllerInput {
 
     private func press(_ button: GCControllerButtonInput, _ command: RemoteCommand) {
         button.pressedChangedHandler = { [weak self] _, _, pressed in
-            guard pressed else { return }
-            MainActor.assumeIsolated { self?.send(command) }
+            MainActor.assumeIsolated {
+                // Arrange Remove needs Down/Up; everywhere else Select stays a single edge.
+                if case .select = command {
+                    if self?.tv?.organizer != nil {
+                        self?.send(pressed ? .selectDown : .selectUp)
+                    } else if pressed {
+                        self?.send(.select)
+                    }
+                } else if pressed {
+                    self?.send(command)
+                }
+            }
         }
     }
 

@@ -183,7 +183,7 @@ function send(a, extra, kind = 'tick') {
 }
 
 // State: connection, the app list, settings.
-let appsShown = '', apps = [], currentLocalMovie = null, iinaInstalled = false;
+let appsShown = '', apps = [], tvSheet = '', currentLocalMovie = null, iinaInstalled = false;
 let stateGeneration = 0, appMutationPending = false, displayChanging = false, availableDisplays = [];
 let stateInFlight = null;
 async function refresh(duringMutation = false) {
@@ -213,6 +213,7 @@ async function readState() {
     const focused = appFocus();
     apps = s.apps;
     currentLocalMovie = s.currentLocalMovie || null;
+    tvSheet = typeof s.sheet === 'string' ? s.sheet : '';
     iinaInstalled = !!s.iinaInstalled;
     updateMovieOptions();
     showSleep(s.sleepMinutes || 0);
@@ -942,9 +943,20 @@ try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
   const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
   pad.addEventListener('pointerdown', e => {
     pad.setPointerCapture(e.pointerId);
-    start = { x: e.clientX, y: e.clientY, zone: zoneAt(e.clientX, e.clientY) };
+    start = { x: e.clientX, y: e.clientY, zone: zoneAt(e.clientX, e.clientY), okHeld: false };
     repeated = false;
-    if (start.zone && start.zone !== 'ok') {
+    if (start.zone === 'ok') {
+      // Holding OK only means something in Arrange Apps (hold to remove), and only once the thumb has
+      // stayed put for a moment: a swipe that starts in the middle is still a swipe, and a tap an OK.
+      if (tvSheet === 'arrange-apps') {
+        timer = setTimeout(() => {
+          if (!start) return;
+          start.okHeld = true;
+          flash('ok');
+          send('okdown', {}, 'tap');
+        }, 200);
+      }
+    } else if (start.zone) {
       timer = setTimeout(() => {
         repeated = true;
         timer = setInterval(() => { flash(start.zone); send(start.zone, {}, 'repeat'); }, 130);
@@ -952,20 +964,32 @@ try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
     }
   });
   pad.addEventListener('pointermove', e => {
-    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 24) stop();
+    if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) <= 24) return;
+    stop();
+    // Moving away lets go of a hold, and the gesture carries on as a swipe.
+    if (start.okHeld) { start.okHeld = false; send('okup', {}, 'tap'); }
   });
   pad.addEventListener('pointerup', e => {
     if (!start) return;
     stop();
     const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    const okHeld = start.okHeld;
     let zone = start.zone;
     start = null;
+    if (okHeld) {
+      send('okup', {}, 'tap');
+      return;
+    }
     if (Math.hypot(dx, dy) > 28) zone = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
     else if (repeated || !zone) return;
     flash(zone);
     send(zone, {}, zone === 'ok' ? 'tap' : 'tick');
   });
-  const cancelHold = () => { stop(); start = null; };
+  const cancelHold = () => {
+    if (start?.okHeld) send('okup', {}, 'tap');
+    stop();
+    start = null;
+  };
   pad.addEventListener('pointercancel', cancelHold);
   pad.addEventListener('lostpointercapture', cancelHold);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') cancelHold(); });

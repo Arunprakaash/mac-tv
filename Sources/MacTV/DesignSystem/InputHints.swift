@@ -11,6 +11,7 @@ import SwiftUI
 //   listAdjust  Choose · Change · Select · Close
 //   form        Choose · Select · Close   (fields / tabs)
 //   arrange     Choose app · Choose action · Apply · Close
+//               (Arrange sheet swaps Apply → Hold to remove when trash is focused)
 //   chooser     Select · Close           (2–3 buttons)
 //   pick        Choose · Select          (non-dismissible: Profiles, Setup)
 //   info        Close

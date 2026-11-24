@@ -27,8 +27,8 @@ import Testing
         let tv = TVController(library: AppLibrary(folder: folder))
         tv.settings = SettingsPanel()
         tv.openOrganizer()
-        tv.organizer?.checked = ["youtube", "prime"]
-        tv.organizer?.action = .check
+        tv.organizer?.selectedID = "youtube"
+        tv.organizer?.action = .remove
         tv.topShelfPreferences = TopShelfPreferencesPanel()
         tv.playerFailure = PlayerFailure(message: "The streaming page couldn't load. Check the connection, then try again.")
         tv.playbackCheck = PlaybackDiagnostics()

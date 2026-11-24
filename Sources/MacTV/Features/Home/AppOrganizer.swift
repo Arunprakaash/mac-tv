@@ -1,23 +1,29 @@
+import AppKit
 import SwiftUI
 
-/// App identities, rather than row indices, keep selection on the same app as its position changes.
+/// Pin / earlier / later keep the same app selected so the row moves with it; remove keeps the slot.
 struct AppOrganizer: Equatable {
     enum Action: Int, CaseIterable {
-        /// The checkbox at the start of the row.
-        case check
-        case pin, earlier, later
+        case pin, earlier, later, remove
     }
 
     var selectedID: String?
     var action: Action = .pin
-    /// Apps ticked for deleting, by identity.
-    var checked: Set<String> = []
-    /// Delete was pressed once: the next press deletes, anything else changes nothing.
-    var confirmingDelete = false
+    /// A press that can't be held (an older phone page, VoiceOver) asked to remove this app: the next
+    /// such press removes it. Anything else cancels.
+    var confirmingRemoveID: String?
 }
 
 extension TVController {
+    /// Tests can shorten this; otherwise 0.9s, or 0.35s with Reduce Motion.
+    static var removeHoldDurationOverride: TimeInterval?
+    static var removeHoldDuration: TimeInterval {
+        if let removeHoldDurationOverride { return removeHoldDurationOverride }
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.35 : 0.9
+    }
+
     func openOrganizer() {
+        cancelRemoveHold()
         let focusedID: String?
         if case .app(let index) = focus, services.indices.contains(index) {
             focusedID = services[index].id
@@ -31,43 +37,63 @@ extension TVController {
     /// Call after a library refresh, including edits made by the phone while this sheet is open.
     func reconcileOrganizerSelection() {
         guard var panel = organizer else { return }
-        let ids = Set(arrangedServices.map(\.id))
-        if !ids.contains(panel.selectedID ?? "") { panel.selectedID = arrangedServices.first?.id }
-        panel.checked.formIntersection(ids)
-        if panel != organizer { organizer = panel }
+        if !arrangedServices.contains(where: { $0.id == panel.selectedID }) {
+            cancelRemoveHold()
+            panel.selectedID = arrangedServices.first?.id
+            organizer = panel
+        }
     }
 
     func handleOrganizer(_ command: RemoteCommand) {
         guard var panel = organizer else { return }
         let apps = arrangedServices
         let index = apps.firstIndex { $0.id == panel.selectedID } ?? 0
-        if case .deleteBackward = command {} else { panel.confirmingDelete = false }
+        if case .select = command {} else if panel.confirmingRemoveID != nil {
+            panel.confirmingRemoveID = nil
+            organizer = panel
+        }
         switch command {
         case .back:
+            cancelRemoveHold()
             organizer = nil
             return
+        case .selectDown:
+            guard let id = panel.selectedID else { return }
+            if panel.action == .remove {
+                beginRemoveHold(for: id)
+            } else {
+                activateOrganizerAction(panel.action, for: id)
+            }
+            return
+        case .select:
+            // A plain Select has no release to time a hold by, so removing takes a second press instead.
+            guard let id = panel.selectedID else { return }
+            guard panel.action == .remove else {
+                activateOrganizerAction(panel.action, for: id)
+                return
+            }
+            guard panel.confirmingRemoveID == id else {
+                panel.confirmingRemoveID = id
+                break
+            }
+            cancelRemoveHold()
+            activateOrganizerAction(.remove, for: id)
+            return
+        case .selectUp:
+            cancelRemoveHold()
+            return
         case .move(.up), .move(.down):
+            cancelRemoveHold()
             guard !apps.isEmpty else { return }
             let offset: Int
             if case .move(.up) = command { offset = -1 } else { offset = 1 }
             panel.selectedID = apps[min(max(index + offset, 0), apps.count - 1)].id
-        case .move(.left):
-            panel.action = AppOrganizer.Action(rawValue: max(panel.action.rawValue - 1, 0)) ?? .check
-        case .move(.right):
-            panel.action = AppOrganizer.Action(rawValue: min(panel.action.rawValue + 1, AppOrganizer.Action.allCases.count - 1)) ?? .later
-        case .select:
-            guard let id = panel.selectedID else { return }
-            activateOrganizerAction(panel.action, for: id)
-            return
-        case .deleteBackward:
-            // Added apps can't be brought back, so Delete asks for a second press, like Sleep Mac.
-            guard !panel.checked.isEmpty else { return }
-            guard panel.confirmingDelete else {
-                panel.confirmingDelete = true
-                break
-            }
-            deleteCheckedApps()
-            return
+        case .move(.left), .seek(forward: false):
+            cancelRemoveHold()
+            panel.action = AppOrganizer.Action(rawValue: max(panel.action.rawValue - 1, 0)) ?? .pin
+        case .move(.right), .seek(forward: true):
+            cancelRemoveHold()
+            panel.action = AppOrganizer.Action(rawValue: min(panel.action.rawValue + 1, AppOrganizer.Action.allCases.count - 1)) ?? .remove
         default:
             return
         }
@@ -75,49 +101,87 @@ extension TVController {
     }
 
     func activateOrganizerAction(_ action: AppOrganizer.Action, for id: String) {
-        guard let panel = organizer, arrangedServices.contains(where: { $0.id == id }) else { return }
-        organizer = AppOrganizer(selectedID: id, action: action, checked: panel.checked)
-        switch action {
-        case .check: organizer?.checked.formSymmetricDifference([id])
-        case .pin: setPinned(id, !isPinned(id))
-        case .earlier: moveApp(id, by: -1)
-        case .later: moveApp(id, by: 1)
+        guard organizer != nil, let index = arrangedServices.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(Motion.navigate) {
+            switch action {
+            case .pin:
+                setPinned(id, !isPinned(id))
+                selectOrganizerSlot(index, action: .pin)
+            case .earlier:
+                moveApp(id, by: -1)
+                organizer = AppOrganizer(selectedID: id, action: .earlier)
+            case .later:
+                moveApp(id, by: 1)
+                organizer = AppOrganizer(selectedID: id, action: .later)
+            case .remove:
+                removeApp(id)
+                selectOrganizerSlot(index, action: .remove)
+            }
         }
     }
 
-    /// A click on a checkbox: ticks or unticks the app without moving the remote's focus onto it.
-    func toggleChecked(_ id: String) {
+    /// Starts hold-to-remove on the trash control. Idempotent while already holding the same app.
+    func beginRemoveHold(for id: String) {
         guard organizer != nil, arrangedServices.contains(where: { $0.id == id }) else { return }
-        organizer?.checked.formSymmetricDifference([id])
-        organizer?.confirmingDelete = false
+        if removeHoldID == id, removeHoldTimer != nil { return }
+        cancelRemoveHold()
+        removeHoldID = id
+        removeHoldProgress = 0
+        var panel = organizer ?? AppOrganizer()
+        panel.selectedID = id
+        panel.action = .remove
+        organizer = panel
+        let duration = Self.removeHoldDuration
+        let started = Date()
+        // ~12 Hz into `removeHoldProgress` (not `sheets`) so hold doesn't thrash SheetStack.
+        // `.common` so ticks continue during AppKit mouse tracking.
+        let timer = Timer(timeInterval: 1.0 / 12.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard self.removeHoldID == id, self.organizer != nil else {
+                    self.cancelRemoveHold()
+                    return
+                }
+                let progress = min(CGFloat(Date().timeIntervalSince(started) / duration), 1)
+                self.removeHoldProgress = progress
+                if progress >= 1 { self.commitRemoveHold() }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        removeHoldTimer = timer
     }
 
-    /// Deletes the ticked apps: added apps go, built-in ones are hidden until restored in Settings.
-    /// The selection stays where it was, on the app that moves up into its place.
-    func deleteCheckedApps() {
-        guard let panel = organizer, !panel.checked.isEmpty else { return }
+    /// Releases an in-progress hold without removing.
+    func cancelRemoveHold() {
+        removeHoldTimer?.invalidate()
+        removeHoldTimer = nil
+        removeHoldID = nil
+        if removeHoldProgress != 0 { removeHoldProgress = 0 }
+    }
+
+    /// True while Select is held on Remove (tests and UI).
+    var isHoldingRemove: Bool { removeHoldTimer != nil }
+
+    /// Commits an in-progress hold immediately (tests).
+    func finishRemoveHold() { commitRemoveHold() }
+
+    private func commitRemoveHold() {
+        guard let id = removeHoldID else { return }
+        removeHoldTimer?.invalidate()
+        removeHoldTimer = nil
+        removeHoldID = nil
+        removeHoldProgress = 0
+        activateOrganizerAction(.remove, for: id)
+    }
+
+    /// After pin/remove, keep the row number; if that slot is gone, the one above it.
+    private func selectOrganizerSlot(_ index: Int, action: AppOrganizer.Action) {
         let apps = arrangedServices
-        let index = apps.firstIndex { $0.id == panel.selectedID } ?? 0
-        var failed = Set<String>()
-        var deleted: [String] = []
-        for app in apps where panel.checked.contains(app.id) {
-            if removeApp(app.id, announce: false) { deleted.append(app.name) } else { failed.insert(app.id) }
+        guard !apps.isEmpty else {
+            organizer = AppOrganizer(selectedID: nil, action: action)
+            return
         }
-        // One message for the lot.
-        if !failed.isEmpty {
-            showToast("Couldn't delete \(failed.count == 1 ? "1 app" : "\(failed.count) apps"). Check available storage and folder permissions.")
-        } else if deleted.count == 1 {
-            showToast("Deleted \(deleted[0])")
-        } else if !deleted.isEmpty {
-            showToast("Deleted \(deleted.count) apps")
-        }
-        let remaining = arrangedServices
-        let keep = remaining.contains { $0.id == panel.selectedID }
-            ? panel.selectedID
-            : apps[index...].first { remaining.map(\.id).contains($0.id) }?.id ?? remaining.last?.id
-        organizer?.selectedID = keep
-        organizer?.checked = failed
-        organizer?.confirmingDelete = false
+        organizer = AppOrganizer(selectedID: apps[min(index, apps.count - 1)].id, action: action)
     }
 }
 
@@ -130,15 +194,15 @@ struct AppOrganizerSheet: View {
         let apps = tv.arrangedServices
         VStack(alignment: .leading, spacing: 22) {
             Text("Arrange Apps").font(.tv(.title3, emphasized: true))
-            Text(tv.organizer?.checked.isEmpty == false
-                 ? "Built-in apps you delete can be brought back in Settings › Apps."
+            Text(tv.organizer?.action == .remove
+                 ? "Removed apps can be added back from Add App › Suggested."
                  : "Favourites stay first. The first six apps appear in the dock.")
                 .font(.tv(.caption1)).foregroundStyle(.white.opacity(0.7))
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    // Eager, not lazy: deleting several rows at once from a lazy stack left part of the
-                    // sheet undrawn on 1x external displays until the next focus change.
+                    // VStack (not Lazy): LazyVStack recycles by slot, so pin/move animations look like
+                    // the wrong row sliding while the label updates.
                     VStack(spacing: 12) {
                         ForEach(Array(apps.enumerated()), id: \.element.id) { index, service in
                             appRow(service, position: index + 1)
@@ -150,6 +214,7 @@ struct AppOrganizerSheet: View {
                         }
                     }
                     .padding(8)
+                    .animation(reduceMotion ? nil : Motion.navigate, value: apps.map(\.id))
                 }
                 .frame(height: min(550, max(280, canvas.height - 450)))
                 .onAppear { scrollToSelection(proxy) }
@@ -157,28 +222,24 @@ struct AppOrganizerSheet: View {
                 .onChange(of: apps.map(\.id)) { _, _ in scrollToSelection(proxy) }
             }
 
-            HStack(spacing: 18) {
-                InputHintsBar(tv: tv, set: .arrange)
-                Spacer(minLength: 24)
-                // The bulk, destructive action sits apart from the navigation hints, in system red.
-                if let panel = tv.organizer, !panel.checked.isEmpty {
-                    let apps = panel.checked.count == 1 ? "1 app" : "\(panel.checked.count) apps"
-                    InputHint(action: .delete(panel.confirmingDelete ? "Press again to delete \(apps)" : "Delete \(apps)"),
-                              kind: tv.lastInputKind, controller: tv.controller)
-                        .font(.tv(.caption2, emphasized: panel.confirmingDelete))
-                        .foregroundStyle(Color(hex: "#FF453A"))
-                        .contentShape(Rectangle())
-                        .onTapGesture { tv.handle(.deleteBackward, from: .pointer) }
-                        .accessibilityAddTraits(.isButton)
-                }
-            }
-            .padding(.trailing, 8) // Lines the hint up with the rows' trailing edge.
+            InputHintsBar(tv: tv, actions: [
+                .moveVertical("Choose app"),
+                .moveHorizontal("Choose action"),
+                .select(selectVerb),
+                .back("Close"),
+            ])
         }
         .padding(48)
         .frame(width: 1340, alignment: .leading)
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
+        .onDisappear { tv.cancelRemoveHold() }
+    }
+
+    private var selectVerb: String {
+        guard let panel = tv.organizer, panel.action == .remove else { return "Apply" }
+        return panel.confirmingRemoveID == panel.selectedID && panel.selectedID != nil ? "Press again to remove" : "Hold to remove"
     }
 
     private func scrollToSelection(_ proxy: ScrollViewProxy) {
@@ -189,21 +250,12 @@ struct AppOrganizerSheet: View {
     private func appRow(_ service: Service, position: Int) -> some View {
         let selected = tv.organizer?.selectedID == service.id
         let pinned = tv.isPinned(service.id)
-        let checked = tv.organizer?.checked.contains(service.id) == true
-        let checkFocused = selected && tv.organizer?.action == .check
         return HStack(spacing: 16) {
             Text("\(position)")
                 .font(.system(size: 22, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(.white.opacity(0.55)).frame(width: 38)
             Button {
-                tv.toggleChecked(service.id)
-            } label: {
-                OrganizerCheckbox(checked: checked, focused: checkFocused)
-            }
-            .buttonStyle(OrganizerCheckboxStyle())
-            .accessibilityLabel("Select \(service.name) to delete")
-            .accessibilityValue(checked ? "Selected" : "Not selected")
-            Button {
+                tv.cancelRemoveHold()
                 tv.organizer?.selectedID = service.id
             } label: {
                 HStack(spacing: 14) {
@@ -223,26 +275,32 @@ struct AppOrganizerSheet: View {
                          enabled: tv.canMoveApp(service.id, by: -1))
             actionButton(.later, title: "Later", symbol: "arrow.down", service: service,
                          enabled: tv.canMoveApp(service.id, by: 1))
+            removeButton(service)
         }
         .padding(.horizontal, 20).padding(.vertical, 18)
-        .background(.white.opacity(selected ? 0.13 : 0.05), in: RoundedRectangle(cornerRadius: 22))
+        .background {
+            RoundedRectangle(cornerRadius: 22)
+                .fill(.white.opacity(selected ? 0.13 : 0.05))
+                .animation(reduceMotion ? nil : Motion.focus, value: selected)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 22)
                 .strokeBorder(.white.opacity(selected ? 0.5 : 0), lineWidth: 2)
+                .animation(reduceMotion ? nil : Motion.focus, value: selected)
                 .allowsHitTesting(false)
         }
-        .animation(reduceMotion ? nil : Motion.focus, value: selected)
     }
 
     private func actionButton(_ action: AppOrganizer.Action, title: String, symbol: String,
                               service: Service, enabled: Bool) -> some View {
         let focused = tv.organizer?.selectedID == service.id && tv.organizer?.action == action
         return Button {
+            tv.cancelRemoveHold()
             tv.activateOrganizerAction(action, for: service.id)
         } label: {
             Label(title, systemImage: symbol)
                 .font(.system(size: 22, weight: .semibold))
-                .frame(width: 146, height: 54)
+                .frame(width: 132, height: 54)
                 .foregroundStyle(focused ? .black : .white)
                 .background(focused ? .white : .white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
                 .opacity(enabled ? 1 : 0.35)
@@ -252,37 +310,78 @@ struct AppOrganizerSheet: View {
         .accessibilityLabel("\(title) \(service.name)")
         .animation(reduceMotion ? nil : Motion.focus, value: focused)
     }
-}
 
-/// A checkbox at TV size: a quiet outline when off, white with a dark checkmark when on, like Mac TV's
-/// other focus and selection. Remote focus draws a white ring around it; a mouse click leaves no highlight behind.
-struct OrganizerCheckbox: View {
-    let checked: Bool
-    let focused: Bool
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
-        ZStack {
-            shape.fill(checked ? Color.white : .white.opacity(0.06))
-            shape.strokeBorder(checked ? .clear : .white.opacity(0.3), lineWidth: 1.5)
-            if checked {
-                Image(systemName: "checkmark").font(.system(size: 17, weight: .bold)).foregroundStyle(.black)
+    private func removeButton(_ service: Service) -> some View {
+        let focused = tv.organizer?.selectedID == service.id && tv.organizer?.action == .remove
+        let progress = (tv.organizer?.selectedID == service.id) ? tv.removeHoldProgress : 0
+        let holding = progress > 0
+        let ring = Color(hex: "#FF453A").opacity(0.45 + 0.55 * Double(progress))
+        return Image(systemName: "trash")
+            .font(.system(size: 22, weight: .semibold))
+            .frame(width: 54, height: 54)
+            .foregroundStyle(focused || holding ? Color(hex: "#FF453A") : .white)
+            .background(focused || holding ? .white : .white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .trim(from: 0, to: progress)
+                    .stroke(ring, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    // Glides between the hold timer's ticks instead of stepping.
+                    .animation(holding ? .linear(duration: 1.0 / 12.0) : nil, value: progress)
             }
-        }
-        .frame(width: 28, height: 28)
-        .padding(4)
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.white.opacity(focused ? 0.9 : 0), lineWidth: 3)
-        }
-        .frame(width: 44, height: 44)
-        .contentShape(Rectangle())
+            .overlay {
+                // AppKit press tracking: SwiftUI Button/ScrollView drop isPressed on redraw.
+                OrganizerPointerHold { pressed in
+                    if pressed { tv.beginRemoveHold(for: service.id) }
+                    else { tv.cancelRemoveHold() }
+                }
+            }
+            .accessibilityLabel("Hold to remove \(service.name)")
+            .accessibilityAddTraits(.isButton)
+            .animation(reduceMotion ? nil : Motion.focus, value: focused)
     }
 }
 
-/// Dims while pressed, like a system control, and keeps no state once the press ends.
-struct OrganizerCheckboxStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.7 : 1)
+/// Mouse down/up for hold-to-remove; survives SwiftUI redraws while progress updates.
+private struct OrganizerPointerHold: NSViewRepresentable {
+    var onPressed: (Bool) -> Void
+
+    func makeNSView(context: Context) -> OrganizerPointerHoldView {
+        let view = OrganizerPointerHoldView()
+        view.onPressed = onPressed
+        return view
+    }
+
+    func updateNSView(_ nsView: OrganizerPointerHoldView, context: Context) {
+        nsView.onPressed = onPressed
+    }
+}
+
+private final class OrganizerPointerHoldView: NSView {
+    var onPressed: ((Bool) -> Void)?
+    private var down = false
+
+    override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        down = true
+        onPressed?(true)
+        // Track until release so ScrollView / redraws don't swallow the up.
+        while down {
+            guard let next = window?.nextEvent(matching: [.leftMouseUp, .leftMouseDragged],
+                                               until: .distantFuture,
+                                               inMode: .eventTracking,
+                                               dequeue: true) else { break }
+            if next.type == .leftMouseUp {
+                down = false
+            } else {
+                let loc = convert(next.locationInWindow, from: nil)
+                if !bounds.insetBy(dx: -4, dy: -4).contains(loc) {
+                    down = false
+                }
+            }
+        }
+        onPressed?(false)
     }
 }
