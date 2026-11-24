@@ -6,8 +6,9 @@ struct RootView: View {
 
     /// Home stays mounted under the launch cover so cancel can reveal it again without rebuilding.
     private var showsHomeCanvas: Bool {
-        guard tv.externalBrowser == nil, tv.moviePlayer == nil, tv.movies == nil else { return false }
+        // Cover draws over BravePlaybackView / player until hand-off.
         if tv.launchCover != nil { return true }
+        guard tv.externalBrowser == nil, tv.moviePlayer == nil, tv.movies == nil else { return false }
         if case .player = tv.mode { return false }
         if case .movie = tv.mode { return false }
         return true

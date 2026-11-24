@@ -116,6 +116,25 @@ final class TVController: NSObject, ObservableObject {
         launchCover = LaunchCoverSession(service: service)
     }
 
+    /// Mac app / external browser: same cover + pin + focus hold as Steam (observers via watchForSteamGame).
+    func beginExternalLaunchCover(_ service: Service) {
+        beginLaunchCover(service)
+        scheduleLaunchCoverTimeout()
+        pinLaunchCoverAboveApps()
+        holdLaunchCoverFocus()
+        watchForSteamGame()
+        steamWatchUntil = nil
+    }
+
+    /// External browser window is placed — drop the cover; protect keeps it front if Steam steals.
+    func completeExternalBrowserLaunch(pid: pid_t, bundleID: String) {
+        setLaunchedAppID(bundleID)
+        steamGamePID = pid
+        activateExternalApp(pid: pid)
+        markLaunchCoverReady()
+        protectExternalAppFocus(pid: pid, generation: launchCancelGeneration)
+    }
+
     func markLaunchCoverReady() {
         guard var cover = launchCover, !cover.ready, !cover.canceling else { return }
         cover.ready = true
@@ -479,6 +498,11 @@ final class TVController: NSObject, ObservableObject {
         }
 
         if playbackCoordinator.externalBrowser != nil {
+            // Browser launch cover: Back cancels; don't forward into the waking browser yet.
+            if let cover = launchCover, !cover.canceling {
+                if case .back = command { goHome() }
+                return
+            }
             if NSApp.isActive {
                 switch command {
                 case .move, .select, .back: handleBrowserScreen(command); return
@@ -497,6 +521,12 @@ final class TVController: NSObject, ObservableObject {
         if !NSApp.isActive, let front = NSWorkspace.shared.frontmostApplication,
            front.bundleIdentifier == launchedAppID
             || (openedSteam && (front.bundleIdentifier == SteamLibrary.bundleID || front.processIdentifier == steamGamePID)) {
+            // During Steam/Mac cover, don't forward into Steam — reclaim Mac TV (same as before simplify).
+            if launchCover != nil, launchCover?.canceling != true {
+                bringToFront()
+                if case .back = command { goHome() }
+                return
+            }
             forwardToFrontApp(command)
             return
         }
@@ -543,14 +573,8 @@ final class TVController: NSObject, ObservableObject {
             playbackCoordinator.playWeb(service, url: url)
         case .app(let bundleID):
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
-            beginLaunchCover(service)
+            beginExternalLaunchCover(service)
             launchedAppID = bundleID
-            scheduleLaunchCoverTimeout()
-            pinLaunchCoverAboveApps()
-            holdLaunchCoverFocus()
-            // Same activate observer as Steam: reclaim focus if the app still steals it.
-            watchForSteamGame()
-            steamWatchUntil = nil
             let generation = launchCancelGeneration
             // Launch in the background — Mac TV keeps the cover until fullscreen hand-off.
             let config = NSWorkspace.OpenConfiguration()
@@ -568,6 +592,8 @@ final class TVController: NSObject, ObservableObject {
                         self.finishGoingHome()
                         return
                     }
+                    // Keep the app hidden under the pinned cover until fullscreen hand-off.
+                    app.hide()
                     self.steamGamePID = app.processIdentifier
                     self.handOffExternalLaunch(pid: app.processIdentifier, generation: generation)
                 }
@@ -729,6 +755,7 @@ final class TVController: NSObject, ObservableObject {
         launchedAppID = nil
         openedSteam = false
         steamWatchUntil = nil
+        steamGamePID = nil
         displayCoordinator.releasePlaybackKeepAwake()
         if leavingBrowser { takeFocusBack() } else { bringToFront() }
     }

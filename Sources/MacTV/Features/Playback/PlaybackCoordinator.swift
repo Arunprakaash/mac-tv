@@ -517,6 +517,7 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         tv?.browserFocus = 0
         externalBrowserService = service
         tv?.setMode(.player(service))
+        tv?.beginExternalLaunchCover(service)
         tv?.displayCoordinator.holdPlaybackKeepAwake(reason: "Watching \(service.name) in \(name)")
         openExternalBrowser(session, url: url)
     }
@@ -546,12 +547,19 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
                 }
                 try session.activate()
                 self.externalBrowserOpening = false
+                // Cover stays up until the browser window is placed and fullscreen — then hand off.
+                if let pid = session.processIdentifier {
+                    self.tv?.completeExternalBrowserLaunch(pid: pid, bundleID: session.bundleID)
+                } else {
+                    self.tv?.markLaunchCoverReady()
+                }
             } catch {
                 guard let self, self.playbackRequest == request, self.externalBrowser === session else { return }
                 self.externalBrowserOpening = false
                 self.tv?.displayCoordinator.releasePlaybackKeepAwake()
                 self.externalBrowserError = error.localizedDescription
                 Log.playback.failure("Browser", error)
+                self.tv?.finishLaunchCover()
                 self.tv?.bringToFront()
             }
         }

@@ -265,17 +265,24 @@ extension TVController {
         }
     }
 
-    /// Keep the Starting cover visible: Steam/Mac app activating mid-launch must not bury Mac TV.
+    /// Keep the Starting cover visible: Steam/Mac/browser activating mid-launch must not bury Mac TV.
     private func keepLaunchCoverInFrontIfNeeded(activated app: NSRunningApplication?) {
         guard let cover = launchCover, !cover.ready, !cover.canceling else { return }
         switch cover.service.kind {
-        case .steam, .app: break
+        case .steam, .app, .web: break
         default: return
         }
         // Once we know the game/app PID, fillTV owns focus; don't fight it.
         if let pid = steamGamePID, app?.processIdentifier == pid { return }
         if app?.bundleIdentifier == Bundle.main.bundleIdentifier { return }
         if let app, isSteamFamily(app) { suppressSteamUIWhileLaunchingGame(); return }
+        // Mac app / browser waking under the cover: hide until hand-off.
+        if let app, steamGamePID == nil {
+            switch cover.service.kind {
+            case .app, .web: app.hide()
+            default: break
+            }
+        }
         claimFrontForLaunchCover()
     }
 
