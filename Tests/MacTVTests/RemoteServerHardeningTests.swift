@@ -41,8 +41,8 @@ import Testing
         for action in ["sleep", "screenoff", "launch", "setting", "controlcenter"] {
             #expect(request("/cmd", token: guest, action: action).status != "200 OK")
         }
-        #expect(request("/apps/restore", token: guest).status == "403 Forbidden")
-        #expect(request("/apps/restore", token: owner).status == "200 OK")
+        #expect(request("/apps/remove", token: guest).status == "403 Forbidden")
+        #expect(request("/apps/remove", token: owner).status == "200 OK")
         #expect(commands == 1 && routed == 1)
         let stateResponse = server.respond(to: HTTPRequest(method: "GET", path: "/state", query: [:], headers: ["x-couch-key": guest], body: Data()))
         let state = try #require(try JSONSerialization.jsonObject(with: stateResponse.body) as? [String: Any])
@@ -74,7 +74,7 @@ import Testing
         #expect(store.authenticate(guestToken)?.isGuest == true)
         let ownerToken = try pair(ownerCode, claimedGuest: true)
         #expect(store.authenticate(ownerToken)?.isGuest == false)
-        let guestRequest = HTTPRequest(method: "POST", path: "/apps/restore", query: [:],
+        let guestRequest = HTTPRequest(method: "POST", path: "/apps/remove", query: [:],
                                        headers: ["x-couch-key": guestToken], body: Data())
         #expect(server.respond(to: guestRequest).status == "403 Forbidden")
     }

@@ -219,15 +219,6 @@ final class AppLibrary {
         return true
     }
 
-    /// Brings back any built-in apps the user removed.
-    @discardableResult
-    func restoreBuiltIns() -> Bool {
-        let previous = saved.hidden
-        saved.hidden = []
-        guard save() else { saved.hidden = previous; return false }
-        return true
-    }
-
     @discardableResult
     private func save() -> Bool {
         do {
