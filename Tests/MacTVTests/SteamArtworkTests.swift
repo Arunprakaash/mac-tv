@@ -28,14 +28,11 @@ struct SteamArtworkTests {
         #expect(library.iconFile(for: "user-stardewvalley").lastPathComponent == "user-stardewvalley.png")
     }
 
-    @Test @MainActor
-    func macAppsHaveNoOwnShowFeedSoTileArtCanFill() {
-        let feed = TopShelfFeed.shared
-        let mac = Service(id: "user-calendar", name: "Calendar", kind: .app(bundleID: "com.apple.iCal"))
-        let steam = Service(id: "user-game", name: "Game", kind: .steam(appID: "730"))
-        #expect(feed.ownShow(for: mac) == nil)
-        #expect(feed.ownShow(for: steam) == nil)
-        #expect(feed.ownShows(for: feed.feedID(for: mac)).isEmpty)
+    @Test
+    func shelfMarkSitsAboveTheDockBand() {
+        #expect(TileArt.shelfDockClearance == 320)
+        #expect(TileArt.shelfMarkCenterY < 0.5)
+        #expect(TileArt.shelfMarkCenterY == (TileArt.shelfSize.height - TileArt.shelfDockClearance) / (2 * TileArt.shelfSize.height))
     }
 }
 

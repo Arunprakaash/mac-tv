@@ -14,6 +14,12 @@ enum TileArt {
     static let size = CGSize(width: 500, height: 300)
     /// Top Shelf backdrop (5:3 at ~1080p width) — same layout as the dock, more pixels.
     static let shelfSize = CGSize(width: 1920, height: 1152)
+    /// Keep in sync with `Layout.dockClearance` in HomeView: band under the Top Shelf for the dock.
+    static let shelfDockClearance: CGFloat = 320
+    /// Mark centre in the shelf image (0 = top), middle of the area above the dock — not the full frame.
+    static var shelfMarkCenterY: CGFloat {
+        (shelfSize.height - shelfDockClearance) / (2 * shelfSize.height)
+    }
     /// Every mark is scaled to cover about this many square pixels of the dock tile…
     private static let markArea: CGFloat = 22_000
     /// …but never taller or wider than these (dock pixels).
@@ -21,7 +27,8 @@ enum TileArt {
     /// Ground pixels kept around the mark, in icon units.
     private static let margin: CGFloat = 0.045
 
-    static func make(from icon: CGImage, size: CGSize = size) -> NSImage? {
+    /// - Parameter markCenterY: Vertical centre of the mark in the output (0 = top, 1 = bottom). Dock tiles use 0.5; shelf art sits above the dock.
+    static func make(from icon: CGImage, size: CGSize = size, markCenterY: CGFloat = 0.5) -> NSImage? {
         let factor = size.width / Self.size.width
         let markArea = Self.markArea * factor * factor
         let maxMark = CGSize(width: Self.maxMark.width * factor, height: Self.maxMark.height * factor)
@@ -38,11 +45,13 @@ enum TileArt {
         let mark = pixels.boundingBox(differingFrom: ground, inset: searchInset)
             ?? CGRect(x: searchInset, y: searchInset, width: 1 - 2 * searchInset, height: 1 - 2 * searchInset)
 
-        // 3. Scale (tile pixels per icon unit) and placement: the mark's centre at the tile's centre.
+        // 3. Scale and placement: mark centre at (midX, markCenterY) of the tile.
         var scale = (markArea / (mark.width * mark.height)).squareRoot()
         scale = min(scale, maxMark.width / mark.width, maxMark.height / mark.height)
+        let centerX = size.width / 2
+        let centerY = size.height * markCenterY
         let toTile = { (u: CGFloat, v: CGFloat) -> CGPoint in
-            CGPoint(x: size.width / 2 + (u - mark.midX) * scale, y: size.height / 2 + (v - mark.midY) * scale)
+            CGPoint(x: centerX + (u - mark.midX) * scale, y: centerY + (v - mark.midY) * scale)
         }
 
         guard let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
@@ -52,9 +61,9 @@ enum TileArt {
         context.interpolationQuality = .high
 
         // 4a. The ground, continued across the whole tile.
-        let topV = mark.midY - (size.height / 2) / scale, bottomV = mark.midY + (size.height / 2) / scale
+        let topV = mark.midY - centerY / scale, bottomV = mark.midY + (size.height - centerY) / scale
         for x in 0..<Int(size.width) {
-            let u = mark.midX + (CGFloat(x) + 0.5 - size.width / 2) / scale
+            let u = mark.midX + (CGFloat(x) + 0.5 - centerX) / scale
             // CG's y axis points up: the bottom of the tile is y = 0.
             guard let column = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
                                           colors: [ground.color(u, bottomV), ground.color(u, topV)] as CFArray,
@@ -106,15 +115,6 @@ enum TileArt {
         if color.map(saturation) ?? 0 < 0.2 { color = ground.components(0.5, 0.5) }
         guard let color, saturation(color) >= 0.15 else { return nil }
         return String(format: "#%02X%02X%02X", Int(color[0] * 255), Int(color[1] * 255), Int(color[2] * 255))
-    }
-
-    /// Accent for launch / shelf washes: prefer the icon, else the service's catalog colour.
-    @MainActor
-    static func brandAccent(for service: Service) -> String {
-        if let cg = Icons.cgImage(for: service), let hex = brandColor(from: cg) {
-            return hex
-        }
-        return service.accent
     }
 
     /// Dark wash behind a brand accent (same curve user-added apps already use).

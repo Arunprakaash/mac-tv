@@ -95,10 +95,15 @@ extension TVController {
         }
     }
 
-    /// (Re)loads dock icons for user-added Mac apps — also replaces blank first-save tiles.
+    /// Fills in missing Mac app icons (blank first-save). Skips apps that already have a PNG on disk.
     func ensureMacAppIcons() {
         for service in services {
             guard case .app(let bundleID) = service.kind, library.containsAddedApp(service.id) else { continue }
+            let iconPath = library.iconFile(for: service.id).path
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: iconPath),
+               let size = attrs[.size] as? NSNumber, size.intValue > 0 {
+                continue
+            }
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
             useIcon(IconFinder.icon(forAppAt: url.path), for: service.id)
         }

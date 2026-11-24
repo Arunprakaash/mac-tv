@@ -320,10 +320,12 @@ enum Icons {
     }
 
     /// Full-bleed Top Shelf art: same TileArt layout as the dock, at ~1080p 5:3 from a 1024 px icon.
+    /// The mark is centred in the band above the home dock, so the dock does not crop it.
     static func shelfArt(for service: Service) -> NSImage? {
         if let cached = shelfArts[service.id] { return cached }
         guard let cg = cgImage(for: service, maxPixels: 1024),
-              let art = TileArt.make(from: cg, size: TileArt.shelfSize) else { return nil }
+              let art = TileArt.make(from: cg, size: TileArt.shelfSize, markCenterY: TileArt.shelfMarkCenterY)
+        else { return nil }
         shelfArts[service.id] = art
         return art
     }

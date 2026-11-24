@@ -56,7 +56,7 @@ struct AppBanner: View {
         return Icons.shelfArt(for: service).map { ("\(service.id)-shelf", $0) }
     }
 
-    /// What the Top Shelf shows now: Movies art, Steam/Mac own art, or this app's own shows.
+    /// Movies / Steam heroes / Mac TileArt / show feeds. Mac never falls through to the borrowed mix (#18 / #29).
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -70,11 +70,14 @@ struct AppBanner: View {
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
         }
-        if let art = macArt {
-            return (art.id, service.name, art.image, false, true)
+        // Mac apps only: TileArt fill. No show mix (icons are not a stand-in before shows load).
+        if isMacApp {
+            if let art = macArt {
+                return (art.id, service.name, art.image, false, true)
+            }
+            return nil
         }
-        // Own feed only — borrowed mix must not cover Mac tile art (or blank sites).
-        if let show = feed.ownShow(for: service), let image = feed.image(for: show.id) {
+        if let show = feed.currentShow(for: service), let image = feed.image(for: show.id) {
             return (String(show.id), show.name, image, show.square, false)
         }
         return nil
@@ -91,9 +94,8 @@ struct AppBanner: View {
                     .id(show.id)
                     .transition(.opacity)
             } else {
-                let accent = isMacApp ? TileArt.brandAccent(for: service) : service.accent
-                let deep = isMacApp ? TileArt.brandDeep(fromAccent: accent) : service.deep
-                Artwork(accent: accent, deep: deep)
+                // Stored accent only — no icon decode on redraw (#18).
+                Artwork(accent: service.accent, deep: service.deep)
                     .frame(width: canvas.width, height: canvas.height)
                     .clipped()
             }

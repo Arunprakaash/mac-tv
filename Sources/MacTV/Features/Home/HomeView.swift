@@ -11,11 +11,15 @@ private struct Layout {
     static let tileSpacing: CGFloat = 28
     static let dockPadding: CGFloat = 44
     static let rowGap: CGFloat = 80
+    /// Dock top inset from the canvas bottom; Top Shelf marks center above this band.
+    static let dockClearance: CGFloat = 320
 
     let canvas: CGSize
 
     /// The dock sits a fixed distance from the bottom; extra height goes to the Top Shelf.
-    var dockFrame: CGRect { CGRect(x: (canvas.width - 1728) / 2, y: canvas.height - 320, width: 1728, height: 220) }
+    var dockFrame: CGRect {
+        CGRect(x: (canvas.width - 1728) / 2, y: canvas.height - Self.dockClearance, width: 1728, height: 220)
+    }
     /// How far everything moves up when focus goes below the dock.
     var gridShift: CGFloat { dockFrame.midY - Self.tile.height / 2 - 75 }
 }

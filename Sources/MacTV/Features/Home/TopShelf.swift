@@ -131,16 +131,9 @@ final class TopShelfFeed: ObservableObject {
         return lists.filter { musicApps.contains($0.key) }
     }
 
-    /// This app's own show list only (empty for Mac apps, Steam, and sites without a channel map).
-    func ownShows(for serviceID: String) -> [Show] {
-        ready[serviceID] ?? []
-    }
-
     /// An app's own shows; apps with none (websites, Mac apps, games) get the top of every app's.
-    /// Prefer `ownShow` for Top Shelf chrome so the borrowed mix cannot cover Mac tile art.
     func shows(for serviceID: String) -> [Show] {
-        let own = ownShows(for: serviceID)
-        if !own.isEmpty { return own }
+        if let own = ready[serviceID], !own.isEmpty { return own }
         return mix
     }
 
@@ -160,12 +153,6 @@ final class TopShelfFeed: ObservableObject {
 
     func currentShow(for service: Service) -> Show? { currentShow(for: feedID(for: service)) }
 
-    /// Rotating show from this app's feed only — never the borrowed mix.
-    func ownShow(for service: Service) -> Show? {
-        let shows = ownShows(for: feedID(for: service))
-        return shows.isEmpty ? nil : shows[turn % shows.count]
-    }
-
     /// Built-in id, or the Suggested/user tile's host mapped onto the same feed.
     func feedID(for service: Service) -> String {
         if case .web(let url) = service.kind, let host = url.host()?.lowercased().replacingOccurrences(of: "www.", with: "") {
@@ -177,7 +164,7 @@ final class TopShelfFeed: ObservableObject {
 
     /// Search routes are used only for services with known search pages, not direct playback.
     func searchURL(for service: Service) -> URL? {
-        guard case .web = service.kind, let show = ownShow(for: service) else { return nil }
+        guard case .web = service.kind, let show = currentShow(for: service) else { return nil }
         return ShelfSearch.url(serviceID: feedID(for: service), query: show.name)
     }
 
