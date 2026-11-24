@@ -131,20 +131,42 @@ struct AppRemovalTests {
         }
     }
 
-    @Test func listWrapsAndSeekStepsActions() throws {
+    @Test func listStopsAtTheEndsAndSeekStepsActions() throws {
         try withTV { tv in
             let apps = tv.arrangedServices.map(\.id)
             tv.openOrganizer()
             tv.organizer?.selectedID = apps[0]
             tv.handleOrganizer(.move(.up))
-            #expect(tv.organizer?.selectedID == apps.last)
-            tv.handleOrganizer(.move(.down))
             #expect(tv.organizer?.selectedID == apps[0])
+            tv.handleOrganizer(.move(.down))
+            #expect(tv.organizer?.selectedID == apps[1])
+            tv.handleOrganizer(.move(.up))
 
             tv.handleOrganizer(.seek(forward: true))
             #expect(tv.organizer?.action == .earlier)
             tv.handleOrganizer(.seek(forward: false))
             #expect(tv.organizer?.action == .pin)
+        }
+    }
+
+    @Test func aPressThatCantBeHeldRemovesOnTheSecondPress() throws {
+        try withTV { tv in
+            let apps = tv.arrangedServices.map(\.id)
+            tv.openOrganizer()
+            tv.organizer?.selectedID = apps[0]
+            tv.organizer?.action = .remove
+            tv.handleOrganizer(.select)
+            #expect(!tv.isHoldingRemove)
+            #expect(tv.organizer?.confirmingRemoveID == apps[0])
+            #expect(tv.arrangedServices.map(\.id) == apps)
+            // Anything else in between cancels it.
+            tv.handleOrganizer(.move(.left))
+            tv.handleOrganizer(.move(.right))
+            #expect(tv.organizer?.confirmingRemoveID == nil)
+            tv.handleOrganizer(.select)
+            tv.handleOrganizer(.select)
+            #expect(!tv.arrangedServices.contains { $0.id == apps[0] })
+            #expect(tv.library.isHidden(apps[0]))
         }
     }
 }

@@ -9,6 +9,9 @@ struct AppOrganizer: Equatable {
 
     var selectedID: String?
     var action: Action = .pin
+    /// A press that can't be held (an older phone page, VoiceOver) asked to remove this app: the next
+    /// such press removes it. Anything else cancels.
+    var confirmingRemoveID: String?
 }
 
 extension TVController {
@@ -45,18 +48,36 @@ extension TVController {
         guard var panel = organizer else { return }
         let apps = arrangedServices
         let index = apps.firstIndex { $0.id == panel.selectedID } ?? 0
+        if case .select = command {} else if panel.confirmingRemoveID != nil {
+            panel.confirmingRemoveID = nil
+            organizer = panel
+        }
         switch command {
         case .back:
             cancelRemoveHold()
             organizer = nil
             return
-        case .selectDown, .select:
+        case .selectDown:
             guard let id = panel.selectedID else { return }
             if panel.action == .remove {
                 beginRemoveHold(for: id)
             } else {
                 activateOrganizerAction(panel.action, for: id)
             }
+            return
+        case .select:
+            // A plain Select has no release to time a hold by, so removing takes a second press instead.
+            guard let id = panel.selectedID else { return }
+            guard panel.action == .remove else {
+                activateOrganizerAction(panel.action, for: id)
+                return
+            }
+            guard panel.confirmingRemoveID == id else {
+                panel.confirmingRemoveID = id
+                break
+            }
+            cancelRemoveHold()
+            activateOrganizerAction(.remove, for: id)
             return
         case .selectUp:
             cancelRemoveHold()
@@ -66,7 +87,7 @@ extension TVController {
             guard !apps.isEmpty else { return }
             let offset: Int
             if case .move(.up) = command { offset = -1 } else { offset = 1 }
-            panel.selectedID = apps[(index + offset + apps.count) % apps.count].id
+            panel.selectedID = apps[min(max(index + offset, 0), apps.count - 1)].id
         case .move(.left), .seek(forward: false):
             cancelRemoveHold()
             panel.action = AppOrganizer.Action(rawValue: max(panel.action.rawValue - 1, 0)) ?? .pin
@@ -173,7 +194,9 @@ struct AppOrganizerSheet: View {
         let apps = tv.arrangedServices
         VStack(alignment: .leading, spacing: 22) {
             Text("Arrange Apps").font(.tv(.title3, emphasized: true))
-            Text("Favourites stay first. The first six apps appear in the dock.")
+            Text(tv.organizer?.action == .remove
+                 ? "Removed apps can be added back from Add App › Suggested."
+                 : "Favourites stay first. The first six apps appear in the dock.")
                 .font(.tv(.caption1)).foregroundStyle(.white.opacity(0.7))
 
             ScrollViewReader { proxy in
@@ -202,7 +225,7 @@ struct AppOrganizerSheet: View {
             InputHintsBar(tv: tv, actions: [
                 .moveVertical("Choose app"),
                 .moveHorizontal("Choose action"),
-                .select(tv.organizer?.action == .remove ? "Hold to remove" : "Apply"),
+                .select(selectVerb),
                 .back("Close"),
             ])
         }
@@ -212,6 +235,11 @@ struct AppOrganizerSheet: View {
         .foregroundStyle(.white)
         .frame(width: canvas.width, height: canvas.height)
         .onDisappear { tv.cancelRemoveHold() }
+    }
+
+    private var selectVerb: String {
+        guard let panel = tv.organizer, panel.action == .remove else { return "Apply" }
+        return panel.confirmingRemoveID == panel.selectedID && panel.selectedID != nil ? "Press again to remove" : "Hold to remove"
     }
 
     private func scrollToSelection(_ proxy: ScrollViewProxy) {
@@ -230,9 +258,15 @@ struct AppOrganizerSheet: View {
                 tv.cancelRemoveHold()
                 tv.organizer?.selectedID = service.id
             } label: {
-                Text(service.name).font(.system(size: 27, weight: .semibold)).lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                HStack(spacing: 14) {
+                    Text(service.name).font(.system(size: 27, weight: .semibold)).lineLimit(1)
+                    if pinned {
+                        Image(systemName: "star.fill").font(.system(size: 20)).foregroundStyle(.yellow)
+                            .accessibilityLabel("Favourite")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             actionButton(.pin, title: pinned ? "Unpin" : "Pin", symbol: pinned ? "star.slash" : "star",
@@ -292,6 +326,8 @@ struct AppOrganizerSheet: View {
                     .trim(from: 0, to: progress)
                     .stroke(ring, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
+                    // Glides between the hold timer's ticks instead of stepping.
+                    .animation(holding ? .linear(duration: 1.0 / 12.0) : nil, value: progress)
             }
             .overlay {
                 // AppKit press tracking: SwiftUI Button/ScrollView drop isPressed on redraw.

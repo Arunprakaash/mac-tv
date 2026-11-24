@@ -183,7 +183,7 @@ function send(a, extra, kind = 'tick') {
 }
 
 // State: connection, the app list, settings.
-let appsShown = '', apps = [], canRestore = false, currentLocalMovie = null, iinaInstalled = false;
+let appsShown = '', apps = [], canRestore = false, tvSheet = '', currentLocalMovie = null, iinaInstalled = false;
 let stateGeneration = 0, appMutationPending = false, displayChanging = false, availableDisplays = [];
 let stateInFlight = null;
 async function refresh(duringMutation = false) {
@@ -214,6 +214,7 @@ async function readState() {
     apps = s.apps;
     canRestore = s.canRestore;
     currentLocalMovie = s.currentLocalMovie || null;
+    tvSheet = typeof s.sheet === 'string' ? s.sheet : '';
     iinaInstalled = !!s.iinaInstalled;
     updateMovieOptions();
     showSleep(s.sleepMinutes || 0);
@@ -950,9 +951,16 @@ try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
     start = { x: e.clientX, y: e.clientY, zone: zoneAt(e.clientX, e.clientY), okHeld: false };
     repeated = false;
     if (start.zone === 'ok') {
-      start.okHeld = true;
-      flash('ok');
-      send('okdown', {}, 'tap');
+      // Holding OK only means something in Arrange Apps (hold to remove), and only once the thumb has
+      // stayed put for a moment: a swipe that starts in the middle is still a swipe, and a tap an OK.
+      if (tvSheet === 'arrange-apps') {
+        timer = setTimeout(() => {
+          if (!start) return;
+          start.okHeld = true;
+          flash('ok');
+          send('okdown', {}, 'tap');
+        }, 200);
+      }
     } else if (start.zone) {
       timer = setTimeout(() => {
         repeated = true;
@@ -961,7 +969,10 @@ try { if (localStorage.getItem('mactvTab') === 'touch') tab('touch'); } catch {}
     }
   });
   pad.addEventListener('pointermove', e => {
-    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 24) stop();
+    if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) <= 24) return;
+    stop();
+    // Moving away lets go of a hold, and the gesture carries on as a swipe.
+    if (start.okHeld) { start.okHeld = false; send('okup', {}, 'tap'); }
   });
   pad.addEventListener('pointerup', e => {
     if (!start) return;
