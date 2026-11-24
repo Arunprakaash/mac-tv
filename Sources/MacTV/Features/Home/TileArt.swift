@@ -10,16 +10,21 @@ import AppKit
 /// 4. Paint the ground across the tile by continuing the icon's corner colours outward, then
 ///    lay the mark (with a margin of its own ground) on top, its cut edges faded away.
 enum TileArt {
-    /// Tile size in pixels (2× the 250×150 point tile).
+    /// Dock tile size in pixels (2× the 250×150 point tile).
     static let size = CGSize(width: 500, height: 300)
-    /// Every mark is scaled to cover about this many square pixels of the tile…
+    /// Top Shelf backdrop (5:3 at ~1080p width) — same layout as the dock, more pixels.
+    static let shelfSize = CGSize(width: 1920, height: 1152)
+    /// Every mark is scaled to cover about this many square pixels of the dock tile…
     private static let markArea: CGFloat = 22_000
-    /// …but never taller or wider than these.
+    /// …but never taller or wider than these (dock pixels).
     private static let maxMark = CGSize(width: 320, height: 190)
     /// Ground pixels kept around the mark, in icon units.
     private static let margin: CGFloat = 0.045
 
-    static func make(from icon: CGImage) -> NSImage? {
+    static func make(from icon: CGImage, size: CGSize = size) -> NSImage? {
+        let factor = size.width / Self.size.width
+        let markArea = Self.markArea * factor * factor
+        let maxMark = CGSize(width: Self.maxMark.width * factor, height: Self.maxMark.height * factor)
         guard let pixels = Pixels(icon, side: 256) else { return nil }
 
         // 1. The ground, from inside the corners: past the glass rim many App Store icons
@@ -85,6 +90,7 @@ enum TileArt {
         }
 
         guard let output = context.makeImage() else { return nil }
+        // Point size tracks the dock convention (2× pixels); shelf keeps the same ratio.
         return NSImage(cgImage: output, size: NSSize(width: size.width / 2, height: size.height / 2))
     }
 
@@ -100,6 +106,24 @@ enum TileArt {
         if color.map(saturation) ?? 0 < 0.2 { color = ground.components(0.5, 0.5) }
         guard let color, saturation(color) >= 0.15 else { return nil }
         return String(format: "#%02X%02X%02X", Int(color[0] * 255), Int(color[1] * 255), Int(color[2] * 255))
+    }
+
+    /// Accent for launch / shelf washes: prefer the icon, else the service's catalog colour.
+    @MainActor
+    static func brandAccent(for service: Service) -> String {
+        if let cg = Icons.cgImage(for: service), let hex = brandColor(from: cg) {
+            return hex
+        }
+        return service.accent
+    }
+
+    /// Dark wash behind a brand accent (same curve user-added apps already use).
+    static func brandDeep(fromAccent hex: String) -> String {
+        let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0
+        let r = Double((value >> 16) & 0xFF) * 0.18
+        let g = Double((value >> 8) & 0xFF) * 0.18
+        let b = Double(value & 0xFF) * 0.18
+        return String(format: "#%02X%02X%02X", Int(r), Int(g), Int(b))
     }
 
     /// The image drawn at `size` with `edge` points at each side faded to transparent.

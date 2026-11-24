@@ -27,6 +27,16 @@ struct SteamArtworkTests {
         #expect(library.heroFile(for: "user-stardewvalley").lastPathComponent == "user-stardewvalley-hero.jpg")
         #expect(library.iconFile(for: "user-stardewvalley").lastPathComponent == "user-stardewvalley.png")
     }
+
+    @Test @MainActor
+    func macAppsHaveNoOwnShowFeedSoTileArtCanFill() {
+        let feed = TopShelfFeed.shared
+        let mac = Service(id: "user-calendar", name: "Calendar", kind: .app(bundleID: "com.apple.iCal"))
+        let steam = Service(id: "user-game", name: "Game", kind: .steam(appID: "730"))
+        #expect(feed.ownShow(for: mac) == nil)
+        #expect(feed.ownShow(for: steam) == nil)
+        #expect(feed.ownShows(for: feed.feedID(for: mac)).isEmpty)
+    }
 }
 
 @Suite @MainActor

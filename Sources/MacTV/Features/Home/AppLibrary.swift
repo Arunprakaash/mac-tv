@@ -163,7 +163,7 @@ final class AppLibrary {
         let accent = app.accent ?? "#8E8E93"
         return Service(id: app.id, name: app.name, kind: kind,
                        iconFile: FileManager.default.fileExists(atPath: icon.path) ? icon : nil,
-                       accent: accent, deep: Self.darkened(accent))
+                       accent: accent, deep: TileArt.brandDeep(fromAccent: accent))
     }
 
     @discardableResult
@@ -186,7 +186,8 @@ final class AppLibrary {
     func setIcon(_ png: Data, accent: String?, for id: String) {
         guard containsAddedApp(id) else { return }
         Log.app.attempt("Saving an app icon") { try png.write(to: iconFile(for: id), options: .atomic) }
-        if let index = saved.added.firstIndex(where: { $0.id == id }) {
+        // Keep a catalog/preset accent when the icon has no extractable brand colour.
+        if let accent, let index = saved.added.firstIndex(where: { $0.id == id }) {
             saved.added[index].accent = accent
             save()
         }
@@ -227,11 +228,6 @@ final class AppLibrary {
         } catch { return false }
     }
 
-    private static func darkened(_ hex: String) -> String {
-        let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0
-        let r = Double((value >> 16) & 0xFF) * 0.18, g = Double((value >> 8) & 0xFF) * 0.18, b = Double(value & 0xFF) * 0.18
-        return String(format: "#%02X%02X%02X", Int(r), Int(g), Int(b))
-    }
 }
 
 /// Finds an official-looking square icon for an app the user adds.

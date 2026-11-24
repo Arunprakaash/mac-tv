@@ -266,42 +266,66 @@ enum Icons {
 
     static func image(for service: Service) -> NSImage? {
         if let cached = images[service.id] { return cached }
-        var image: NSImage?
-        if let file = service.iconFile {
-            image = decoded(file)
-        } else if let file = service.icon,
-           let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Icons") {
-            image = decoded(url)
-        }
+        // Don't cache misses — the file often appears a moment after the first ask.
+        guard let image = sourceImage(for: service, maxPixels: 512) else { return nil }
         images[service.id] = image
         return image
     }
 
-    /// Icons are often 1024 px; tiles draw them about 250 points wide, so 512 px is plenty sharp.
-    private static func decoded(_ url: URL) -> NSImage? {
+    /// Icons are often 1024 px; dock tiles draw them about 250 points wide, so 512 px is plenty sharp.
+    private static func decoded(_ url: URL, maxPixels: Int = 512) -> NSImage? {
         let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                                         kCGImageSourceCreateThumbnailWithTransform: true,
-                                        kCGImageSourceThumbnailMaxPixelSize: 512]
+                                        kCGImageSourceThumbnailMaxPixelSize: maxPixels]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return NSImage(contentsOf: url) }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
+    private static func sourceImage(for service: Service, maxPixels: Int) -> NSImage? {
+        if let file = service.iconFile { return decoded(file, maxPixels: maxPixels) }
+        if let file = service.icon,
+           let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Icons") {
+            return decoded(url, maxPixels: maxPixels)
+        }
+        return nil
+    }
+
+    /// `cgImage(forProposedRect: nil)` often returns nil for workspace-drawn Mac icons; TIFF is the fallback.
+    static func cgImage(for service: Service, maxPixels: Int = 1024) -> CGImage? {
+        guard let image = sourceImage(for: service, maxPixels: maxPixels) else { return nil }
+        var rect = NSRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+            ?? image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?.cgImage
+    }
+
     private static var tiles: [String: NSImage] = [:]
+    private static var shelfArts: [String: NSImage] = [:]
 
     /// Drops cached artwork, after an app's icon arrives or the app is removed.
     static func forget(_ id: String) {
         images[id] = nil
         tiles[id] = nil
+        shelfArts[id] = nil
         pngs[id] = nil
     }
 
     static func tile(for service: Service) -> NSImage? {
         if let cached = tiles[service.id] { return cached }
         let tile = service.hasWideArt ? image(for: service)
-            : image(for: service)?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap { TileArt.make(from: $0) }
-        tiles[service.id] = tile
+            : cgImage(for: service, maxPixels: 512).flatMap { TileArt.make(from: $0) }
+        // Don't cache misses — artwork often arrives a moment after the tile is first asked for.
+        if let tile { tiles[service.id] = tile }
         return tile
+    }
+
+    /// Full-bleed Top Shelf art: same TileArt layout as the dock, at ~1080p 5:3 from a 1024 px icon.
+    static func shelfArt(for service: Service) -> NSImage? {
+        if let cached = shelfArts[service.id] { return cached }
+        guard let cg = cgImage(for: service, maxPixels: 1024),
+              let art = TileArt.make(from: cg, size: TileArt.shelfSize) else { return nil }
+        shelfArts[service.id] = art
+        return art
     }
 
     static func png(for service: Service) -> Data? {

@@ -37,16 +37,26 @@ struct AppBanner: View {
         self.expanded = expanded
     }
 
+    private var isMacApp: Bool {
+        if case .app = service.kind { return true }
+        return false
+    }
+
     /// A Steam game's own art: its store screenshot or library hero, else its dock tile. It comes before
-    /// the shows every app without its own get, which would otherwise always cover it. Other apps keep
-    /// their colour wash: their icons are too small to fill the screen.
+    /// the shows every app without its own get, which would otherwise always cover it.
     private var steamArt: (id: String, image: NSImage)? {
         guard case .steam = service.kind else { return nil }
         if let hero = SteamShelfArt.image(at: tv.library.heroFile(for: service.id)) { return ("\(service.id)-hero", hero) }
         return Icons.tile(for: service).map { ("\(service.id)-tile", $0) }
     }
 
-    /// What the Top Shelf shows now: Movies art, a Steam game's own art, or popular shows.
+    /// Mac apps: same TileArt 5:3 as the dock, at shelf resolution (no macOS squircle fill).
+    private var macArt: (id: String, image: NSImage)? {
+        guard isMacApp else { return nil }
+        return Icons.shelfArt(for: service).map { ("\(service.id)-shelf", $0) }
+    }
+
+    /// What the Top Shelf shows now: Movies art, Steam/Mac own art, or this app's own shows.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -60,7 +70,11 @@ struct AppBanner: View {
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
         }
-        if let show = feed.currentShow(for: service), let image = feed.image(for: show.id) {
+        if let art = macArt {
+            return (art.id, service.name, art.image, false, true)
+        }
+        // Own feed only — borrowed mix must not cover Mac tile art (or blank sites).
+        if let show = feed.ownShow(for: service), let image = feed.image(for: show.id) {
             return (String(show.id), show.name, image, show.square, false)
         }
         return nil
@@ -69,7 +83,7 @@ struct AppBanner: View {
     var body: some View {
         let show = backdrop
         ZStack(alignment: .topLeading) {
-            // A Steam game's art is the base layer, so it can't be lost under a stale show backdrop.
+            // Steam / Mac TileArt: art is the base layer, so it can't be lost under a stale show backdrop.
             if let show, show.appOwned {
                 AppArtBackdrop(image: show.image)
                     .frame(width: canvas.width, height: canvas.height)
@@ -77,7 +91,9 @@ struct AppBanner: View {
                     .id(show.id)
                     .transition(.opacity)
             } else {
-                Artwork(accent: service.accent, deep: service.deep)
+                let accent = isMacApp ? TileArt.brandAccent(for: service) : service.accent
+                let deep = isMacApp ? TileArt.brandDeep(fromAccent: accent) : service.deep
+                Artwork(accent: accent, deep: deep)
                     .frame(width: canvas.width, height: canvas.height)
                     .clipped()
             }
@@ -93,12 +109,12 @@ struct AppBanner: View {
                 }
             }
             // Legibility: a soft top-left wash for the name, a bottom wash for the dock or button.
-            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil ? 0.55 : 0.18)), location: 0),
+            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : (show == nil || isMacApp ? 0.55 : 0.18)), location: 0),
                                    .init(color: .black.opacity(expanded ? 0.4 : 0.15), location: 0.4),
                                    .init(color: .clear, location: 0.65)],
                            startPoint: .leading, endPoint: .trailing)
             LinearGradient(stops: [.init(color: .clear, location: 0.45),
-                                   .init(color: .black.opacity(show == nil ? 0.75 : 0.85), location: 1)],
+                                   .init(color: .black.opacity(show == nil || isMacApp ? 0.75 : 0.85), location: 1)],
                            startPoint: .top, endPoint: .bottom)
             if show != nil {
                 LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)

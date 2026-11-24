@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import MacTV
@@ -12,6 +13,28 @@ struct AppLibraryTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         try body(folder)
+    }
+
+    @Test
+    func macAppIconSavesEvenWhenBrandColourIsMissing() throws {
+        try withFolder { folder in
+            let library = AppLibrary(folder: folder)
+            let tv = TVController(library: library)
+            let app = library.add(name: "Preview", url: nil, bundleID: "com.apple.Preview")
+            tv.reloadServices()
+            // White icon → no extractable brand colour; PNG must still land on disk.
+            let empty = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+                NSColor.white.setFill(); rect.fill(); return true
+            }
+            let png = try #require(empty.tiffRepresentation.flatMap {
+                NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:])
+            })
+            tv.useIcon(png, for: app.id)
+            #expect(FileManager.default.fileExists(atPath: library.iconFile(for: app.id).path))
+            let service = try #require(tv.services.first { $0.id == app.id })
+            #expect(service.kind == .app(bundleID: "com.apple.Preview"))
+            #expect(Icons.image(for: service) != nil)
+        }
     }
 
     @Test
