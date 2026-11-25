@@ -86,6 +86,11 @@ struct RootView: View {
                     .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
                     .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
                 ModalSheetRouter(tv: tv)
+                if tv.screensaver {
+                    TVCanvas { Screensaver() }
+                        .ignoresSafeArea()
+                        .transition(.opacity.animation(.easeInOut(duration: 1.2)))
+                }
             }
 
             NoticesOverlay(notices: tv.notices)

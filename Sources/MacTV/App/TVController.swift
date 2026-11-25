@@ -165,6 +165,9 @@ final class TVController: NSObject, ObservableObject {
         window.orderFrontRegardless()
     }
 
+    /// True while the cover is pinned above other apps (Steam, Mac apps, external browsers).
+    var launchCoverPinned: Bool { launchCoverRestoredLevel != nil }
+
     func unpinLaunchCover() {
         guard let window else {
             launchCoverRestoredLevel = nil
@@ -592,10 +595,11 @@ final class TVController: NSObject, ObservableObject {
                         self.finishGoingHome()
                         return
                     }
-                    // Keep the app hidden under the pinned cover until fullscreen hand-off.
-                    app.hide()
+                    // A Mac app opens its own way (no forced full screen): hand off as soon as it's running.
                     self.steamGamePID = app.processIdentifier
-                    self.handOffExternalLaunch(pid: app.processIdentifier, generation: generation)
+                    app.unhide()
+                    self.activateExternalApp(pid: app.processIdentifier)
+                    self.markLaunchCoverReady()
                 }
             }
         case .steam(let appID):
@@ -670,16 +674,32 @@ final class TVController: NSObject, ObservableObject {
         }
     }
 
-    /// Cover stuck waiting for a game/app — dismiss so Home isn't locked behind Starting…
+    /// Cover stuck waiting for a game/app: dismiss it so Home isn't locked behind Starting…, and show
+    /// Steam, which is probably waiting on the user.
     private func scheduleLaunchCoverTimeout() {
         let generation = launchCancelGeneration
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(120))
+            try? await Task.sleep(for: .seconds(45))
             guard let self, self.launchCancelGeneration == generation,
                   let cover = self.launchCover, !cover.ready, !cover.canceling else { return }
-            self.showToast("\(cover.service.name) is taking a while. Press Home to stay here.")
             self.markLaunchCoverReady()
             self.steamWatchUntil = nil
+            if case .steam = cover.service.kind {
+                self.showToast("\(cover.service.name) is still starting. Steam may need you.")
+                self.revealSteamAfterStuckLaunch()
+            } else {
+                self.showToast("\(cover.service.name) is taking a while.")
+            }
+        }
+    }
+
+    /// A website that never finishes loading (some keep fetching) still appears after a while.
+    func scheduleWebLaunchReveal() {
+        let generation = launchCancelGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard let self, self.launchCancelGeneration == generation else { return }
+            self.markLaunchCoverReady()
         }
     }
 

@@ -202,7 +202,6 @@ extension TVController {
                     self.suppressSteamUIWhileLaunchingGame()
                 }
                 self.keepLaunchCoverInFrontIfNeeded(activated: app)
-                self.keepGameInFrontIfSteamSteals(activated: app)
             }
         })
         steamObservers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -251,10 +250,10 @@ extension TVController {
     func suppressSteamUIWhileLaunchingGame() {
         if case .steam(let appID) = launchCover?.service.kind, appID == SteamLibrary.bigPicture.appID { return }
         if launchCover?.canceling == true { return }
-        // During cover, or after hand-off while we still own the Steam game session.
+        // Only while the cover is up. Once the game is handed off, Steam is the user's to open
+        // (the store, friends, a dialog); `protectExternalAppFocus` covers the hand-off itself.
         let duringCover = launchCover != nil
-        let afterHandOff = openedSteam && steamGamePID != nil
-        guard duringCover || afterHandOff else { return }
+        guard duringCover else { return }
         for app in NSWorkspace.shared.runningApplications where isSteamFamily(app) {
             if let pid = steamGamePID, app.processIdentifier == pid { continue }
             GameWindow.leaveFullScreen(pid: app.processIdentifier)
@@ -267,7 +266,8 @@ extension TVController {
 
     /// Keep the Starting cover visible: Steam/Mac/browser activating mid-launch must not bury Mac TV.
     private func keepLaunchCoverInFrontIfNeeded(activated app: NSRunningApplication?) {
-        guard let cover = launchCover, !cover.ready, !cover.canceling else { return }
+        // Only a pinned cover (an app outside Mac TV starting) fights other apps; the built-in player's doesn't.
+        guard let cover = launchCover, !cover.ready, !cover.canceling, launchCoverPinned else { return }
         switch cover.service.kind {
         case .steam, .app, .web: break
         default: return
@@ -286,20 +286,12 @@ extension TVController {
         claimFrontForLaunchCover()
     }
 
-    /// After hand-off: if Steam (or Mac TV after the cover) jumps forward, put the game back.
-    private func keepGameInFrontIfSteamSteals(activated app: NSRunningApplication?) {
-        guard let pid = steamGamePID, let app else { return }
-        if app.processIdentifier == pid { return }
-        // Still showing the cover and waiting for the game — cover logic owns focus.
-        if let cover = launchCover, !cover.ready, !cover.canceling, steamWatchUntil != nil { return }
-        if isSteamFamily(app) {
-            suppressSteamUIWhileLaunchingGame()
-            activateExternalApp(pid: pid)
-            return
-        }
-        if app.bundleIdentifier == Bundle.main.bundleIdentifier {
-            activateExternalApp(pid: pid)
-        }
+    /// Shows Steam again after a launch that never handed off: it's probably asking something
+    /// (an update, a cloud-save conflict, shader caching) behind the cover.
+    func revealSteamAfterStuckLaunch() {
+        for app in NSWorkspace.shared.runningApplications where isSteamFamily(app) { app.unhide() }
+        NSRunningApplication.runningApplications(withBundleIdentifier: SteamLibrary.bundleID).first?
+            .activate(options: [.activateIgnoringOtherApps])
     }
 }
 
