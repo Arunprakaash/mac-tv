@@ -10,12 +10,116 @@ struct TopShelf: View {
         let service = tv.shelfService
         Group {
             if tv.shelfCount > 0 {
-                AppBanner(tv: tv, service: service, expanded: expanded)
+                // Only Big Picture observes the chart reel (#21); other apps keep a plain banner.
+                if Self.usesHeroReel(service) {
+                    BigPictureBanner(tv: tv, service: service, expanded: expanded)
+                } else {
+                    AppBanner(tv: tv, service: service, expanded: expanded)
+                }
             }
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .id(service.id)
         .transition(.opacity)
+    }
+
+    static func usesHeroReel(_ service: Service) -> Bool {
+        if case .steam(let appID) = service.kind, appID == SteamLibrary.bigPicture.appID { return true }
+        return false
+    }
+}
+
+/// Steam Big Picture: observes the Best of Year controller reel and drives the Top Shelf from it.
+private struct BigPictureBanner: View {
+    @ObservedObject var tv: TVController
+    @ObservedObject private var feed: TopShelfFeed
+    @ObservedObject private var reel: SteamChartHeroReel
+    @Environment(\.canvasSize) private var canvas
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let service: Service
+    let expanded: Bool
+
+    init(tv: TVController, service: Service, expanded: Bool) {
+        _tv = ObservedObject(wrappedValue: tv)
+        _feed = ObservedObject(wrappedValue: tv.topShelf)
+        _reel = ObservedObject(wrappedValue: SteamChartHeroReel.shared)
+        self.service = service
+        self.expanded = expanded
+    }
+
+    private var steamTile: NSImage? { Icons.tile(for: service) }
+
+    private var backdrop: (id: String, image: NSImage)? {
+        if let image = reel.image { return (reel.appID, image) }
+        if let tile = steamTile { return ("\(service.id)-tile", tile) }
+        return nil
+    }
+
+    var body: some View {
+        let show = backdrop
+        ZStack(alignment: .topLeading) {
+            if let show {
+                AppArtBackdrop(image: show.image)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+                    .id(show.id)
+                    .transition(.opacity)
+            } else {
+                Artwork(accent: service.accent, deep: service.deep)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+            }
+            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : 0.18), location: 0),
+                                   .init(color: .black.opacity(expanded ? 0.4 : 0.15), location: 0.4),
+                                   .init(color: .clear, location: 0.65)],
+                           startPoint: .leading, endPoint: .trailing)
+            LinearGradient(stops: [.init(color: .clear, location: 0.45),
+                                   .init(color: .black.opacity(0.85), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+            if show != nil {
+                LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                if !reel.title.isEmpty {
+                    Text(reel.title)
+                        .font(.tv(.title1, emphasized: true))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.title)
+                } else if show == nil {
+                    Text(service.name)
+                        .font(.tv(.title1, emphasized: true))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                }
+                if expanded {
+                    let openIndex = feed.searchURL(for: service) == nil ? 0 : 1
+                    HStack(spacing: 18) {
+                        if feed.searchURL(for: service) != nil {
+                            ShelfButton(title: "Search in \(service.name)", systemImage: "magnifyingglass", focused: tv.focus == .shelf(0)) {
+                                tv.setFocus(.shelf(0)); tv.activateShelf(0)
+                            }
+                        }
+                        ShelfButton(title: "Open \(service.name)", systemImage: "arrow.up.right", focused: tv.focus == .shelf(openIndex)) {
+                            tv.setFocus(.shelf(openIndex)); tv.activateShelf(openIndex)
+                        }
+                    }
+                    .padding(.top, 20)
+                    .tvGlassTransition()
+                }
+            }
+            .frame(width: 1100, alignment: .leading)
+            .padding(.leading, 96)
+            .frame(maxHeight: .infinity, alignment: expanded ? .bottomLeading : .topLeading)
+            .padding(.top, 96)
+            .padding(.bottom, 110)
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.appID)
+        .onAppear { reel.start(animate: !reduceMotion) }
+        .onDisappear { reel.pause() }
     }
 }
 
@@ -26,7 +130,6 @@ struct AppBanner: View {
     @ObservedObject private var feed: TopShelfFeed
     @ObservedObject private var movieLibrary: MovieLibrary
     @Environment(\.canvasSize) private var canvas
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let service: Service
     let expanded: Bool
 
@@ -46,12 +149,6 @@ struct AppBanner: View {
         }
     }
 
-    /// Steam Big Picture rotates Best of Year › Controller library heroes.
-    private var usesHeroReel: Bool {
-        if case .steam(let appID) = service.kind, appID == SteamLibrary.bigPicture.appID { return true }
-        return false
-    }
-
     /// A Steam game's own art: its store screenshot or library hero, else its dock tile. It comes before
     /// the shows every app without its own get, which would otherwise always cover it.
     private var steamArt: (id: String, image: NSImage)? {
@@ -66,7 +163,7 @@ struct AppBanner: View {
         return Icons.shelfArt(for: service).map { ("\(service.id)-shelf", $0) }
     }
 
-    /// Movies / Steam heroes / TileArt system tiles / show feeds (chart reel is a separate observing layer).
+    /// Movies / Steam heroes / TileArt system tiles / show feeds.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -76,11 +173,6 @@ struct AppBanner: View {
                 return (pick.path, movieLibrary.movies.first(where: { $0.path == pick.path })?.displayTitle ?? "Movies",
                         pick.image, pick.image.size.height > pick.image.size.width, false)
             }
-        }
-        // Big Picture: tile only until the chart reel has a frame (reel observes separately, #21).
-        if usesHeroReel {
-            if let art = steamArt { return (art.id, service.name, art.image, false, true) }
-            return nil
         }
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
@@ -114,10 +206,6 @@ struct AppBanner: View {
                     .frame(width: canvas.width, height: canvas.height)
                     .clipped()
             }
-            // Chart reel only mounts (and observes) for Big Picture — other apps don't redraw with it (#21).
-            if usesHeroReel {
-                SteamChartShelfLayer(reduceMotion: reduceMotion)
-            }
             // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
             if let show, !show.appOwned {
                 if show.cover {
@@ -137,14 +225,12 @@ struct AppBanner: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.45),
                                    .init(color: .black.opacity(show == nil || usesTileArtShelf ? 0.75 : 0.85), location: 1)],
                            startPoint: .top, endPoint: .bottom)
-            if show != nil || usesHeroReel {
+            if show != nil {
                 LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                if usesHeroReel {
-                    SteamChartShelfTitle(reduceMotion: reduceMotion)
-                } else if show == nil {
+                if show == nil {
                     // The show's artwork alone carries it; nothing is drawn over it. Without art, the app's name.
                     Text(service.name)
                         .font(.tv(.title1, emphasized: true))
@@ -173,45 +259,6 @@ struct AppBanner: View {
             .frame(maxHeight: .infinity, alignment: expanded ? .bottomLeading : .topLeading)
             .padding(.top, 96)
             .padding(.bottom, 110)
-        }
-    }
-}
-
-/// Observes the chart reel only while Big Picture's shelf is on screen.
-private struct SteamChartShelfLayer: View {
-    let reduceMotion: Bool
-    @ObservedObject private var reel = SteamChartHeroReel.shared
-    @Environment(\.canvasSize) private var canvas
-
-    var body: some View {
-        Group {
-            // Nil → leave the dock-tile / colour wash from AppBanner underneath.
-            if let image = reel.image {
-                AppArtBackdrop(image: image)
-                    .frame(width: canvas.width, height: canvas.height)
-                    .clipped()
-                    .id(reel.appID)
-                    .transition(.opacity)
-            }
-        }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.appID)
-        .onAppear { reel.start(animate: !reduceMotion) }
-        .onDisappear { reel.pause() }
-    }
-}
-
-private struct SteamChartShelfTitle: View {
-    let reduceMotion: Bool
-    @ObservedObject private var reel = SteamChartHeroReel.shared
-
-    var body: some View {
-        if !reel.title.isEmpty {
-            Text(reel.title)
-                .font(.tv(.title1, emphasized: true))
-                .lineLimit(2)
-                .minimumScaleFactor(0.5)
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.title)
         }
     }
 }

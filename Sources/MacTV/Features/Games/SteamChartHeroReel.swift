@@ -156,7 +156,10 @@ final class SteamChartHeroReel: ObservableObject {
         if let picture = SteamShelfArt.image(at: file) { return picture }
         await SteamLibrary.ensureLibraryHeroFile(appID: id, at: file)
         SteamShelfArt.forget(file)
-        return SteamShelfArt.image(at: file)
+        if let picture = SteamShelfArt.image(at: file) { return picture }
+        // Fallback if thumbnail decode fails on an on-disk hero.
+        guard let picture = NSImage(contentsOf: file), picture.size.width > 0 else { return nil }
+        return picture
     }
 
     private func load() -> Saved? {
