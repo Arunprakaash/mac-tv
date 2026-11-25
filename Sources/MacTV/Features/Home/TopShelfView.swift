@@ -25,7 +25,9 @@ struct AppBanner: View {
     @ObservedObject var tv: TVController
     @ObservedObject private var feed: TopShelfFeed
     @ObservedObject private var movieLibrary: MovieLibrary
+    @ObservedObject private var chartHeroes = SteamChartHeroReel.shared
     @Environment(\.canvasSize) private var canvas
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let service: Service
     let expanded: Bool
 
@@ -45,6 +47,12 @@ struct AppBanner: View {
         }
     }
 
+    /// Steam Big Picture rotates Best of Year › Controller library heroes.
+    private var usesHeroReel: Bool {
+        if case .steam(let appID) = service.kind, appID == SteamLibrary.bigPicture.appID { return true }
+        return false
+    }
+
     /// A Steam game's own art: its store screenshot or library hero, else its dock tile. It comes before
     /// the shows every app without its own get, which would otherwise always cover it.
     private var steamArt: (id: String, image: NSImage)? {
@@ -59,7 +67,7 @@ struct AppBanner: View {
         return Icons.shelfArt(for: service).map { ("\(service.id)-shelf", $0) }
     }
 
-    /// Movies / Steam heroes / TileArt system tiles / show feeds.
+    /// Movies / chart reel / Steam heroes / TileArt system tiles / show feeds.
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -69,6 +77,10 @@ struct AppBanner: View {
                 return (pick.path, movieLibrary.movies.first(where: { $0.path == pick.path })?.displayTitle ?? "Movies",
                         pick.image, pick.image.size.height > pick.image.size.width, false)
             }
+        }
+        if usesHeroReel, let image = chartHeroes.image {
+            let name = chartHeroes.title.isEmpty ? service.name : chartHeroes.title
+            return (chartHeroes.appID, name, image, false, true)
         }
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
@@ -133,6 +145,14 @@ struct AppBanner: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                } else if usesHeroReel, !chartHeroes.title.isEmpty {
+                    // Rotating chart game title — not the Big Picture app name.
+                    Text(chartHeroes.title)
+                        .font(.tv(.title1, emphasized: true))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: chartHeroes.title)
                 }
                 if expanded {
                     HStack(spacing: 18) {
@@ -155,6 +175,10 @@ struct AppBanner: View {
             .frame(maxHeight: .infinity, alignment: expanded ? .bottomLeading : .topLeading)
             .padding(.top, 96)
             .padding(.bottom, 110)
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: chartHeroes.appID)
+        .onAppear {
+            if usesHeroReel { chartHeroes.start(animate: !reduceMotion) }
         }
     }
 }

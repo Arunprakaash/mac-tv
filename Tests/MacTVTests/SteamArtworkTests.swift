@@ -16,6 +16,56 @@ struct SteamArtworkTests {
         #expect(SteamLibrary.shelfArtSamples.count >= 4)
     }
 
+    @Test
+    func chartBootstrapIsTenUniqueControllerSeedIDs() {
+        let ids = SteamLibrary.chartBootstrapGames.map(\.appID)
+        #expect(ids.count == 10)
+        #expect(Set(ids).count == 10)
+        #expect(ids.contains("252950")) // Rocket League
+        #expect(ids.contains("550"))    // Left 4 Dead 2
+        #expect(!ids.contains(SteamLibrary.bigPicture.appID))
+    }
+
+    @Test
+    func bestOfYearControllerUsesAPIType4NotStoreTabIndexOrVR() {
+        // Store URL ?tab=5 is Controller, but GetYearTopAppReleases type 5 is VR (Half-Life: Alyx).
+        #expect(SteamLibrary.bestOfYearControllerType == 4)
+        #expect(SteamLibrary.bestOfYearVRType == 5)
+        let json = Data(#"""
+        {"response":{"top_app_list":[
+          {"appid":730,"type":1},
+          {"appid":252950,"type":4},
+          {"appid":250900,"type":4},
+          {"appid":546560,"type":5},
+          {"appid":268910,"type":4}
+        ]}}
+        """#.utf8)
+        let ids = SteamLibrary.bestOfYearControllerAppIDs(in: json, limit: 100)
+        #expect(ids == ["252950", "250900", "268910"])
+        #expect(!ids.contains("546560")) // HL: Alyx — VR tab / type 5
+        #expect(SteamLibrary.bestOfYearControllerAppIDs(in: json, limit: 2) == ["252950", "250900"])
+        #expect(SteamLibrary.bestOfYearControllerAppIDs(in: Data("{}".utf8)).isEmpty)
+    }
+
+    @Test
+    func rtimeYearIsJanuaryFirstUTC() {
+        #expect(SteamLibrary.rtimeYear(2025) == 1_735_689_600)
+        #expect(SteamLibrary.rtimeYear(2024) == 1_704_067_200)
+    }
+
+    @Test
+    func chartYearStaysThroughTheFollowingCalendarYear() {
+        // Chart 2025: keep in 2025–2026; first look for 2026 in calendar 2027.
+        #expect(!SteamLibrary.shouldRefreshChart(savedYear: 2025, calendarYear: 2025))
+        #expect(!SteamLibrary.shouldRefreshChart(savedYear: 2025, calendarYear: 2026))
+        #expect(SteamLibrary.shouldRefreshChart(savedYear: 2025, calendarYear: 2027))
+    }
+
+    @Test
+    func libraryHeroSkipsBigPicture() async {
+        #expect(await SteamLibrary.libraryHero(for: SteamLibrary.bigPicture.appID) == nil)
+    }
+
     @Test @MainActor
     func heroFileSitsBesideTileIcon() throws {
         let root = URL(fileURLWithPath: #filePath)
