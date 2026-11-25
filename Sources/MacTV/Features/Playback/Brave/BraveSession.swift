@@ -39,6 +39,8 @@ final class BrowserSession {
 
     let bundleID: String
     let name: String
+    /// PID of the browser process that owns Mac TV's app-mode window, once open.
+    var processIdentifier: pid_t? { application?.processIdentifier }
     private var application: NSRunningApplication?
     private var window: AXUIElement?
     private var cachedBounds: CGRect?
@@ -99,7 +101,8 @@ final class BrowserSession {
         }
         let before = Self.windows(of: bundleID).map(\.window)
         let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
+        // Mac TV keeps the launch cover pinned; activate only after fit/fullscreen.
+        config.activates = false
         config.createsNewApplicationInstance = true
         config.arguments = ["--app=\(destination.absoluteString)"]
         _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)

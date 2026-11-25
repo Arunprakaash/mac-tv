@@ -157,19 +157,51 @@ enum SteamLibrary {
 }
 
 extension TVController {
-    /// When a Steam game starts, Mac TV notes it, and comes back to the front when it quits.
+    /// When a Steam game starts, Mac TV notes it, fills the TV, then hands off the launch cover.
     func watchForSteamGame() {
         steamWatchUntil = Date().addingTimeInterval(120)
+        ensureSteamObservers()
+        suppressSteamUIWhileLaunchingGame()
+    }
+
+    /// Big Picture is Steam itself — wait for Steam, then fullscreen + cover hand-off.
+    func watchForSteamBigPicture() {
+        steamWatchUntil = Date().addingTimeInterval(120)
+        ensureSteamObservers()
+        if let steam = NSRunningApplication.runningApplications(withBundleIdentifier: SteamLibrary.bundleID)
+            .first(where: { !$0.isTerminated }) {
+            steamGamePID = steam.processIdentifier
+            steamWatchUntil = nil
+            handOffExternalLaunch(pid: steam.processIdentifier)
+        }
+    }
+
+    /// Steam client / helpers (WebHelper, IPC, …) — never treat these as the game.
+    private func isSteamFamily(_ app: NSRunningApplication) -> Bool {
+        guard let id = app.bundleIdentifier else { return false }
+        return id == SteamLibrary.bundleID || id.hasPrefix("com.valvesoftware.")
+    }
+
+    private func ensureSteamObservers() {
         guard steamObservers.isEmpty else { return }
         let center = NSWorkspace.shared.notificationCenter
-        steamObservers.append(center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] note in
+        let onAppNote: (Notification) -> Void = { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.noteSteamLaunchCandidate(app) }
+        }
+        steamObservers.append(center.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main, using: onAppNote))
+        // steam:// brings Steam forward over our cover — pull Mac TV back until the game is ready.
+        steamObservers.append(center.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated {
-                guard let self, let app, let until = self.steamWatchUntil, Date() < until,
-                      app.bundleIdentifier != SteamLibrary.bundleID, app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
-                self.steamGamePID = app.processIdentifier
-                self.steamWatchUntil = nil
-                GameWindow.fillTV(pid: app.processIdentifier, screen: self.window?.screen)
+                guard let self else { return }
+                self.noteSteamLaunchCandidate(app)
+                if let app, self.isSteamFamily(app) {
+                    self.suppressSteamUIWhileLaunchingGame()
+                }
+                self.keepLaunchCoverInFrontIfNeeded(activated: app)
             }
         })
         steamObservers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -177,10 +209,89 @@ extension TVController {
             MainActor.assumeIsolated {
                 guard let self, let app, app.processIdentifier == self.steamGamePID else { return }
                 self.steamGamePID = nil
+                self.openedSteam = false
                 self.bringToFront()
                 self.showToast("Welcome back")
             }
         })
+    }
+
+    /// First real game process (regular app, not Steam / Mac TV) while the cover is waiting.
+    private func noteSteamLaunchCandidate(_ app: NSRunningApplication?) {
+        guard let app, let until = steamWatchUntil, Date() < until,
+              launchCover != nil, launchCover?.canceling != true,
+              app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+
+        let waitingForBigPicture: Bool = {
+            if case .steam(let appID) = launchCover?.service.kind {
+                return appID == SteamLibrary.bigPicture.appID
+            }
+            return false
+        }()
+
+        if waitingForBigPicture {
+            guard app.bundleIdentifier == SteamLibrary.bundleID else { return }
+        } else {
+            // Ignore Steam, Valve helpers, and background agents — wait for the game itself.
+            if isSteamFamily(app) {
+                suppressSteamUIWhileLaunchingGame()
+                return
+            }
+            guard app.activationPolicy == .regular else { return }
+        }
+
+        steamGamePID = app.processIdentifier
+        steamWatchUntil = nil
+        suppressSteamUIWhileLaunchingGame()
+        handOffExternalLaunch(pid: app.processIdentifier)
+    }
+
+    /// Hide Steam (and drop its fullscreen) so only Mac TV's cover, then the game, is visible.
+    func suppressSteamUIWhileLaunchingGame() {
+        if case .steam(let appID) = launchCover?.service.kind, appID == SteamLibrary.bigPicture.appID { return }
+        if launchCover?.canceling == true { return }
+        // Only while the cover is up. Once the game is handed off, Steam is the user's to open
+        // (the store, friends, a dialog); `protectExternalAppFocus` covers the hand-off itself.
+        let duringCover = launchCover != nil
+        guard duringCover else { return }
+        for app in NSWorkspace.shared.runningApplications where isSteamFamily(app) {
+            if let pid = steamGamePID, app.processIdentifier == pid { continue }
+            GameWindow.leaveFullScreen(pid: app.processIdentifier)
+            app.hide()
+        }
+        if duringCover, launchCover?.ready != true {
+            claimFrontForLaunchCover()
+        }
+    }
+
+    /// Keep the Starting cover visible: Steam/Mac/browser activating mid-launch must not bury Mac TV.
+    private func keepLaunchCoverInFrontIfNeeded(activated app: NSRunningApplication?) {
+        // Only a pinned cover (an app outside Mac TV starting) fights other apps; the built-in player's doesn't.
+        guard let cover = launchCover, !cover.ready, !cover.canceling, launchCoverPinned else { return }
+        switch cover.service.kind {
+        case .steam, .app, .web: break
+        default: return
+        }
+        // Once we know the game/app PID, fillTV owns focus; don't fight it.
+        if let pid = steamGamePID, app?.processIdentifier == pid { return }
+        if app?.bundleIdentifier == Bundle.main.bundleIdentifier { return }
+        if let app, isSteamFamily(app) { suppressSteamUIWhileLaunchingGame(); return }
+        // Mac app / browser waking under the cover: hide until hand-off.
+        if let app, steamGamePID == nil {
+            switch cover.service.kind {
+            case .app, .web: app.hide()
+            default: break
+            }
+        }
+        claimFrontForLaunchCover()
+    }
+
+    /// Shows Steam again after a launch that never handed off: it's probably asking something
+    /// (an update, a cloud-save conflict, shader caching) behind the cover.
+    func revealSteamAfterStuckLaunch() {
+        for app in NSWorkspace.shared.runningApplications where isSteamFamily(app) { app.unhide() }
+        NSRunningApplication.runningApplications(withBundleIdentifier: SteamLibrary.bundleID).first?
+            .activate(options: [.activateIgnoringOtherApps])
     }
 }
 
@@ -188,19 +299,46 @@ extension TVController {
 /// green button would. Many games don't allow macOS full screen; their window fills the TV screen
 /// below the menu bar instead. Games that already fill the screen are left alone. Needs Accessibility.
 enum GameWindow {
+    /// Retries until fullscreen succeeds or attempts are exhausted. `completion(true)` on success;
+    /// `completion(false)` when retries run out (caller should still dismiss a launch cover).
+    /// Without Accessibility trust, returns success after the first delay so the cover cannot stick.
     @MainActor
-    static func fillTV(pid: pid_t, screen: NSScreen?, attempt: Int = 0) {
+    static func fillTV(pid: pid_t, screen: NSScreen?, attempt: Int = 0,
+                       completion: (@MainActor (Bool) -> Void)? = nil) {
         // Games take a moment to open their window; try a few times.
         let delays: [Double] = [2.5, 4, 6, 10]
-        guard attempt < delays.count else { return }
+        guard attempt < delays.count else {
+            completion?(false)
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + delays[attempt]) {
             MainActor.assumeIsolated {
-                if !makeFullScreen(pid: pid, on: screen) { fillTV(pid: pid, screen: screen, attempt: attempt + 1) }
+                if makeFullScreen(pid: pid, on: screen) {
+                    completion?(true)
+                } else {
+                    fillTV(pid: pid, screen: screen, attempt: attempt + 1, completion: completion)
+                }
+            }
+        }
+    }
+
+    /// Drop macOS fullscreen on this app's windows (Steam must not sit on the TV during game launch).
+    @MainActor
+    static func leaveFullScreen(pid: pid_t) {
+        guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": false] as CFDictionary) else { return }
+        let app = AXUIElementCreateApplication(pid)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return }
+        for window in windows {
+            if bool(window, "AXFullScreen") == true {
+                AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanFalse)
             }
         }
     }
 
     /// True once the game's window is full screen, or already fills its display.
+    /// Also true when Accessibility is off — fullscreen cannot be forced; caller gets a clean hand-off.
     @MainActor
     static func makeFullScreen(pid: pid_t, on screen: NSScreen?) -> Bool {
         let prompt = ["AXTrustedCheckOptionPrompt": true] as CFDictionary

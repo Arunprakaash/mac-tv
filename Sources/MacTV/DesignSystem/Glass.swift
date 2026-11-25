@@ -10,6 +10,10 @@ enum Motion {
     static let navigate = Animation.smooth(duration: 0.32)
     /// Sheets, toasts and pills arriving and leaving.
     static let appear = Animation.smooth(duration: 0.35)
+    /// Web app launch: tile expands into the starting screen (tvOS-style zoom).
+    static let launch = Animation.smooth(duration: 0.48)
+    /// Launch overlay handing off into the loaded page.
+    static let launchExit = Animation.smooth(duration: 0.38)
     /// A control pressed: quick, settling without a bounce.
     static let press = Animation.smooth(duration: 0.18)
     /// Tiles following the pointer.

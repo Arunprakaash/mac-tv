@@ -69,6 +69,7 @@ extension TVController {
         switch action {
         case 0:
             playerFailure = nil
+            playbackCoordinator.beginWebStart()
             webView?.reload()
         case 1:
             guard case .player(let service) = mode else { return }

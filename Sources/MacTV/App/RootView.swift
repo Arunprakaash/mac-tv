@@ -4,33 +4,87 @@ struct RootView: View {
     @ObservedObject var tv: TVController
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Home stays mounted under the launch cover so cancel can reveal it again without rebuilding.
+    private var showsHomeCanvas: Bool {
+        // Cover draws over BravePlaybackView / player until hand-off.
+        if tv.launchCover != nil { return true }
+        guard tv.externalBrowser == nil, tv.moviePlayer == nil, tv.movies == nil else { return false }
+        if case .player = tv.mode { return false }
+        if case .movie = tv.mode { return false }
+        return true
+    }
+
+    private var homeCoveredByLaunch: Bool {
+        guard let cover = tv.launchCover else { return false }
+        return !cover.canceling
+    }
+
+    private var launchCoverActive: Bool {
+        tv.launchCover != nil
+    }
+
+    /// WebView stays hidden until the cover hands off into the page.
+    private var webHiddenByLaunch: Bool {
+        guard let cover = tv.launchCover, case .player = tv.mode else { return false }
+        return cover.canceling || !cover.ready
+    }
+
     var body: some View {
         ZStack {
             if tv.externalBrowser != nil {
                 TVCanvas { BravePlaybackView(tv: tv) }.ignoresSafeArea()
+            } else if tv.mode == .movie, let player = tv.moviePlayer {
+                MoviePlayerView(tv: tv, player: player).id(ObjectIdentifier(player))
             } else if case .player = tv.mode, let web = tv.webView {
                 WebViewHost(webView: web).id(ObjectIdentifier(web))
-                    .allowsHitTesting(tv.playerFailure == nil)
-                    .accessibilityHidden(tv.playerFailure != nil)
+                    .opacity(webHiddenByLaunch ? 0 : 1)
+                    .animation(Motion.launchExit, value: tv.launchCover?.ready == true)
+                    .allowsHitTesting(tv.playerFailure == nil && !launchCoverActive)
+                    .accessibilityHidden(tv.playerFailure != nil || launchCoverActive)
                 if tv.playerFailure != nil {
                     TVCanvas { PlaybackFailureView(tv: tv) }.ignoresSafeArea()
                 }
-            } else if tv.mode == .movie, let player = tv.moviePlayer {
-                MoviePlayerView(tv: tv, player: player).id(ObjectIdentifier(player))
-            } else {
-                if tv.movies != nil {
-                    // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
-                    TVCanvas { MoviesScreen(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
-                } else if !tv.screensaver {
+            }
+
+            if showsHomeCanvas {
+                if !homeCoveredByLaunch && !tv.screensaver {
                     Wallpaper().ignoresSafeArea()
-                    TVCanvas { HomeView(tv: tv) }
-                        .ignoresSafeArea()
-                        .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
-                        .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
                 }
+                TVCanvas {
+                    ZStack {
+                        HomeView(tv: tv)
+                            .opacity(homeCoveredByLaunch || tv.screensaver ? 0 : 1)
+                            .animation(nil, value: homeCoveredByLaunch)
+                            .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver && !launchCoverActive)
+                            .accessibilityHidden(tv.activeSheet != nil || tv.screensaver || launchCoverActive)
+                        if let cover = tv.launchCover {
+                            LaunchCover(
+                                service: cover.service,
+                                ready: cover.ready,
+                                canceling: cover.canceling,
+                                onFinished: { tv.finishLaunchCover() },
+                                onCancelled: { tv.completeLaunchCoverCancel() }
+                            )
+                            .allowsHitTesting(false)
+                            .accessibilityAddTraits(.updatesFrequently)
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+                if !launchCoverActive {
+                    ModalSheetRouter(tv: tv)
+                    if tv.screensaver {
+                        TVCanvas { Screensaver() }
+                            .ignoresSafeArea()
+                            .transition(.opacity.animation(.easeInOut(duration: 1.2)))
+                    }
+                }
+            } else if tv.movies != nil {
+                // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
+                TVCanvas { MoviesScreen(tv: tv) }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
+                    .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
                 ModalSheetRouter(tv: tv)
                 if tv.screensaver {
                     TVCanvas { Screensaver() }
