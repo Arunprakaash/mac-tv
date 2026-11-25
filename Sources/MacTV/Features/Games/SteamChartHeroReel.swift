@@ -16,13 +16,15 @@ final class SteamChartHeroReel: ObservableObject {
     private var chartIDs: [String] = []
     private var index = 0
     private var timer: Timer?
-    private var cache: [String: NSImage] = [:]
     private var names: [String: String] = [:]
     private var chartYear = 0
     private var started = false
+    private var persistTask: Task<Void, Never>?
 
     private static let hold: TimeInterval = 8
     private static let limit = 100
+    /// Coalesce name writes so advancing the reel doesn't rewrite JSON every fetch (#18 hot path).
+    private static let persistDelay: Duration = .seconds(1)
 
     private struct Saved: Codable {
         let year: Int
@@ -60,10 +62,18 @@ final class SteamChartHeroReel: ObservableObject {
         if image == nil {
             Task { await show(at: index); prefetch(around: index) }
         }
-        guard animate, order.count > 1, timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.hold, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advance() }
+        guard animate, order.count > 1 else { return }
+        if timer == nil {
+            timer = Timer.scheduledTimer(withTimeInterval: Self.hold, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.advance() }
+            }
         }
+    }
+
+    /// Stop advancing while Big Picture is not on the shelf (#21: no churn for other apps).
+    func pause() {
+        timer?.invalidate()
+        timer = nil
     }
 
     private func refresh(afterYear: Int? = nil) async {
@@ -75,18 +85,20 @@ final class SteamChartHeroReel: ObservableObject {
         chartIDs = chart.appIDs
         names = names.filter { chart.appIDs.contains($0.key) }
         prune(keeping: Set(chart.appIDs))
-        persist(Saved(year: chart.year, appIDs: chart.appIDs, names: names))
+        persistNow(Saved(year: chart.year, appIDs: chart.appIDs, names: names))
         apply(chart.appIDs, shuffle: true)
         await show(at: 0)
         prefetch(around: 0)
     }
 
     private func prune(keeping ids: Set<String>) {
-        cache = cache.filter { ids.contains($0.key) }
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         for file in files where file.pathExtension.lowercased() == "jpg" {
             let id = file.deletingPathExtension().lastPathComponent
-            if !ids.contains(id) { try? FileManager.default.removeItem(at: file) }
+            if !ids.contains(id) {
+                SteamShelfArt.forget(file)
+                try? FileManager.default.removeItem(at: file)
+            }
         }
     }
 
@@ -109,6 +121,8 @@ final class SteamChartHeroReel: ObservableObject {
             if let picture = await image(for: id) {
                 index = (i + offset) % order.count
                 let label = await name(for: id)
+                // Publish only when the frame changes (#21).
+                guard appID != id || title != label || image !== picture else { return }
                 withAnimation(.easeInOut(duration: 1.1)) {
                     appID = id
                     title = label
@@ -132,38 +146,44 @@ final class SteamChartHeroReel: ObservableObject {
         if let cached = names[id], !cached.isEmpty { return cached }
         guard let fetched = await SteamLibrary.storeName(for: id) else { return "" }
         names[id] = fetched
-        if chartYear > 0, !chartIDs.isEmpty {
-            persist(Saved(year: chartYear, appIDs: chartIDs, names: names))
-        }
+        schedulePersist()
         return fetched
     }
 
+    /// Same decode-once path as game heroes (#18); download then invalidate a remembered miss.
     private func image(for id: String) async -> NSImage? {
-        if let cached = cache[id] { return cached }
         let file = folder.appendingPathComponent("\(id).jpg")
-        if let picture = NSImage(contentsOf: file), picture.size.width > 0 {
-            cache[id] = picture
-            return picture
-        }
+        if let picture = SteamShelfArt.image(at: file) { return picture }
         await SteamLibrary.ensureLibraryHeroFile(appID: id, at: file)
-        guard let picture = NSImage(contentsOf: file), picture.size.width > 0 else { return nil }
-        cache[id] = picture
-        return picture
+        SteamShelfArt.forget(file)
+        return SteamShelfArt.image(at: file)
     }
 
     private func load() -> Saved? {
         (try? Data(contentsOf: listFile)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
     }
 
-    private func persist(_ saved: Saved) {
+    private func schedulePersist() {
+        guard chartYear > 0, !chartIDs.isEmpty else { return }
+        persistTask?.cancel()
+        let saved = Saved(year: chartYear, appIDs: chartIDs, names: names)
+        persistTask = Task {
+            try? await Task.sleep(for: Self.persistDelay)
+            guard !Task.isCancelled else { return }
+            persistNow(saved)
+        }
+    }
+
+    private func persistNow(_ saved: Saved) {
+        persistTask?.cancel()
+        persistTask = nil
         Log.app.attempt("Saving Steam chart heroes") {
             try JSONEncoder().encode(saved).write(to: listFile, options: .atomic)
         }
     }
 
-    /// Drop older list filenames / folders from earlier iterations of this feature.
+    /// Drop older list filenames from earlier iterations of this feature.
     private func clearLegacyCaches() {
-        try? FileManager.default.removeItem(at: AppFolder.url.appendingPathComponent("Glimmer Heroes", isDirectory: true))
         for name in ["charts.json", "bestofyear-tab5.json", "bestofyear-tab5-100.json"] {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
         }

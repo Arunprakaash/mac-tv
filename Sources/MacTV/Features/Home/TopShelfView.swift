@@ -25,7 +25,6 @@ struct AppBanner: View {
     @ObservedObject var tv: TVController
     @ObservedObject private var feed: TopShelfFeed
     @ObservedObject private var movieLibrary: MovieLibrary
-    @ObservedObject private var chartHeroes = SteamChartHeroReel.shared
     @Environment(\.canvasSize) private var canvas
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let service: Service
@@ -67,7 +66,7 @@ struct AppBanner: View {
         return Icons.shelfArt(for: service).map { ("\(service.id)-shelf", $0) }
     }
 
-    /// Movies / chart reel / Steam heroes / TileArt system tiles / show feeds.
+    /// Movies / Steam heroes / TileArt system tiles / show feeds (chart reel is a separate observing layer).
     private var backdrop: (id: String, name: String, image: NSImage, cover: Bool, appOwned: Bool)? {
         if case .movies = service.kind {
             let shelf = movieLibrary.shelf
@@ -78,9 +77,10 @@ struct AppBanner: View {
                         pick.image, pick.image.size.height > pick.image.size.width, false)
             }
         }
-        if usesHeroReel, let image = chartHeroes.image {
-            let name = chartHeroes.title.isEmpty ? service.name : chartHeroes.title
-            return (chartHeroes.appID, name, image, false, true)
+        // Big Picture: tile only until the chart reel has a frame (reel observes separately, #21).
+        if usesHeroReel {
+            if let art = steamArt { return (art.id, service.name, art.image, false, true) }
+            return nil
         }
         if let art = steamArt {
             return (art.id, service.name, art.image, false, true)
@@ -114,6 +114,10 @@ struct AppBanner: View {
                     .frame(width: canvas.width, height: canvas.height)
                     .clipped()
             }
+            // Chart reel only mounts (and observes) for Big Picture — other apps don't redraw with it (#21).
+            if usesHeroReel {
+                SteamChartShelfLayer(reduceMotion: reduceMotion)
+            }
             // Popular shows on this app, cross-fading one to the next, like Apple TV's Top Shelf.
             if let show, !show.appOwned {
                 if show.cover {
@@ -133,26 +137,20 @@ struct AppBanner: View {
             LinearGradient(stops: [.init(color: .clear, location: 0.45),
                                    .init(color: .black.opacity(show == nil || usesTileArtShelf ? 0.75 : 0.85), location: 1)],
                            startPoint: .top, endPoint: .bottom)
-            if show != nil {
+            if show != nil || usesHeroReel {
                 LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                if show == nil {
+                if usesHeroReel {
+                    SteamChartShelfTitle(reduceMotion: reduceMotion)
+                } else if show == nil {
                     // The show's artwork alone carries it; nothing is drawn over it. Without art, the app's name.
                     Text(service.name)
                         .font(.tv(.title1, emphasized: true))
                         .lineLimit(2)
                         .minimumScaleFactor(0.5)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-                } else if usesHeroReel, !chartHeroes.title.isEmpty {
-                    // Rotating chart game title — not the Big Picture app name.
-                    Text(chartHeroes.title)
-                        .font(.tv(.title1, emphasized: true))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.5)
-                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: chartHeroes.title)
                 }
                 if expanded {
                     HStack(spacing: 18) {
@@ -176,9 +174,44 @@ struct AppBanner: View {
             .padding(.top, 96)
             .padding(.bottom, 110)
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: chartHeroes.appID)
-        .onAppear {
-            if usesHeroReel { chartHeroes.start(animate: !reduceMotion) }
+    }
+}
+
+/// Observes the chart reel only while Big Picture's shelf is on screen.
+private struct SteamChartShelfLayer: View {
+    let reduceMotion: Bool
+    @ObservedObject private var reel = SteamChartHeroReel.shared
+    @Environment(\.canvasSize) private var canvas
+
+    var body: some View {
+        Group {
+            // Nil → leave the dock-tile / colour wash from AppBanner underneath.
+            if let image = reel.image {
+                AppArtBackdrop(image: image)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+                    .id(reel.appID)
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.appID)
+        .onAppear { reel.start(animate: !reduceMotion) }
+        .onDisappear { reel.pause() }
+    }
+}
+
+private struct SteamChartShelfTitle: View {
+    let reduceMotion: Bool
+    @ObservedObject private var reel = SteamChartHeroReel.shared
+
+    var body: some View {
+        if !reel.title.isEmpty {
+            Text(reel.title)
+                .font(.tv(.title1, emphasized: true))
+                .lineLimit(2)
+                .minimumScaleFactor(0.5)
+                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.title)
         }
     }
 }
