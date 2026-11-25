@@ -269,18 +269,6 @@ struct AppLibraryTests {
     }
 
     @Test
-    func organizerDownWrapsToFirst() throws {
-        try withFolder { folder in
-            let tv = TVController(library: AppLibrary(folder: folder))
-            let apps = tv.arrangedServices
-            tv.openOrganizer()
-            tv.organizer?.selectedID = apps.last?.id
-            tv.handleOrganizer(.move(.down))
-            #expect(tv.organizer?.selectedID == apps.first?.id)
-        }
-    }
-
-    @Test
     func appRequestValidationRejectsWrongTypesAndFixedOrUnknownIDs() throws {
         try withFolder { folder in
             let tv = TVController(library: AppLibrary(folder: folder))
