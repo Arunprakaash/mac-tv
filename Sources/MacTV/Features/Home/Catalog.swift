@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import SwiftUI
 
 struct Service: Identifiable, Hashable {
     enum Kind: Hashable {
@@ -94,8 +95,8 @@ enum Catalog {
         Service(id: "movies", name: "Movies", kind: .movies, accent: "#5E5CE6", deep: "#14133A"),
         Service(id: "iina", name: "IINA", kind: .app(bundleID: "com.colliderli.iina"),
                 icon: "iina.png"),
-        Service(id: "add-app", name: "Add App", kind: .addApp),
-        Service(id: "settings", name: "Settings", kind: .settings),
+        Service(id: "add-app", name: "Add App", kind: .addApp, accent: "#636366", deep: "#1C1C1E"),
+        Service(id: "settings", name: "Settings", kind: .settings, accent: "#8E8E93", deep: "#2C2C2E"),
     ]
 
     /// Extra streaming sites under Add App › Suggested (not on the home screen by default).
@@ -266,42 +267,127 @@ enum Icons {
 
     static func image(for service: Service) -> NSImage? {
         if let cached = images[service.id] { return cached }
-        var image: NSImage?
-        if let file = service.iconFile {
-            image = decoded(file)
-        } else if let file = service.icon,
-           let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Icons") {
-            image = decoded(url)
-        }
+        // Don't cache misses — the file often appears a moment after the first ask.
+        guard let image = sourceImage(for: service, maxPixels: 512) else { return nil }
         images[service.id] = image
         return image
     }
 
-    /// Icons are often 1024 px; tiles draw them about 250 points wide, so 512 px is plenty sharp.
-    private static func decoded(_ url: URL) -> NSImage? {
+    /// Icons are often 1024 px; dock tiles draw them about 250 points wide, so 512 px is plenty sharp.
+    private static func decoded(_ url: URL, maxPixels: Int = 512) -> NSImage? {
         let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
                                         kCGImageSourceCreateThumbnailWithTransform: true,
-                                        kCGImageSourceThumbnailMaxPixelSize: 512]
+                                        kCGImageSourceThumbnailMaxPixelSize: maxPixels]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return NSImage(contentsOf: url) }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
+    private static func sourceImage(for service: Service, maxPixels: Int) -> NSImage? {
+        if let file = service.iconFile { return decoded(file, maxPixels: maxPixels) }
+        if let file = service.icon,
+           let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Icons") {
+            return decoded(url, maxPixels: maxPixels)
+        }
+        return nil
+    }
+
+    /// `cgImage(forProposedRect: nil)` often returns nil for workspace-drawn Mac icons; TIFF is the fallback.
+    static func cgImage(for service: Service, maxPixels: Int = 1024) -> CGImage? {
+        if let system = systemSymbolImage(for: service) { return system }
+        guard let image = sourceImage(for: service, maxPixels: maxPixels) else { return nil }
+        var rect = NSRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+            ?? image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?.cgImage
+    }
+
+    /// Built-in Add App / Settings marks for TileArt (same path as Mac app icons).
+    private static func systemSymbolImage(for service: Service) -> CGImage? {
+        switch service.kind {
+        case .addApp:
+            return drawSymbol("plus", groundHex: service.deep, weight: .medium, pointSize: 420)
+        case .settings:
+            return drawSymbol("gearshape.fill", groundHex: service.accent, weight: .regular, pointSize: 400)
+        default:
+            return nil
+        }
+    }
+
+    private static func drawSymbol(_ name: String, groundHex: String, weight: NSFont.Weight, pointSize: CGFloat) -> CGImage? {
+        let side = 1024
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor(Color(hex: groundHex)).setFill()
+        NSRect(x: 0, y: 0, width: side, height: side).fill()
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else {
+            NSGraphicsContext.restoreGraphicsState()
+            return nil
+        }
+        let tinted = NSImage(size: symbol.size, flipped: false) { rect in
+            NSColor.white.set()
+            rect.fill()
+            symbol.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
+            return true
+        }
+        let size = tinted.size
+        let rect = NSRect(x: (CGFloat(side) - size.width) / 2, y: (CGFloat(side) - size.height) / 2,
+                          width: size.width, height: size.height)
+        tinted.draw(in: rect)
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.cgImage
+    }
+
     private static var tiles: [String: NSImage] = [:]
+    private static var shelfArts: [String: NSImage] = [:]
 
     /// Drops cached artwork, after an app's icon arrives or the app is removed.
     static func forget(_ id: String) {
         images[id] = nil
         tiles[id] = nil
+        shelfArts[id] = nil
         pngs[id] = nil
     }
 
     static func tile(for service: Service) -> NSImage? {
         if let cached = tiles[service.id] { return cached }
         let tile = service.hasWideArt ? image(for: service)
-            : image(for: service)?.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap { TileArt.make(from: $0) }
-        tiles[service.id] = tile
+            : cgImage(for: service, maxPixels: 512).flatMap { TileArt.make(from: $0) }
+        // Don't cache misses — artwork often arrives a moment after the tile is first asked for.
+        if let tile { tiles[service.id] = tile }
         return tile
+    }
+
+    /// Full-bleed Top Shelf art: same TileArt layout as the dock, at ~1080p 5:3 from a 1024 px icon.
+    /// The mark is centred in the band above the home dock, so the dock does not crop it.
+    static func shelfArt(for service: Service) -> NSImage? {
+        if let cached = shelfArts[service.id] { return cached }
+        guard let cg = cgImage(for: service, maxPixels: 1024),
+              let art = TileArt.make(from: cg, size: TileArt.shelfSize, markCenterY: TileArt.shelfMarkCenterY)
+        else { return nil }
+        shelfArts[service.id] = art
+        return art
+    }
+
+    /// Draws Top Shelf art off the main thread ahead of time (about a tenth of a second each), so the
+    /// first focus on each app doesn't stutter. Apps drawn on focus meanwhile are left as they are.
+    static func prewarmShelfArt(for services: [Service]) async {
+        struct Drawn: @unchecked Sendable { let image: NSImage? }
+        for service in services {
+            switch service.kind {
+            case .app, .addApp, .settings: break
+            default: continue
+            }
+            guard shelfArts[service.id] == nil, let cg = cgImage(for: service, maxPixels: 1024) else { continue }
+            let drawn = await Task.detached(priority: .utility) {
+                Drawn(image: TileArt.make(from: cg, size: TileArt.shelfSize, markCenterY: TileArt.shelfMarkCenterY))
+            }.value
+            if shelfArts[service.id] == nil, let image = drawn.image { shelfArts[service.id] = image }
+        }
     }
 
     static func png(for service: Service) -> Data? {
