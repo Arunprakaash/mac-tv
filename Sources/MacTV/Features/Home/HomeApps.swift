@@ -95,6 +95,22 @@ extension TVController {
         }
     }
 
+    /// Fills in missing Mac app icons (blank first-save). Skips apps that already have a PNG on disk.
+    func ensureMacAppIcons() {
+        for service in services {
+            guard case .app(let bundleID) = service.kind, library.containsAddedApp(service.id) else { continue }
+            let iconPath = library.iconFile(for: service.id).path
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: iconPath),
+               let size = attrs[.size] as? NSNumber, size.intValue > 0 {
+                continue
+            }
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
+            useIcon(IconFinder.icon(forAppAt: url.path), for: service.id)
+        }
+        let services = services
+        Task { await Icons.prewarmShelfArt(for: services) }
+    }
+
     /// Adds shelf-art samples if needed and (re)downloads tile + hero for each.
     func seedSteamShelfSamples() async {
         for game in SteamLibrary.shelfArtSamples {
@@ -129,11 +145,20 @@ extension TVController {
     func useIcon(_ png: Data?, for id: String, in origin: AppLibrary? = nil) {
         let target = origin ?? library
         guard target.containsAddedApp(id) else { return }
-        if let png, let image = NSImage(data: png)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            target.setIcon(png, accent: TileArt.brandColor(from: image), for: id)
+        if let png {
+            // `cgImage(forProposedRect: nil)` often returns nil for workspace-drawn Mac icons.
+            let accent = Self.cgImage(fromPNG: png).flatMap(TileArt.brandColor(from:))
+            target.setIcon(png, accent: accent, for: id)
         }
         Icons.forget(id)
         if target === library { reloadServices() }
+    }
+
+    private static func cgImage(fromPNG data: Data) -> CGImage? {
+        guard let image = NSImage(data: data) else { return nil }
+        var rect = NSRect(origin: .zero, size: image.size)
+        if let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) { return cg }
+        return image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?.cgImage
     }
 
     /// False when the app isn't one that can be removed, or the change couldn't be saved.

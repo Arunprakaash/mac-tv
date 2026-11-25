@@ -10,16 +10,28 @@ import AppKit
 /// 4. Paint the ground across the tile by continuing the icon's corner colours outward, then
 ///    lay the mark (with a margin of its own ground) on top, its cut edges faded away.
 enum TileArt {
-    /// Tile size in pixels (2× the 250×150 point tile).
+    /// Dock tile size in pixels (2× the 250×150 point tile).
     static let size = CGSize(width: 500, height: 300)
-    /// Every mark is scaled to cover about this many square pixels of the tile…
+    /// Top Shelf backdrop (5:3 at ~1080p width) — same layout as the dock, more pixels.
+    static let shelfSize = CGSize(width: 1920, height: 1152)
+    /// Keep in sync with `Layout.dockClearance` in HomeView: band under the Top Shelf for the dock.
+    static let shelfDockClearance: CGFloat = 320
+    /// Mark centre in the shelf image (0 = top), middle of the area above the dock — not the full frame.
+    static var shelfMarkCenterY: CGFloat {
+        (shelfSize.height - shelfDockClearance) / (2 * shelfSize.height)
+    }
+    /// Every mark is scaled to cover about this many square pixels of the dock tile…
     private static let markArea: CGFloat = 22_000
-    /// …but never taller or wider than these.
+    /// …but never taller or wider than these (dock pixels).
     private static let maxMark = CGSize(width: 320, height: 190)
     /// Ground pixels kept around the mark, in icon units.
     private static let margin: CGFloat = 0.045
 
-    static func make(from icon: CGImage) -> NSImage? {
+    /// - Parameter markCenterY: Vertical centre of the mark in the output (0 = top, 1 = bottom). Dock tiles use 0.5; shelf art sits above the dock.
+    static func make(from icon: CGImage, size: CGSize = size, markCenterY: CGFloat = 0.5) -> NSImage? {
+        let factor = size.width / Self.size.width
+        let markArea = Self.markArea * factor * factor
+        let maxMark = CGSize(width: Self.maxMark.width * factor, height: Self.maxMark.height * factor)
         guard let pixels = Pixels(icon, side: 256) else { return nil }
 
         // 1. The ground, from inside the corners: past the glass rim many App Store icons
@@ -33,11 +45,13 @@ enum TileArt {
         let mark = pixels.boundingBox(differingFrom: ground, inset: searchInset)
             ?? CGRect(x: searchInset, y: searchInset, width: 1 - 2 * searchInset, height: 1 - 2 * searchInset)
 
-        // 3. Scale (tile pixels per icon unit) and placement: the mark's centre at the tile's centre.
+        // 3. Scale and placement: mark centre at (midX, markCenterY) of the tile.
         var scale = (markArea / (mark.width * mark.height)).squareRoot()
         scale = min(scale, maxMark.width / mark.width, maxMark.height / mark.height)
+        let centerX = size.width / 2
+        let centerY = size.height * markCenterY
         let toTile = { (u: CGFloat, v: CGFloat) -> CGPoint in
-            CGPoint(x: size.width / 2 + (u - mark.midX) * scale, y: size.height / 2 + (v - mark.midY) * scale)
+            CGPoint(x: centerX + (u - mark.midX) * scale, y: centerY + (v - mark.midY) * scale)
         }
 
         guard let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
@@ -47,9 +61,9 @@ enum TileArt {
         context.interpolationQuality = .high
 
         // 4a. The ground, continued across the whole tile.
-        let topV = mark.midY - (size.height / 2) / scale, bottomV = mark.midY + (size.height / 2) / scale
+        let topV = mark.midY - centerY / scale, bottomV = mark.midY + (size.height - centerY) / scale
         for x in 0..<Int(size.width) {
-            let u = mark.midX + (CGFloat(x) + 0.5 - size.width / 2) / scale
+            let u = mark.midX + (CGFloat(x) + 0.5 - centerX) / scale
             // CG's y axis points up: the bottom of the tile is y = 0.
             guard let column = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
                                           colors: [ground.color(u, bottomV), ground.color(u, topV)] as CFArray,
@@ -85,6 +99,7 @@ enum TileArt {
         }
 
         guard let output = context.makeImage() else { return nil }
+        // Point size tracks the dock convention (2× pixels); shelf keeps the same ratio.
         return NSImage(cgImage: output, size: NSSize(width: size.width / 2, height: size.height / 2))
     }
 
