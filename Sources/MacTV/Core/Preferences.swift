@@ -29,7 +29,8 @@ final class Preferences: ObservableObject {
         dedicatedTVMode = defaults.bool(forKey: Key.dedicatedTVMode)
         preferredTVDisplay = defaults.string(forKey: Key.preferredTVDisplay)
         showPairingAtLaunch = defaults.object(forKey: Key.showPairingAtLaunch) as? Bool ?? true
-        homeLayout = defaults.string(forKey: Key.homeLayout) ?? "scroll"
+        // Pages stays off until the viewer picks it (Scroll is the familiar dock + grid).
+        homeLayout = defaults.string(forKey: Key.homeLayout) ?? HomeLayout.scroll.rawValue
     }
 
     // MARK: Watching

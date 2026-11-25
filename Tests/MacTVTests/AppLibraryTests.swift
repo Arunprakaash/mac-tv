@@ -242,6 +242,16 @@ struct AppLibraryTests {
     }
 
     @Test
+    func homeLayoutDefaultsToScrollSoPagesStayOff() {
+        let suite = "home-layout-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = Preferences(defaults: defaults)
+        #expect(prefs.homeLayout == HomeLayout.scroll.rawValue)
+        #expect((HomeLayout(rawValue: prefs.homeLayout) ?? .pages) == .scroll)
+    }
+
+    @Test
     func homeDownWrapsToFirstAppInScrollAndPages() throws {
         try withFolder { folder in
             let tv = TVController(library: AppLibrary(folder: folder))

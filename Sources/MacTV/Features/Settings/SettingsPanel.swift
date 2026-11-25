@@ -23,7 +23,7 @@ struct SettingsPanel: Equatable {
             switch self {
             case .sleepTimer, .wallpaper, .aerialCategory, .saverDelay, .saverClock, .feedback,
                  .autoSkip, .autoNext, .websitePlayer, .dedicatedTV, .preferredDisplay, .launchAtLogin,
-                 .keepMacAwake, .lidOverride, .analytics, .autoUpdate:
+                 .keepMacAwake, .lidOverride, .analytics, .autoUpdate, .homeLayout:
                 true
             default:
                 false
@@ -36,7 +36,8 @@ struct SettingsPanel: Equatable {
             case .autoSkip, .autoNext, .saverClock, .feedback, .keepMacAwake, .lidOverride,
                  .analytics, .autoUpdate, .dedicatedTV, .launchAtLogin:
                 "Toggle"
-            case .sleepTimer, .websitePlayer, .preferredDisplay, .wallpaper, .aerialCategory, .saverDelay:
+            case .sleepTimer, .websitePlayer, .preferredDisplay, .wallpaper, .aerialCategory, .saverDelay,
+                 .homeLayout:
                 // ←→ already says Change; OK advances the same value.
                 "Select"
             case .phoneRemote, .addApp, .arrangeApps, .topShelfPreferences, .playbackCheck, .audioOutput:
