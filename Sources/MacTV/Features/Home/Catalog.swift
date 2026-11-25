@@ -373,6 +373,23 @@ enum Icons {
         return art
     }
 
+    /// Draws Top Shelf art off the main thread ahead of time (about a tenth of a second each), so the
+    /// first focus on each app doesn't stutter. Apps drawn on focus meanwhile are left as they are.
+    static func prewarmShelfArt(for services: [Service]) async {
+        struct Drawn: @unchecked Sendable { let image: NSImage? }
+        for service in services {
+            switch service.kind {
+            case .app, .addApp, .settings: break
+            default: continue
+            }
+            guard shelfArts[service.id] == nil, let cg = cgImage(for: service, maxPixels: 1024) else { continue }
+            let drawn = await Task.detached(priority: .utility) {
+                Drawn(image: TileArt.make(from: cg, size: TileArt.shelfSize, markCenterY: TileArt.shelfMarkCenterY))
+            }.value
+            if shelfArts[service.id] == nil, let image = drawn.image { shelfArts[service.id] = image }
+        }
+    }
+
     static func png(for service: Service) -> Data? {
         if let cached = pngs[service.id] { return cached }
         guard let image = image(for: service), let tiff = image.tiffRepresentation,

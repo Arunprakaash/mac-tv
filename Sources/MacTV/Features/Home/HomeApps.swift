@@ -107,6 +107,8 @@ extension TVController {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
             useIcon(IconFinder.icon(forAppAt: url.path), for: service.id)
         }
+        let services = services
+        Task { await Icons.prewarmShelfArt(for: services) }
     }
 
     /// Adds shelf-art samples if needed and (re)downloads tile + hero for each.
