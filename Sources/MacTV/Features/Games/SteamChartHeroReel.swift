@@ -3,32 +3,29 @@ import SwiftUI
 
 /// Best of Year › Controller hero reel for Steam Big Picture's Top Shelf.
 /// Chart year N is kept through calendar N+1; from N+2 we look for year N+1. Images load lazily.
+/// Game titles on the art are a separate feature (Top Shelf title toggle); this reel is art only.
 @MainActor
 final class SteamChartHeroReel: ObservableObject {
     static let shared = SteamChartHeroReel()
 
     @Published private(set) var image: NSImage?
     @Published private(set) var appID = ""
-    @Published private(set) var title = ""
 
     private var order: [String] = []
     /// Chart order as returned by Steam (for disk), separate from the shuffled playback `order`.
     private var chartIDs: [String] = []
     private var index = 0
     private var timer: Timer?
-    private var names: [String: String] = [:]
     private var chartYear = 0
     private var started = false
-    private var persistTask: Task<Void, Never>?
 
     private static let hold: TimeInterval = 8
     private static let limit = 100
-    /// Coalesce name writes so advancing the reel doesn't rewrite JSON every fetch (#18 hot path).
-    private static let persistDelay: Duration = .seconds(1)
 
     private struct Saved: Codable {
         let year: Int
         let appIDs: [String]
+        /// Ignored; kept so older caches still decode.
         var names: [String: String]?
     }
 
@@ -46,7 +43,6 @@ final class SteamChartHeroReel: ObservableObject {
             if let saved = load(), !saved.appIDs.isEmpty {
                 chartYear = saved.year
                 chartIDs = saved.appIDs
-                names = saved.names ?? [:]
                 apply(saved.appIDs, shuffle: true)
                 // Chart 2025 stays through 2026; only in 2027 do we look for 2026.
                 if SteamLibrary.shouldRefreshChart(savedYear: saved.year, calendarYear: calendarYear) {
@@ -54,7 +50,6 @@ final class SteamChartHeroReel: ObservableObject {
                 }
             } else {
                 // Seed Top 10 so the first session isn’t blank while charts load (or offline).
-                names = Dictionary(uniqueKeysWithValues: SteamLibrary.chartBootstrapGames.map { ($0.appID, $0.name) })
                 apply(SteamLibrary.chartBootstrapGames.map(\.appID), shuffle: true)
                 Task { await refresh() }
             }
@@ -83,9 +78,8 @@ final class SteamChartHeroReel: ObservableObject {
         if chart.year <= chartYear, !order.isEmpty { return }
         chartYear = chart.year
         chartIDs = chart.appIDs
-        names = names.filter { chart.appIDs.contains($0.key) }
         prune(keeping: Set(chart.appIDs))
-        persistNow(Saved(year: chart.year, appIDs: chart.appIDs, names: names))
+        persist(Saved(year: chart.year, appIDs: chart.appIDs, names: nil))
         apply(chart.appIDs, shuffle: true)
         await show(at: 0)
         prefetch(around: 0)
@@ -120,12 +114,10 @@ final class SteamChartHeroReel: ObservableObject {
             let id = order[(i + offset) % order.count]
             if let picture = await image(for: id) {
                 index = (i + offset) % order.count
-                let label = await name(for: id)
                 // Publish only when the frame changes (#21).
-                guard appID != id || title != label || image !== picture else { return }
+                guard appID != id || image !== picture else { return }
                 withAnimation(.easeInOut(duration: 1.1)) {
                     appID = id
-                    title = label
                     image = picture
                 }
                 return
@@ -136,18 +128,7 @@ final class SteamChartHeroReel: ObservableObject {
     private func prefetch(around i: Int) {
         guard order.count > 1 else { return }
         let next = order[(i + 1) % order.count]
-        Task {
-            _ = await image(for: next)
-            _ = await name(for: next)
-        }
-    }
-
-    private func name(for id: String) async -> String {
-        if let cached = names[id], !cached.isEmpty { return cached }
-        guard let fetched = await SteamLibrary.storeName(for: id) else { return "" }
-        names[id] = fetched
-        schedulePersist()
-        return fetched
+        Task { _ = await image(for: next) }
     }
 
     /// Same decode-once path as game heroes (#18); download then invalidate a remembered miss.
@@ -166,20 +147,7 @@ final class SteamChartHeroReel: ObservableObject {
         (try? Data(contentsOf: listFile)).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
     }
 
-    private func schedulePersist() {
-        guard chartYear > 0, !chartIDs.isEmpty else { return }
-        persistTask?.cancel()
-        let saved = Saved(year: chartYear, appIDs: chartIDs, names: names)
-        persistTask = Task {
-            try? await Task.sleep(for: Self.persistDelay)
-            guard !Task.isCancelled else { return }
-            persistNow(saved)
-        }
-    }
-
-    private func persistNow(_ saved: Saved) {
-        persistTask?.cancel()
-        persistTask = nil
+    private func persist(_ saved: Saved) {
         Log.app.attempt("Saving Steam chart heroes") {
             try JSONEncoder().encode(saved).write(to: listFile, options: .atomic)
         }

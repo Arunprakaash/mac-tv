@@ -81,14 +81,8 @@ private struct BigPictureBanner: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                if !reel.title.isEmpty {
-                    Text(reel.title)
-                        .font(.tv(.title1, emphasized: true))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.5)
-                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.title)
-                } else if show == nil {
+                // No game title on the art here — shelf titles are a separate feature.
+                if show == nil {
                     Text(service.name)
                         .font(.tv(.title1, emphasized: true))
                         .lineLimit(2)

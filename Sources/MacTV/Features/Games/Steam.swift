@@ -98,18 +98,6 @@ enum SteamLibrary {
         return await data(at: path)
     }
 
-    /// Store display name for an app id (empty / nil when offline or unknown).
-    static func storeName(for appID: String) async -> String? {
-        guard appID != bigPicture.appID else { return bigPicture.name }
-        let api = "https://store.steampowered.com/api/appdetails?appids=\(appID)&filters=basic"
-        guard let meta = await data(at: api),
-              let json = try? JSONSerialization.jsonObject(with: meta) as? [String: Any],
-              let entry = json[appID] as? [String: Any],
-              let payload = entry["data"] as? [String: Any],
-              let name = payload["name"] as? String, !name.isEmpty else { return nil }
-        return name
-    }
-
     /// A few well-known titles for Top Shelf art checks (need not be installed).
     static let shelfArtSamples: [Game] = [
         Game(appID: "292030", name: "The Witcher 3: Wild Hunt"),
