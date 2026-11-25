@@ -355,6 +355,13 @@ enum Icons {
 
     static func tile(for service: Service) -> NSImage? {
         if let cached = tiles[service.id] { return cached }
+        // Big Picture: always a 5:3 Steam-icon tile (older installs may only have a square/wide PNG on disk).
+        if case .steam(let appID) = service.kind, appID == SteamLibrary.bigPicture.appID {
+            let tile = SteamLibrary.bigPicturePNG().flatMap(NSImage.init(data:))
+                ?? cgImage(for: service, maxPixels: 512).flatMap { TileArt.make(from: $0) }
+            if let tile { tiles[service.id] = tile }
+            return tile
+        }
         let tile = service.hasWideArt ? image(for: service)
             : cgImage(for: service, maxPixels: 512).flatMap { TileArt.make(from: $0) }
         // Don't cache misses — artwork often arrives a moment after the tile is first asked for.

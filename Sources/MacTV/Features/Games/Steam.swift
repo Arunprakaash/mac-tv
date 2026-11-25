@@ -211,7 +211,9 @@ enum SteamLibrary {
 
     /// A 5:3 tile like Steam's own TV mode: the game's wide background with its logo centred on it.
     /// Falls back to the store header image. Downloads from Steam's servers.
+    /// Big Picture has no store art — it's the Steam app icon laid out as a dock tile.
     static func tile(for appID: String) async -> Data? {
+        if appID == bigPicture.appID { return await MainActor.run { bigPicturePNG() } }
         let base = "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/"
         async let hero = image(at: base + "library_hero.jpg")
         async let logo = image(at: base + "logo.png")
@@ -219,6 +221,19 @@ enum SteamLibrary {
         let (background, mark, fallback) = await (hero, logo, header)
         guard let picture = background ?? fallback else { return nil }
         return compose(background: picture, logo: background == nil ? nil : mark)
+    }
+
+    /// Steam's own icon as a 5:3 Top Shelf / dock tile.
+    @MainActor
+    static func bigPicturePNG() -> Data? {
+        guard let url = appURL,
+              let data = IconFinder.icon(forAppAt: url.path),
+              let cg = NSImage(data: data)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let tile = TileArt.make(from: cg),
+              let tiff = tile.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        else { return nil }
+        return png
     }
 
     private static func data(at address: String) async -> Data? {
