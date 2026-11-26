@@ -10,12 +10,110 @@ struct TopShelf: View {
         let service = tv.shelfService
         Group {
             if tv.shelfCount > 0 {
-                AppBanner(tv: tv, service: service, expanded: expanded)
+                // Only Big Picture observes the chart reel (#21); other apps keep a plain banner.
+                if Self.usesHeroReel(service) {
+                    BigPictureBanner(tv: tv, service: service, expanded: expanded)
+                } else {
+                    AppBanner(tv: tv, service: service, expanded: expanded)
+                }
             }
         }
         .frame(width: canvas.width, height: canvas.height, alignment: .topLeading)
         .id(service.id)
         .transition(.opacity)
+    }
+
+    static func usesHeroReel(_ service: Service) -> Bool {
+        if case .steam(let appID) = service.kind, appID == SteamLibrary.bigPicture.appID { return true }
+        return false
+    }
+}
+
+/// Steam Big Picture: observes the Best of Year controller reel and drives the Top Shelf from it.
+private struct BigPictureBanner: View {
+    @ObservedObject var tv: TVController
+    @ObservedObject private var feed: TopShelfFeed
+    @ObservedObject private var reel: SteamChartHeroReel
+    @Environment(\.canvasSize) private var canvas
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let service: Service
+    let expanded: Bool
+
+    init(tv: TVController, service: Service, expanded: Bool) {
+        _tv = ObservedObject(wrappedValue: tv)
+        _feed = ObservedObject(wrappedValue: tv.topShelf)
+        _reel = ObservedObject(wrappedValue: SteamChartHeroReel.shared)
+        self.service = service
+        self.expanded = expanded
+    }
+
+    private var steamTile: NSImage? { Icons.tile(for: service) }
+
+    private var backdrop: (id: String, image: NSImage)? {
+        if let image = reel.image { return (reel.appID, image) }
+        if let tile = steamTile { return ("\(service.id)-tile", tile) }
+        return nil
+    }
+
+    var body: some View {
+        let show = backdrop
+        ZStack(alignment: .topLeading) {
+            if let show {
+                AppArtBackdrop(image: show.image)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+                    .id(show.id)
+                    .transition(.opacity)
+            } else {
+                Artwork(accent: service.accent, deep: service.deep)
+                    .frame(width: canvas.width, height: canvas.height)
+                    .clipped()
+            }
+            LinearGradient(stops: [.init(color: .black.opacity(expanded ? 0.8 : 0.18), location: 0),
+                                   .init(color: .black.opacity(expanded ? 0.4 : 0.15), location: 0.4),
+                                   .init(color: .clear, location: 0.65)],
+                           startPoint: .leading, endPoint: .trailing)
+            LinearGradient(stops: [.init(color: .clear, location: 0.45),
+                                   .init(color: .black.opacity(0.85), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+            if show != nil {
+                LinearGradient(colors: [.black.opacity(0.25), .clear], startPoint: .top, endPoint: .center)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                // No game title on the art here — shelf titles are a separate feature.
+                if show == nil {
+                    Text(service.name)
+                        .font(.tv(.title1, emphasized: true))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                }
+                if expanded {
+                    let openIndex = feed.searchURL(for: service) == nil ? 0 : 1
+                    HStack(spacing: 18) {
+                        if feed.searchURL(for: service) != nil {
+                            ShelfButton(title: "Search in \(service.name)", systemImage: "magnifyingglass", focused: tv.focus == .shelf(0)) {
+                                tv.setFocus(.shelf(0)); tv.activateShelf(0)
+                            }
+                        }
+                        ShelfButton(title: "Open \(service.name)", systemImage: "arrow.up.right", focused: tv.focus == .shelf(openIndex)) {
+                            tv.setFocus(.shelf(openIndex)); tv.activateShelf(openIndex)
+                        }
+                    }
+                    .padding(.top, 20)
+                    .tvGlassTransition()
+                }
+            }
+            .frame(width: 1100, alignment: .leading)
+            .padding(.leading, 96)
+            .frame(maxHeight: .infinity, alignment: expanded ? .bottomLeading : .topLeading)
+            .padding(.top, 96)
+            .padding(.bottom, 110)
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 1.1), value: reel.appID)
+        .onAppear { reel.start(animate: !reduceMotion) }
+        .onDisappear { reel.pause() }
     }
 }
 

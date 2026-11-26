@@ -107,9 +107,101 @@ enum SteamLibrary {
         Game(appID: "814380", name: "Sekiro: Shadows Die Twice"),
     ]
 
+    /// First-launch seed until Best of Year › Controller charts land (not persisted as the year cache).
+    /// Snapshot: 2025 chart, API `type` 4, top 10 order as of 2026-11-17.
+    static let chartBootstrapGames: [Game] = [
+        Game(appID: "550", name: "Left 4 Dead 2"),
+        Game(appID: "204360", name: "Castle Crashers"),
+        Game(appID: "208650", name: "Batman: Arkham Knight"),
+        Game(appID: "227300", name: "Euro Truck Simulator 2"),
+        Game(appID: "230410", name: "Warframe"),
+        Game(appID: "244210", name: "Assetto Corsa"),
+        Game(appID: "250900", name: "The Binding of Isaac: Rebirth"),
+        Game(appID: "252950", name: "Rocket League"),
+        Game(appID: "268910", name: "Cuphead"),
+        Game(appID: "270880", name: "American Truck Simulator"),
+    ]
+
+    /// Steam Store Best of Year URL tabs (`?tab=5` Controller, `?tab=6` VR) are **not** the API `type` values.
+    /// GetYearTopAppReleases uses: 4 = Controller, 5 = VR. Confusing them loads the VR chart.
+    static let bestOfYearControllerType = 4
+    static let bestOfYearVRType = 5
+
+    /// Controller-chart app IDs from a GetYearTopAppReleases JSON body, chart order.
+    static func bestOfYearControllerAppIDs(in data: Data, limit: Int = 100) -> [String] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let response = json["response"] as? [String: Any],
+              let list = response["top_app_list"] as? [[String: Any]] else { return [] }
+        let ids = list.compactMap { row -> String? in
+            guard (row["type"] as? Int) == bestOfYearControllerType else { return nil }
+            if let id = row["appid"] as? Int { return String(id) }
+            return row["appid"] as? String
+        }
+        return Array(ids.prefix(limit))
+    }
+
+    /// Chart year N stays current through calendar year N+1; look for N+1 only from calendar N+2.
+    static func shouldRefreshChart(savedYear: Int, calendarYear: Int) -> Bool {
+        calendarYear >= savedYear + 2
+    }
+
+    /// Best of Year controller chart. First load: current year, else previous.
+    /// Upgrade (`afterYear`): years after that, newest first. Empty offline.
+    static func bestOfYearControllerChart(limit: Int = 100, afterYear: Int? = nil) async -> (year: Int, appIDs: [String]) {
+        let calendarYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        let candidates: [Int]
+        if let afterYear {
+            var seen = Set<Int>()
+            // Prefer the next completed chart year (2025→2026), not the live calendar YTD list.
+            candidates = [afterYear + 1, calendarYear - 1, calendarYear].filter { year in
+                year > afterYear && seen.insert(year).inserted
+            }
+        } else {
+            candidates = [calendarYear, calendarYear - 1]
+        }
+        for candidate in candidates {
+            guard let rtime = rtimeYear(candidate),
+                  var components = URLComponents(string: "https://api.steampowered.com/ISteamChartsService/GetYearTopAppReleases/v1/")
+            else { continue }
+            components.queryItems = [URLQueryItem(name: "input_json", value: #"{"rtime_year":\#(rtime)}"#)]
+            guard let url = components.url?.absoluteString,
+                  let data = await data(at: url) else { continue }
+            let ids = bestOfYearControllerAppIDs(in: data, limit: limit)
+            if !ids.isEmpty { return (candidate, ids) }
+        }
+        return (calendarYear, [])
+    }
+
+    /// Unix time for 1 Jan UTC of `year` — what GetYearTopAppReleases expects as `rtime_year`.
+    static func rtimeYear(_ year: Int) -> Int? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar.date(from: DateComponents(year: year, month: 1, day: 1))
+            .map { Int($0.timeIntervalSince1970) }
+    }
+
+    /// Wide library backdrop only (calm; skips busy store screenshots used by `hero`).
+    static func libraryHero(for appID: String) async -> Data? {
+        guard appID != bigPicture.appID else { return nil }
+        let base = "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/"
+        for name in ["library_hero_2x.jpg", "library_hero.jpg", "header.jpg"] {
+            if let data = await data(at: base + name) { return data }
+        }
+        return nil
+    }
+
+    /// Writes `library_hero` JPEG to `file` when missing. Safe to call from a task group.
+    static func ensureLibraryHeroFile(appID: String, at file: URL) async {
+        if FileManager.default.fileExists(atPath: file.path) { return }
+        guard let data = await libraryHero(for: appID) else { return }
+        try? data.write(to: file, options: .atomic)
+    }
+
     /// A 5:3 tile like Steam's own TV mode: the game's wide background with its logo centred on it.
     /// Falls back to the store header image. Downloads from Steam's servers.
+    /// Big Picture has no store art — it's the Steam app icon laid out as a dock tile.
     static func tile(for appID: String) async -> Data? {
+        if appID == bigPicture.appID { return await MainActor.run { bigPicturePNG() } }
         let base = "https://cdn.cloudflare.steamstatic.com/steam/apps/\(appID)/"
         async let hero = image(at: base + "library_hero.jpg")
         async let logo = image(at: base + "logo.png")
@@ -117,6 +209,19 @@ enum SteamLibrary {
         let (background, mark, fallback) = await (hero, logo, header)
         guard let picture = background ?? fallback else { return nil }
         return compose(background: picture, logo: background == nil ? nil : mark)
+    }
+
+    /// Steam's own icon as a 5:3 Top Shelf / dock tile.
+    @MainActor
+    static func bigPicturePNG() -> Data? {
+        guard let url = appURL,
+              let data = IconFinder.icon(forAppAt: url.path),
+              let cg = NSImage(data: data)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let tile = TileArt.make(from: cg),
+              let tiff = tile.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        else { return nil }
+        return png
     }
 
     private static func data(at address: String) async -> Data? {
