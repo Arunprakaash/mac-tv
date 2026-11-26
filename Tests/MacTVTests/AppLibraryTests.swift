@@ -216,6 +216,65 @@ struct AppLibraryTests {
     }
 
     @Test
+    func organizerRemoveKeepsSlotOrPrevious() throws {
+        try withFolder { folder in
+            let tv = TVController(library: AppLibrary(folder: folder))
+            #expect(tv.addWebsite(name: "Crunchyroll", address: "crunchyroll.com") != nil)
+            #expect(tv.addWebsite(name: "Funimation", address: "funimation.com") != nil)
+            let apps = tv.arrangedServices
+            let index = try #require(apps.firstIndex { $0.name == "Crunchyroll" })
+            let id = apps[index].id
+            let nextID = apps[index + 1].id
+            tv.openOrganizer()
+            tv.organizer?.selectedID = id
+            tv.activateOrganizerAction(.remove, for: id)
+            #expect(!tv.arrangedServices.contains { $0.id == id })
+            #expect(tv.organizer?.selectedID == nextID)
+            #expect(tv.organizer?.action == .remove)
+
+            let last = try #require(tv.arrangedServices.last)
+            let previousID = tv.arrangedServices.dropLast().last?.id
+            tv.organizer?.selectedID = last.id
+            tv.activateOrganizerAction(.remove, for: last.id)
+            #expect(tv.organizer?.selectedID == previousID)
+            #expect(tv.organizer != nil)
+        }
+    }
+
+    @Test
+    func homeLayoutDefaultsToScrollSoPagesStayOff() {
+        let suite = "home-layout-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = Preferences(defaults: defaults)
+        #expect(prefs.homeLayout == HomeLayout.scroll.rawValue)
+        #expect((HomeLayout(rawValue: prefs.homeLayout) ?? .pages) == .scroll)
+    }
+
+    @Test
+    func homeDownStopsAtTheLastAppAndPagesShowsEachAppsShelf() throws {
+        try withFolder { folder in
+            let tv = TVController(library: AppLibrary(folder: folder))
+            let saved = tv.homeLayout
+            defer { tv.homeLayout = saved }
+            let last = tv.services.count - 1
+            tv.homeLayout = .scroll
+            tv.setFocus(.app(last))
+            tv.moveFocus(.down)
+            #expect(tv.focus == .app(last))
+
+            tv.homeLayout = .pages
+            tv.setFocus(.app(0))
+            tv.setFocus(.app(last))
+            tv.moveFocus(.down)
+            #expect(tv.focus == .app(last))
+            // Pages keeps the dock, so every app's Top Shelf shows, not just the first row's.
+            #expect(!tv.inGrid)
+            #expect(tv.shelfAppIndex == last)
+        }
+    }
+
+    @Test
     func appRequestValidationRejectsWrongTypesAndFixedOrUnknownIDs() throws {
         try withFolder { folder in
             let tv = TVController(library: AppLibrary(folder: folder))

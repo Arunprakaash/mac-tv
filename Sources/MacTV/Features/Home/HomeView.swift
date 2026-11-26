@@ -1,10 +1,11 @@
 import SwiftUI
 
 // The home screen follows Apple TV (tvOS 26): the focused dock app's Top Shelf fills the
-// screen behind a frosted glass dock of 5:3 icons, with the next row peeking below. Moving
-// up expands the Top Shelf; moving down scrolls into the full app grid. Everything is laid
-// out on a canvas 1920 points wide (or 1080 tall, whichever fits), stretched along the
-// other axis so it fills any window shape edge to edge.
+// screen behind a frosted glass dock of 5:3 icons. Scroll layout peeks the next row and
+// scrolls into the full app grid; Pages layout keeps the dock and swaps six tiles at a time.
+// Moving up expands the Top Shelf. Everything is laid out on a
+// canvas 1920 points wide (or 1080 tall, whichever fits), stretched along the other axis
+// so it fills any window shape edge to edge.
 
 private struct Layout {
     static let tile = CGSize(width: 250, height: 150)
@@ -45,8 +46,10 @@ struct HomeView: View {
     var body: some View {
         let layout = Layout(canvas: canvas)
         let rowStride = Layout.tile.height + Layout.rowGap
-        // Dock (row 0) sits at rest; row 1 brings the grid up; each subsequent row scrolls by rowStride.
-        let gridOffset: CGFloat = shelfFocused ? 420 : (focusedRow > 0 ? -layout.gridShift - CGFloat(focusedRow - 1) * rowStride : 0)
+        let pages = tv.homeLayout == .pages
+        // Scroll: dock at rest, then grid rises by row. Pages: dock stays put unless the shelf expands.
+        let gridOffset: CGFloat = shelfFocused ? 420
+            : (!pages && focusedRow > 0 ? -layout.gridShift - CGFloat(focusedRow - 1) * rowStride : 0)
 
         ZStack(alignment: .topLeading) {
             TopShelf(tv: tv, expanded: shelfFocused)
@@ -115,6 +118,7 @@ struct HomeView: View {
         .animation(Motion.navigate, value: focusedRow)
         .animation(Motion.navigate, value: shelfFocused)
         .animation(Motion.appear, value: tv.shelfAppIndex)
+        .animation(Motion.navigate, value: tv.homeLayout)
     }
 }
 
@@ -161,15 +165,37 @@ struct AppGrid: View {
                 .frame(width: layout.dockFrame.width, height: layout.dockFrame.height)
                 .offset(x: layout.dockFrame.minX, y: layout.dockFrame.minY)
 
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-                HStack(spacing: Layout.tileSpacing) {
-                    ForEach(row) { item in
-                        AppCell(tv: tv, item: item, showsLabel: rowIndex > 0 || tv.inGrid)
+            if tv.homeLayout == .pages {
+                // Offset by page index so down always sends the old row up and brings the next from below
+                // (and the reverse going up) — unlike asymmetric transitions, which keep the insert-time edge.
+                let page = min(tv.homePage, max(rows.count - 1, 0))
+                let dockTop = top(ofRow: 0, in: layout)
+                let stride = Layout.tile.height + Layout.rowGap
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                    let delta = rowIndex - page
+                    HStack(spacing: Layout.tileSpacing) {
+                        ForEach(row) { item in
+                            AppCell(tv: tv, item: item, showsLabel: false)
+                        }
                     }
+                    .offset(x: layout.dockFrame.minX + Layout.dockPadding,
+                            y: dockTop + CGFloat(delta) * stride)
+                    .opacity(delta == 0 ? 1 : 0)
+                    .allowsHitTesting(delta == 0)
+                    .zIndex(delta == 0 ? 1 : 0)
                 }
-                .offset(x: layout.dockFrame.minX + Layout.dockPadding, y: top(ofRow: rowIndex, in: layout))
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                    HStack(spacing: Layout.tileSpacing) {
+                        ForEach(row) { item in
+                            AppCell(tv: tv, item: item, showsLabel: rowIndex > 0 || tv.inGrid)
+                        }
+                    }
+                    .offset(x: layout.dockFrame.minX + Layout.dockPadding, y: top(ofRow: rowIndex, in: layout))
+                }
             }
         }
+        .animation(Motion.navigate, value: tv.homePage)
     }
 
     private func top(ofRow row: Int, in layout: Layout) -> CGFloat {

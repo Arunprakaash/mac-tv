@@ -29,6 +29,8 @@ final class Preferences: ObservableObject {
         dedicatedTVMode = defaults.bool(forKey: Key.dedicatedTVMode)
         preferredTVDisplay = defaults.string(forKey: Key.preferredTVDisplay)
         showPairingAtLaunch = defaults.object(forKey: Key.showPairingAtLaunch) as? Bool ?? true
+        // Pages stays off until the viewer picks it (Scroll is the familiar dock + grid).
+        homeLayout = defaults.string(forKey: Key.homeLayout) ?? HomeLayout.scroll.rawValue
     }
 
     // MARK: Watching
@@ -80,6 +82,9 @@ final class Preferences: ObservableObject {
     /// Show the phone-remote pairing sheet when Mac TV launches.
     @Published var showPairingAtLaunch: Bool { didSet { save(showPairingAtLaunch, Key.showPairingAtLaunch) } }
 
+    /// `HomeLayout` raw value: `scroll` or `pages`.
+    @Published var homeLayout: String { didSet { save(homeLayout, Key.homeLayout) } }
+
     private func save(_ value: Any?, _ key: String) {
         if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
@@ -101,5 +106,6 @@ final class Preferences: ObservableObject {
         static let dedicatedTVMode = "dedicatedTVMode"
         static let preferredTVDisplay = "preferredTVDisplay"
         static let showPairingAtLaunch = "showPairingAtLaunch"
+        static let homeLayout = "homeLayout"
     }
 }

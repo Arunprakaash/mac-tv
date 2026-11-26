@@ -336,8 +336,10 @@ final class TVController: NSObject, ObservableObject {
         if case .app(let index) = focus, services.indices.contains(index) { focusedID = services[index].id }
         else { focusedID = shelfID }
         services = library.services()
-        if let index = services.firstIndex(where: { $0.id == shelfID }), index < columns { shelfAppIndex = index }
-        else { shelfAppIndex = 0 }
+        if let index = services.firstIndex(where: { $0.id == shelfID }),
+           homeLayout == .pages || index < columns {
+            shelfAppIndex = index
+        } else { shelfAppIndex = 0 }
         let newIndex = services.firstIndex { $0.id == focusedID }
         switch oldFocus {
         case .app(let index):
@@ -362,7 +364,15 @@ final class TVController: NSObject, ObservableObject {
         guard newFocus != focus else { return }
         focus = newFocus
         tilt = .zero
-        if case .app(let index) = newFocus, index < columns { shelfAppIndex = index }
+        if case .app(let index) = newFocus, homeLayout == .pages || index < columns {
+            shelfAppIndex = index
+        }
+    }
+
+    func stepHomeLayout(forward: Bool = true) {
+        let all = HomeLayout.allCases
+        let index = all.firstIndex(of: homeLayout) ?? 0
+        homeLayout = all[(index + (forward ? 1 : all.count - 1)) % all.count]
     }
 
     private func handleInLauncher(_ command: RemoteCommand) {
@@ -404,7 +414,12 @@ final class TVController: NSObject, ObservableObject {
             switch focus {
             case .status: setFocus(shelfCount > 0 ? .shelf(0) : .app(shelfAppIndex))
             case .shelf: setFocus(.app(shelfAppIndex))
-            case .app: if inGrid { setFocus(.app(0)) }
+            case .app(let index):
+                if homeLayout == .pages, index >= columns {
+                    setFocus(.app(index % columns))
+                } else if inGrid {
+                    setFocus(.app(0))
+                }
             }
         case .pointer(let dx, let dy): movePointer(dx: dx, dy: dy)
         case .click: clickPointer()
