@@ -1,9 +1,9 @@
 import SwiftUI
 
-// The home screen follows Apple TV (tvOS 26): the focused app's Top Shelf fills the
+// The home screen follows Apple TV (tvOS 26): the focused dock app's Top Shelf fills the
 // screen behind a frosted glass dock of 5:3 icons. Scroll layout peeks the next row and
-// scrolls the grid; Pages layout keeps the dock and swaps six tiles at a time. Moving up
-// expands the Top Shelf. App changes cross-fade the backdrop. Everything is laid out on a
+// scrolls into the full app grid; Pages layout keeps the dock and swaps six tiles at a time.
+// Moving up expands the Top Shelf. Everything is laid out on a
 // canvas 1920 points wide (or 1080 tall, whichever fits), stretched along the other axis
 // so it fills any window shape edge to edge.
 
@@ -52,9 +52,9 @@ struct HomeView: View {
             : (!pages && focusedRow > 0 ? -layout.gridShift - CGFloat(focusedRow - 1) * rowStride : 0)
 
         ZStack(alignment: .topLeading) {
-            // Hero stays full-bleed behind the grid; only the dock/shelf expand path may nudge it.
             TopShelf(tv: tv, expanded: shelfFocused)
-                .offset(y: !tv.inGrid && gridOffset < 0 ? gridOffset : 0)
+                .offset(y: gridOffset < 0 ? gridOffset : 0)
+                .opacity(tv.inGrid ? 0 : 1)
 
             AppGrid(tv: tv)
                 // An expanded banner takes the whole screen; the dock slides away, off the bottom.
@@ -117,6 +117,7 @@ struct HomeView: View {
         .foregroundStyle(.white)
         .animation(Motion.navigate, value: focusedRow)
         .animation(Motion.navigate, value: shelfFocused)
+        .animation(Motion.appear, value: tv.shelfAppIndex)
         .animation(Motion.navigate, value: tv.homeLayout)
     }
 }

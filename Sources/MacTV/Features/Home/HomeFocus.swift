@@ -29,13 +29,7 @@ extension TVController {
     /// The top-row app whose content the Top Shelf shows.
     var shelfService: Service { services.indices.contains(shelfAppIndex) ? services[shelfAppIndex] : services[0] }
 
-    /// Backdrop art follows the focused app in the grid; Open/Search stay on the dock's shelf app.
-    var bannerService: Service {
-        if case .app(let index) = focus, services.indices.contains(index) { return services[index] }
-        return shelfService
-    }
-
-    /// True when focus is below the top row in Scroll layout; the dock scrolls away, the hero stays behind the grid.
+    /// True when focus is below the top row in Scroll layout; the Top Shelf scrolls away.
     /// Pages layout keeps the dock, so this stays false.
     var inGrid: Bool {
         if homeLayout == .pages { return false }
@@ -87,8 +81,6 @@ extension TVController {
                     setFocus(.app(index + columns))
                 } else if (row + 1) * columns < services.count {
                     setFocus(.app(services.count - 1))
-                } else {
-                    setFocus(.app(0))
                 }
             case .up:
                 if row > 0 {
