@@ -237,7 +237,8 @@ final class Feedback: ObservableObject {
             : supported.contains(.handles) ? .handles
             : .default
         guard let engine = haptics.createEngine(withLocality: locality) else { return }
-        engine.isAutoShutdownEnabled = false
+        // Let an idle pad's engine stop to save its battery; the next tap restarts it (pending cue).
+        engine.isAutoShutdownEnabled = true
         // Mark stale only; the next tap (or pending cue) restarts. Auto-restart here
         // would spin the engine while the pad is idle.
         engine.stoppedHandler = { [weak self] _ in

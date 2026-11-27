@@ -36,8 +36,11 @@ struct ControllerHapticsTests {
 
     @Test @MainActor func volumeStepRampsThenCaps() {
         #expect(ControllerInput.volumeStep(heldFor: 0) == 1)
-        #expect(ControllerInput.volumeStep(heldFor: 0.3) == 2)
-        #expect(ControllerInput.volumeStep(heldFor: 1.2) == 5)
-        #expect(ControllerInput.volumeStep(heldFor: 10) == 5)
+        #expect(ControllerInput.volumeStep(heldFor: 0.5) == 2)
+        #expect(ControllerInput.volumeStep(heldFor: 1.2) == 3)
+        #expect(ControllerInput.volumeStep(heldFor: 10) == 3)
+        // At ten ticks a second, a one-second squeeze stays under a quarter of the range.
+        let firstSecond = (0..<10).map { ControllerInput.volumeStep(heldFor: Double($0) * 0.1) }.reduce(0, +)
+        #expect(firstSecond <= 25)
     }
 }
