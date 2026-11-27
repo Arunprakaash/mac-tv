@@ -117,4 +117,22 @@ struct OnScreenKeyboardFocusTests {
         #expect(tv.openKeyboardFromControllerSelect())
         #expect(tv.onScreenKeyboard.isOpen)
     }
+
+    @Test func phoneTypingStillReachesTheFieldWhileTheKeyboardIsOpen() {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let folder = root.appendingPathComponent("work/tests/\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let tv = TVController(library: AppLibrary(folder: folder))
+        tv.adder = AppAdder(tab: .website, row: 1)
+        tv.controller = ControllerInfo(name: "Pad")
+        tv.lastInputKind = .controller
+        #expect(tv.openKeyboardFromControllerSelect())
+        #expect(tv.onScreenKeyboard.isOpen)
+
+        // The phone's typing box isn't swallowed by the controller keyboard.
+        tv.handle(.text("crunchy"), from: .remote)
+        #expect(tv.adder?.address == "crunchy")
+        tv.handle(.deleteBackward, from: .remote)
+        #expect(tv.adder?.address == "crunch")
+    }
 }

@@ -144,11 +144,10 @@ extension TVController {
                 picker.namingOnCreate = false
             case .select:
                 profilePicker = picker
-                if picker.namingOnCreate {
-                    createProfile()
-                    return
-                }
-                if openKeyboardFromControllerSelect() { return }
+                // A controller's A on the name field opens the keyboard; any other Select creates,
+                // as it always has (the phone's OK, a click, Return).
+                if !picker.namingOnCreate, openKeyboardFromControllerSelect() { return }
+                createProfile()
                 return
             case .back:
                 picker.naming = nil

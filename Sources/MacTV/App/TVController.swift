@@ -485,11 +485,8 @@ final class TVController: NSObject, ObservableObject {
             handleKeyboardCommand(from: source)
             return
         case .home:
-            if onScreenKeyboard.isOpen || webTyping {
-                dismissWebTyping()
-                feedback.play(.back, from: source)
-                return
-            }
+            // Home always goes home, from any remote; leaving playback closes the keyboard too.
+            // (A controller's Menu button closes just the keyboard first: `handleControllerMenu`.)
             goHome()
             return
         case .activateBrowser:
@@ -963,10 +960,9 @@ final class TVController: NSObject, ObservableObject {
             withAnimation(Motion.focus) { onScreenKeyboard.jumpColumns(forward ? 5 : -5) }
             feedback.play(.move, from: source)
             return true
-        case .keyboardShift, .home, .volume, .mute, .controlCenter, .screenOff, .screenOn, .sleepMac:
-            return false
         default:
-            return true
+            // Everything else reaches the page or sheet as usual: phone typing, the pointer, volume…
+            return false
         }
     }
 

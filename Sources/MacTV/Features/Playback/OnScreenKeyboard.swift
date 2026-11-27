@@ -10,7 +10,10 @@ enum TypingProbe {
       let last = null;
       const check = () => {
         const a = document.activeElement;
-        const typing = !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+        // Text-like fields only: not checkboxes, buttons, sliders or drop-downs.
+        const textInput = a && a.tagName === 'INPUT'
+          && /^(|text|search|email|url|password|tel|number)$/i.test(a.getAttribute('type') || '');
+        const typing = !!a && (a.isContentEditable || a.tagName === 'TEXTAREA' || !!textInput);
         if (typing === last) return;
         last = typing;
         try { window.webkit.messageHandlers.macTVTyping.postMessage(typing); } catch (_) {}
