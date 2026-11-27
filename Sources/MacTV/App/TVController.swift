@@ -81,6 +81,10 @@ final class TVController: NSObject, ObservableObject {
     @Published var controller: ControllerInfo?
     /// Last device that issued a command — footer legends show its glyphs.
     @Published var lastInputKind: InputKind = .keyboard
+    /// Controller on-screen keyboard over the streaming player.
+    @Published var onScreenKeyboard = OnScreenKeyboardState()
+    /// Built-in web player has a focused text field (TypingProbe).
+    var webTyping = false
 
     /// The home screen's apps, in order; changes when the user adds or removes apps.
     @Published private(set) var services: [Service] = []
@@ -100,6 +104,12 @@ final class TVController: NSObject, ObservableObject {
     var autoNext: Bool {
         get { preferences.autoNext }
         set { preferences.autoNext = newValue }
+    }
+
+    /// Controller on-screen keyboard layout (QWERTY, QWERTZ, …).
+    var keyboardLayout: OnScreenKeyboardState.Layout {
+        get { .from(preference: preferences.keyboardLayout) }
+        set { preferences.keyboardLayout = newValue.rawValue }
     }
 
     // MARK: - Forwarded Properties to Coordinators
@@ -466,7 +476,22 @@ final class TVController: NSObject, ObservableObject {
         }
 
         switch command {
-        case .home: goHome(); return
+        case .keyboardShift(let held):
+            if onScreenKeyboard.isOpen {
+                onScreenKeyboard.holdShift = held
+            }
+            return
+        case .keyboard:
+            handleKeyboardCommand(from: source)
+            return
+        case .home:
+            if onScreenKeyboard.isOpen || webTyping {
+                dismissWebTyping()
+                feedback.play(.back, from: source)
+                return
+            }
+            goHome()
+            return
         case .activateBrowser:
             if playbackCoordinator.iinaOpen {
                 playbackCoordinator.activateIINA()
@@ -513,6 +538,15 @@ final class TVController: NSObject, ObservableObject {
             }
             return
         default: break
+        }
+
+        if handleOnScreenKeyboard(command, from: source) { return }
+
+        // Leave a focused search field without exiting the streaming app.
+        if case .back = command, webTyping {
+            dismissWebTyping()
+            feedback.play(.back, from: source)
+            return
         }
 
         if playbackCoordinator.externalBrowser != nil {
@@ -774,6 +808,8 @@ final class TVController: NSObject, ObservableObject {
         launchCancelGeneration = UUID()
         launchCover = nil
         unpinLaunchCover()
+        closeOnScreenKeyboard()
+        webTyping = false
         // Leaving a browser window lands on the desktop Space, so coming back needs more than activating.
         let leavingBrowser = playbackCoordinator.externalBrowser != nil
         playbackCoordinator.closeIINAPlayback()
@@ -793,6 +829,171 @@ final class TVController: NSObject, ObservableObject {
         steamGamePID = nil
         displayCoordinator.releasePlaybackKeepAwake()
         if leavingBrowser { takeFocusBack() } else { bringToFront() }
+    }
+
+    // MARK: - On-screen keyboard
+
+    /// Streaming player, Brave, or a sheet that accepts typed text (Add App, profiles, shares).
+    var canShowOnScreenKeyboard: Bool {
+        if case .player = mode { return true }
+        if playbackCoordinator.externalBrowser != nil { return true }
+        if adder != nil { return true }
+        if profilePicker?.naming != nil { return true }
+        if movies?.shareForm != nil { return true }
+        return false
+    }
+
+    /// Focus sits on a field that takes characters (for auto-show).
+    var isTypingFieldFocused: Bool {
+        if webTyping { return true }
+        if let a = adder {
+            switch a.tab {
+            case .website: return a.row == 1 || a.row == 2
+            case .macApp: return a.row == 1
+            case .suggested, .steam: return false
+            }
+        }
+        if let picker = profilePicker, picker.naming != nil { return !picker.namingOnCreate }
+        if let form = movies?.shareForm, !form.connecting { return form.row <= 2 }
+        return false
+    }
+
+    /// Sheets: A opens the OSK on a text field; hint bar rewrites Select → Open keyboard.
+    var showsOpenKeyboardOnSelect: Bool {
+        controller != nil && lastInputKind == .controller
+            && isTypingFieldFocused && !onScreenKeyboard.isOpen
+    }
+
+    func setKeyboardDeleteHeld(_ held: Bool) {
+        guard onScreenKeyboard.isOpen else { return }
+        onScreenKeyboard.holdDelete = held
+    }
+
+    func openOnScreenKeyboard() {
+        guard controller != nil, canShowOnScreenKeyboard else { return }
+        withAnimation(Motion.appear) { onScreenKeyboard.open(layout: keyboardLayout) }
+    }
+
+    func stepKeyboardLayout() {
+        let all = OnScreenKeyboardState.Layout.allCases
+        let next = all[((all.firstIndex(of: keyboardLayout) ?? 0) + 1) % all.count]
+        keyboardLayout = next
+        if onScreenKeyboard.isOpen { onScreenKeyboard.layout = next }
+    }
+
+    func closeOnScreenKeyboard() {
+        guard onScreenKeyboard.isOpen else { return }
+        withAnimation(Motion.appear) { onScreenKeyboard.close() }
+    }
+
+    /// TypingProbe: auto-open/close only when a pad is the active input. Sheets open via A/Y.
+    func setWebTyping(_ typing: Bool) {
+        guard webTyping != typing else { return }
+        webTyping = typing
+        if !typing {
+            closeOnScreenKeyboard()
+            return
+        }
+        guard preferences.autoShowOnScreenKeyboard,
+              controller != nil, lastInputKind == .controller,
+              canShowOnScreenKeyboard else { return }
+        openOnScreenKeyboard()
+    }
+
+    /// Add App: with a controller, land on the tabs so the keyboard doesn't pop open immediately.
+    func openAddApp() {
+        adder = AppAdder(row: controller != nil ? 0 : 1)
+        closeOnScreenKeyboard()
+    }
+
+    /// A on a sheet text field opens the keyboard when a controller is driving (instead of advancing).
+    @discardableResult
+    func openKeyboardFromControllerSelect() -> Bool {
+        guard showsOpenKeyboardOnSelect else { return false }
+        openOnScreenKeyboard()
+        return true
+    }
+
+    /// Close the keyboard and leave the page field. `closeChrome` also sends Escape so Netflix/Prime
+    /// collapse the search bar back to the magnifying-glass icon.
+    func dismissWebTyping(closeChrome: Bool = true) {
+        closeOnScreenKeyboard()
+        if webTyping {
+            playbackCoordinator.blurWebTypingField(closeChrome: closeChrome)
+            webTyping = false
+        }
+    }
+
+    /// Y opens the keyboard when closed; while open it inserts Space (Done stays on the board).
+    private func handleKeyboardCommand(from source: Feedback.Source) {
+        if onScreenKeyboard.isOpen {
+            applyOnScreenKeyboard(.insert(" "), from: source)
+            return
+        }
+        guard controller != nil, canShowOnScreenKeyboard, isTypingFieldFocused else {
+            showToast("Focus a text field to use the on-screen keyboard")
+            return
+        }
+        openOnScreenKeyboard()
+        feedback.play(.select, from: source)
+    }
+
+    /// Consumes controller input while the keyboard overlay is open.
+    private func handleOnScreenKeyboard(_ command: RemoteCommand, from source: Feedback.Source) -> Bool {
+        guard onScreenKeyboard.isOpen else { return false }
+        switch command {
+        case .move(let direction):
+            withAnimation(Motion.focus) { onScreenKeyboard.move(direction) }
+            feedback.play(.move, from: source)
+            return true
+        case .select:
+            applyOnScreenKeyboard(onScreenKeyboard.activateFocused(), from: source)
+            return true
+        case .back:
+            // B closes without dumping the user on Home.
+            dismissWebTyping()
+            feedback.play(.back, from: source)
+            return true
+        case .playPause:
+            // X deletes while the keyboard is open (Space stays on the board).
+            applyOnScreenKeyboard(.delete, from: source)
+            return true
+        case .seek(let forward):
+            withAnimation(Motion.focus) { onScreenKeyboard.jumpColumns(forward ? 5 : -5) }
+            feedback.play(.move, from: source)
+            return true
+        case .keyboardShift, .home, .volume, .mute, .controlCenter, .screenOff, .screenOn, .sleepMac:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private func applyOnScreenKeyboard(_ action: OnScreenKeyboardState.Action, from source: Feedback.Source) {
+        switch action {
+        case .none:
+            feedback.play(.select, from: source)
+        case .dismiss:
+            feedback.play(.back, from: source)
+            dismissWebTyping()
+        case .insert(let text):
+            feedback.play(.select, from: source)
+            injectTyped(.text(text))
+        case .delete:
+            feedback.play(.back, from: source)
+            injectTyped(.deleteBackward)
+        }
+    }
+
+    /// Player/Brave get keys directly; sheets go through the launcher handlers.
+    private func injectTyped(_ command: RemoteCommand) {
+        if playbackCoordinator.externalBrowser != nil {
+            playbackCoordinator.handleExternalBrowserCommand(command)
+        } else if case .player(let service) = mode {
+            playbackCoordinator.handleInPlayer(command, service: service)
+        } else {
+            handleInLauncher(command)
+        }
     }
 
     var idleForUpdate: Bool {

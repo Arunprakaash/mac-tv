@@ -86,14 +86,31 @@ struct RootView: View {
                     .allowsHitTesting(tv.activeSheet == nil && !tv.screensaver)
                     .accessibilityHidden(tv.activeSheet != nil || tv.screensaver)
                 ModalSheetRouter(tv: tv)
-                if tv.screensaver {
-                    TVCanvas { Screensaver() }
-                        .ignoresSafeArea()
-                        .transition(.opacity.animation(.easeInOut(duration: 1.2)))
-                }
             }
 
             NoticesOverlay(notices: tv.notices)
+
+            // Keep TVCanvas mounted so the slide runs on the dock only — a full-screen
+            // `.move(edge: .bottom)` yanks the already-bottom keyboard off in one frame.
+            TVCanvas {
+                ZStack(alignment: .bottom) {
+                    if tv.onScreenKeyboard.isOpen {
+                        LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 420)
+                            .frame(maxWidth: .infinity)
+                            .transition(.opacity)
+                        OnScreenKeyboardView(tv: tv, state: tv.onScreenKeyboard)
+                            .padding(.bottom, 48)
+                            .transition(reduceMotion
+                                ? .opacity
+                                : .move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .animation(Motion.appear, value: tv.onScreenKeyboard.isOpen)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
         .environment(\.colorScheme, .dark)
         .background(Color.black.ignoresSafeArea())

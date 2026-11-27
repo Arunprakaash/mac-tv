@@ -15,6 +15,10 @@ enum RemoteCommand {
     case controlCenter
     case nextControl, previousControl, activateBrowser, browserFullscreen, retryBrowser
     case setting(String, Bool)
+    /// Game controller Y: opens the on-screen keyboard, or inserts Space while it's open.
+    case keyboard
+    /// L2 held/released while the on-screen keyboard is open (Shift).
+    case keyboardShift(Bool)
 
     init?(json: [String: Any]) {
         guard let action = json["a"] as? String else { return nil }

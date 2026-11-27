@@ -96,6 +96,8 @@ struct ProfilePicker: Equatable {
     var confirmingRemove = false
     /// The new profile's name while it's being typed.
     var naming: String?
+    /// While naming: focus on Create instead of the name field.
+    var namingOnCreate = false
 }
 
 extension TVController {
@@ -124,20 +126,34 @@ extension TVController {
         if case .select = command {} else { picker.confirmingRemove = false }
 
         if var name = picker.naming {
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
             switch command {
             case .text(let text):
                 name += text.replacingOccurrences(of: "\n", with: "")
                 picker.naming = String(name.prefix(20))
+                picker.namingOnCreate = false
                 if text.hasSuffix("\n") { profilePicker = picker; createProfile(); return }
             case .deleteBackward:
                 if !name.isEmpty { name.removeLast() }
                 picker.naming = name
+                if name.trimmingCharacters(in: .whitespaces).isEmpty { picker.namingOnCreate = false }
+            case .move(.down) where !trimmed.isEmpty:
+                picker.namingOnCreate = true
+                closeOnScreenKeyboard()
+            case .move(.up):
+                picker.namingOnCreate = false
             case .select:
                 profilePicker = picker
-                createProfile()
+                if picker.namingOnCreate {
+                    createProfile()
+                    return
+                }
+                if openKeyboardFromControllerSelect() { return }
                 return
             case .back:
                 picker.naming = nil
+                picker.namingOnCreate = false
+                closeOnScreenKeyboard()
             default:
                 break
             }
@@ -150,11 +166,12 @@ extension TVController {
         case .back:
             // At launch there's nowhere to go back to: stay with whoever was watching last.
             profilePicker = nil
+            closeOnScreenKeyboard()
             showStartupPairingIfReady()
             return
-        case .move(.left) where !picker.onRemove:
+        case .move(.left) where !picker.onRemove, .seek(forward: false) where !picker.onRemove:
             picker.index = max(0, picker.index - 1)
-        case .move(.right) where !picker.onRemove:
+        case .move(.right) where !picker.onRemove, .seek(forward: true) where !picker.onRemove:
             picker.index = min(addIndex, picker.index + 1)
         case .move(.down) where removable:
             picker.onRemove = true
@@ -177,7 +194,10 @@ extension TVController {
         picker.index = index
         if index >= all.count {
             picker.naming = ""
+            picker.namingOnCreate = false
             picker.onRemove = false
+            profilePicker = picker
+            return
         } else if remove {
             if picker.confirmingRemove {
                 let removed = all[index]
@@ -199,6 +219,7 @@ extension TVController {
         guard let name = profilePicker?.naming?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return }
         let added = profiles.add(named: name)
         Analytics.send(.profileAdded, ["profiles": String(profiles.all.count)])
+        closeOnScreenKeyboard()
         switchProfile(to: added.id)
     }
 }
@@ -230,7 +251,7 @@ struct ProfilesScreen: View {
             Text(picker.naming == nil ? "Who's watching?" : "New profile")
                 .font(.tv(.title2, emphasized: true))
             if let name = picker.naming {
-                naming(name)
+                naming(name, onCreate: picker.namingOnCreate)
             } else {
                 HStack(alignment: .top, spacing: 56) {
                     ForEach(Array(all.enumerated()), id: \.element.id) { index, profile in
@@ -255,13 +276,18 @@ struct ProfilesScreen: View {
             InputHintsBar(tv: tv, set: profileHints(picker))
         }
         .foregroundStyle(.white)
+        .avoidsOnScreenKeyboard(tv: tv)
         .frame(width: canvas.width, height: canvas.height)
         .animation(Motion.focus, value: picker)
     }
 
     private func profileHints(_ picker: ProfilePicker) -> HintSet {
         if picker.naming != nil {
-            return .custom([.select("Create"), .back("Cancel")])
+            return .custom([
+                .moveVertical("Choose"),
+                .select(picker.namingOnCreate ? "Create" : "Select"),
+                .back("Cancel"),
+            ])
         }
         if picker.onRemove {
             let ok = picker.confirmingRemove ? "Confirm" : "Remove"
@@ -303,22 +329,36 @@ struct ProfilesScreen: View {
         }
     }
 
-    private func naming(_ name: String) -> some View {
-        VStack(spacing: 30) {
+    private func naming(_ name: String, onCreate: Bool) -> some View {
+        let fieldFocused = !onCreate
+        return VStack(spacing: 30) {
             ProfileAvatar(profile: Profile(id: "new", name: name.isEmpty ? "?" : name,
                                            color: ProfileStore.colors[tv.profiles.all.count % ProfileStore.colors.count]))
             HStack(spacing: 0) {
-                Text(name.isEmpty ? "Name" : name).opacity(name.isEmpty ? 0.4 : 1)
-                Rectangle().frame(width: 3, height: 40).opacity(0.8).padding(.leading, 4)
+                Text(name.isEmpty ? "Name" : name)
+                    .foregroundStyle(fieldFocused ? .black : .white)
+                    .opacity(name.isEmpty ? 0.4 : 1)
+                Rectangle().frame(width: 3, height: 40)
+                    .foregroundStyle(fieldFocused ? .black : .white)
+                    .opacity(fieldFocused ? 0.8 : 0)
+                    .padding(.leading, 4)
             }
             .font(.system(size: 40, weight: .semibold))
             .padding(.horizontal, 36)
             .frame(minWidth: 520, minHeight: 84)
-            .tvPanel(in: Capsule())
+            .background(fieldFocused ? .white : .white.opacity(0.1), in: Capsule())
+            .reportsTypingFieldBottom(focused: fieldFocused)
+            .onTapGesture {
+                tv.profilePicker?.namingOnCreate = false
+                tv.handle(.select)
+            }
             Text("Type a name with the keyboard or the phone remote. Each profile has its own apps and stays signed in separately.")
                 .font(.tv(.caption2)).foregroundStyle(.white.opacity(0.65))
                 .multilineTextAlignment(.center).frame(maxWidth: 820)
-            ShelfButton(title: "Create Profile", focused: !name.isEmpty, glass: false) { tv.handle(.select) }
+            ShelfButton(title: "Create Profile", focused: onCreate && !name.isEmpty, glass: false) {
+                tv.profilePicker?.namingOnCreate = true
+                tv.handle(.select)
+            }
         }
     }
 }

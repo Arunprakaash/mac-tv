@@ -26,6 +26,7 @@ struct TVCanvas<Content: View>: View {
             content
                 .environment(\.canvasSize, canvas)
                 .frame(width: canvas.width, height: canvas.height)
+                .coordinateSpace(name: OnScreenKeyboardView.canvasSpace)
                 .scaleEffect(scale)
                 .frame(width: window.width, height: window.height)
         }
