@@ -180,6 +180,11 @@ extension TVController {
             settings = panel
             adjustSetting(row, forward: direction == .right)
             return
+        case .seek(let forward):
+            // Shoulder buttons step the focused setting the same way ←→ do.
+            settings = panel
+            adjustSetting(rows[panel.row], forward: forward)
+            return
         case .select:
             settings = panel
             activateSetting(row)

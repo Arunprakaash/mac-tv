@@ -75,8 +75,16 @@ final class Feedback: ObservableObject {
     private var nextPlayer = 0
     private var buffers: [Cue: AVAudioPCMBuffer] = [:]
     private var idleTask: Task<Void, Never>?
+    /// One engine on the quiet (right) motor when available.
     private var controllerEngine: CHHapticEngine?
     private weak var hapticController: GCController?
+    private var controllerEngineReady = false
+    /// Latest cue waiting for an async engine start (first tap after connect).
+    private var pendingControllerCue: Cue?
+    /// Xbox / DS4 spinning motors vs DualSense voice-coil.
+    private var controllerUsesRotatingMotors = true
+    /// Retained so we can stop it before the next cue (Core Haptics layers players).
+    private var controllerPlayer: CHHapticPatternPlayer?
 
     private let preferences: Preferences
 
@@ -92,6 +100,24 @@ final class Feedback: ObservableObject {
             engine.connect(player, to: engine.mainMixerNode, format: format)
             players.append(player)
         }
+    }
+
+    /// Warm haptics when a pad connects. Idempotent for the same controller.
+    func prepareControllerHaptics(_ controller: GCController) {
+        guard controller.extendedGamepad != nil else { return }
+        if controller === hapticController, controllerEngine != nil { return }
+        attachControllerEngine(controller)
+    }
+
+    func clearControllerHaptics() {
+        try? controllerPlayer?.stop(atTime: CHHapticTimeImmediate)
+        controllerPlayer = nil
+        controllerEngine?.stop()
+        controllerEngine = nil
+        hapticController = nil
+        controllerEngineReady = false
+        pendingControllerCue = nil
+        controllerUsesRotatingMotors = true
     }
 
     func play(_ cue: Cue, from source: Source) {
@@ -185,26 +211,151 @@ final class Feedback: ObservableObject {
     }
 
     private func controllerTap(_ cue: Cue) {
-        guard let controller = GCController.current ?? GCController.controllers().first else { return }
-        if controller !== hapticController {
-            controllerEngine?.stop()
-            controllerEngine = controller.haptics?.createEngine(withLocality: .default)
-            controllerEngine?.isAutoShutdownEnabled = true
-            hapticController = controller
+        // Only the pad that is current, or the one we already warmed. Never scan
+        // `controllers()` here: keyboard/pointer may be the last UI source while a
+        // pad is still plugged in, and picking "first" would buzz the wrong device.
+        guard let controller = GCController.current ?? hapticController else { return }
+        if controller !== hapticController || controllerEngine == nil {
+            attachControllerEngine(controller)
         }
+        guard controllerEngineReady, controllerEngine != nil else {
+            pendingControllerCue = cue
+            startControllerEngine()
+            return
+        }
+        playControllerPulse(cue)
+    }
+
+    private func attachControllerEngine(_ controller: GCController) {
+        clearControllerHaptics()
+        guard let haptics = controller.haptics else { return }
+        controllerUsesRotatingMotors = !(controller.extendedGamepad is GCDualSenseGamepad)
+        let supported = haptics.supportedLocalities
+        // Right/weak motor when available (Microsoft: gentler). Else handles / default.
+        let locality: GCHapticsLocality =
+            supported.contains(.rightHandle) ? .rightHandle
+            : supported.contains(.handles) ? .handles
+            : .default
+        guard let engine = haptics.createEngine(withLocality: locality) else { return }
+        engine.isAutoShutdownEnabled = false
+        // Mark stale only; the next tap (or pending cue) restarts. Auto-restart here
+        // would spin the engine while the pad is idle.
+        engine.stoppedHandler = { [weak self] _ in
+            Task { @MainActor in self?.controllerEngineReady = false }
+        }
+        engine.resetHandler = { [weak self] in
+            Task { @MainActor in self?.controllerEngineReady = false }
+        }
+        controllerEngine = engine
+        hapticController = controller
+        controllerEngineReady = false
+        startControllerEngine()
+    }
+
+    private func startControllerEngine() {
         guard let engine = controllerEngine else { return }
-        let (intensity, sharpness): (Float, Float) = switch cue {
-        case .move: (0.35, 0.7)
-        case .select: (0.75, 0.5)
-        case .back: (0.55, 0.25)
+        engine.start { [weak self] error in
+            Task { @MainActor in
+                guard let self, error == nil else { return }
+                self.controllerEngineReady = true
+                if let cue = self.pendingControllerCue {
+                    self.pendingControllerCue = nil
+                    self.playControllerPulse(cue)
+                }
+            }
         }
-        let event = CHHapticEvent(eventType: .hapticTransient, parameters: [
-            CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
-            CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness),
-        ], relativeTime: 0)
+    }
+
+    private func playControllerPulse(_ cue: Cue) {
+        guard let engine = controllerEngine else { return }
+        let pulse = Self.controllerPulse(for: cue, rotatingMotors: controllerUsesRotatingMotors)
+        try? controllerPlayer?.stop(atTime: CHHapticTimeImmediate)
+        controllerPlayer = nil
+        let event = CHHapticEvent(
+            eventType: .hapticContinuous,
+            parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: pulse.intensity),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: pulse.sharpness),
+            ],
+            relativeTime: 0,
+            duration: pulse.duration
+        )
+        let envelope = Self.intensityEnvelope(for: cue, duration: pulse.duration)
         do {
-            try engine.start()
-            try engine.makePlayer(with: CHHapticPattern(events: [event], parameters: [])).start(atTime: CHHapticTimeImmediate)
-        } catch {}
+            let player = try engine.makePlayer(
+                with: CHHapticPattern(events: [event], parameterCurves: [envelope])
+            )
+            try player.start(atTime: CHHapticTimeImmediate)
+            controllerPlayer = player
+        } catch {
+            controllerEngineReady = false
+            pendingControllerCue = cue
+            startControllerEngine()
+        }
+    }
+
+    /// Move = needle tick, select = firmer press, back = single dull thump.
+    /// ERM needs ~220ms+; DualSense stays short.
+    static func controllerPulse(
+        for cue: Cue,
+        rotatingMotors: Bool
+    ) -> (intensity: Float, sharpness: Float, duration: TimeInterval) {
+        let duration: TimeInterval
+        if rotatingMotors {
+            switch cue {
+            case .move: duration = 0.22
+            case .select: duration = 0.28
+            case .back: duration = 0.30
+            }
+        } else {
+            switch cue {
+            case .move: duration = 0.07
+            case .select: duration = 0.10
+            case .back: duration = 0.12
+            }
+        }
+        switch cue {
+        case .move: return (0.22, 0.88, duration)
+        case .select: return (0.42, 0.52, duration)
+        case .back: return (0.30, 0.22, duration)
+        }
+    }
+
+    /// Shared ERM-friendly shapes; DualSense just runs them shorter via `controllerPulse`.
+    /// Move `/\`, select `/‾\_`, back `/--\_` (no double click).
+    static func intensityEnvelope(for cue: Cue, duration: TimeInterval) -> CHHapticParameterCurve {
+        let d = duration
+        let points: [CHHapticParameterCurve.ControlPoint]
+        switch cue {
+        case .move:
+            points = [
+                .init(relativeTime: 0, value: 0.40),
+                .init(relativeTime: d * 0.12, value: 1.0),
+                .init(relativeTime: d * 0.40, value: 0.70),
+                .init(relativeTime: d * 0.70, value: 0.20),
+                .init(relativeTime: d, value: 0),
+            ]
+        case .select:
+            points = [
+                .init(relativeTime: 0, value: 0.50),
+                .init(relativeTime: d * 0.12, value: 1.0),
+                .init(relativeTime: d * 0.55, value: 0.90),
+                .init(relativeTime: d * 0.82, value: 0.30),
+                .init(relativeTime: d, value: 0),
+            ]
+        case .back:
+            points = [
+                .init(relativeTime: 0, value: 0.35),
+                .init(relativeTime: d * 0.20, value: 0.85),
+                .init(relativeTime: d * 0.65, value: 0.70),
+                .init(relativeTime: d * 0.88, value: 0.25),
+                .init(relativeTime: d, value: 0),
+            ]
+        }
+        return CHHapticParameterCurve(
+            parameterID: .hapticIntensityControl,
+            controlPoints: points,
+            relativeTime: 0
+        )
     }
 }

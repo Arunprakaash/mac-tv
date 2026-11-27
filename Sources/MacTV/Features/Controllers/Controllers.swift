@@ -32,15 +32,27 @@ struct ControllerNotice: Equatable {
 }
 
 /// Game controllers drive Mac TV the way they drive Apple TV: the D-pad or left stick moves
-/// focus (repeating while held), A selects, B goes back, Menu goes home, X plays or pauses, and
-/// the shoulder buttons skip. macOS delivers controller input only to the app in front, so while
-/// a Steam game is playing the controller belongs to the game.
+/// focus (repeating while held), A selects, B goes back, Menu/Start opens Settings on the home
+/// screen (elsewhere it goes home — Xbox's Menu button), X plays or pauses, and the shoulder
+/// buttons skip in playback or step values in Settings / Add App tabs.
+/// L2/R2 ramp volume while held; Options mutes. The right stick tilts the focused home-screen
+/// tile like pointer hover. A long B press goes Home. macOS delivers controller input only to
+/// the app in front, so while a Steam game is playing the controller belongs to the game.
 @MainActor
 final class ControllerInput {
     private weak var tv: TVController?
     private var held: RemoteCommand.Direction?
     private var repeatTimer: Timer?
+    private var volumeTimer: Timer?
+    private var volumeUp = false
+    private var volumeDown = false
+    private var volumeHoldStarted: TimeInterval?
     private var observers: [NSObjectProtocol] = []
+    private var backPressStarted: TimeInterval?
+    private var backLongFired = false
+    private static let backLongPress: TimeInterval = 0.55
+    /// Base tick; step size grows the longer a trigger is held (see `volumeStep`).
+    private static let volumeTick: TimeInterval = 0.035
 
     init(tv: TVController) {
         self.tv = tv
@@ -66,20 +78,37 @@ final class ControllerInput {
         // A PlayStation controller's light bar glows Mac TV's phosphor green.
         controller.light?.color = GCColor(red: 0.25, green: 0.94, blue: 0.56)
         press(pad.buttonA, .select)
-        press(pad.buttonB, .back)
+        pressBack(pad.buttonB)
         press(pad.buttonX, .playPause)
-        press(pad.buttonMenu, .home)
+        // Xbox Menu/Start (≡); DualSense Options mutes (View/Back stays separate when present).
+        pressMenu(pad.buttonMenu)
         press(pad.leftShoulder, .seek(forward: false))
         press(pad.rightShoulder, .seek(forward: true))
+        volumeTrigger(pad.leftTrigger, up: false)
+        volumeTrigger(pad.rightTrigger, up: true)
+        if let options = pad.buttonOptions {
+            press(options, .mute)
+        }
         pad.dpad.valueChangedHandler = { [weak self] _, x, y in MainActor.assumeIsolated { self?.steer(x: x, y: y) } }
         pad.leftThumbstick.valueChangedHandler = { [weak self] _, x, y in MainActor.assumeIsolated { self?.steer(x: x, y: y) } }
+        pad.rightThumbstick.valueChangedHandler = { [weak self] _, x, y in MainActor.assumeIsolated { self?.tiltFocusedTile(x: x, y: y) } }
+        Feedback.shared.prepareControllerHaptics(controller)
         tv?.controllerChanged(Self.info(for: controller), connected: true)
     }
 
     private func disconnect(_ controller: GCController?) {
         guard let controller else { return }
         stopRepeat()
+        stopVolumeRamp()
+        tv?.tilt = .zero
+        backPressStarted = nil
+        backLongFired = false
         let next = GCController.controllers().first { $0 !== controller && $0.extendedGamepad != nil }
+        if let next {
+            Feedback.shared.prepareControllerHaptics(next)
+        } else {
+            Feedback.shared.clearControllerHaptics()
+        }
         tv?.controllerChanged(Self.info(for: controller), connected: false, remaining: next.map(Self.info(for:)))
     }
 
@@ -98,6 +127,97 @@ final class ControllerInput {
                 }
             }
         }
+    }
+
+    /// Menu/Start: Settings on the idle home screen; Home everywhere else (so the dashboard isn't a dead button).
+    private func pressMenu(_ button: GCControllerButtonInput) {
+        button.pressedChangedHandler = { [weak self] _, _, pressed in
+            guard pressed else { return }
+            MainActor.assumeIsolated { self?.tv?.handleControllerMenu() }
+        }
+    }
+
+    /// B: short press is Back; hold ~0.55s jumps Home.
+    private func pressBack(_ button: GCControllerButtonInput) {
+        button.pressedChangedHandler = { [weak self] _, _, pressed in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if pressed {
+                    self.backPressStarted = ProcessInfo.processInfo.systemUptime
+                    self.backLongFired = false
+                    let started = self.backPressStarted
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.backLongPress) {
+                        MainActor.assumeIsolated {
+                            guard self.backPressStarted == started, !self.backLongFired else { return }
+                            self.backLongFired = true
+                            self.send(.home)
+                        }
+                    }
+                } else {
+                    let held = self.backPressStarted.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
+                    self.backPressStarted = nil
+                    if self.backLongFired { self.backLongFired = false; return }
+                    if held < Self.backLongPress { self.send(.back) }
+                }
+            }
+        }
+    }
+
+    /// Analog hold: keep stepping volume while the trigger is pulled.
+    private func volumeTrigger(_ button: GCControllerButtonInput, up: Bool) {
+        button.valueChangedHandler = { [weak self] _, value, _ in
+            MainActor.assumeIsolated {
+                self?.setVolumeHeld(up: up, held: value >= 0.08)
+            }
+        }
+    }
+
+    private func setVolumeHeld(up: Bool, held: Bool) {
+        let was = volumeUp || volumeDown
+        if up { volumeUp = held } else { volumeDown = held }
+        let now = volumeUp || volumeDown
+        if now, !was {
+            volumeHoldStarted = ProcessInfo.processInfo.systemUptime
+            tickVolume()
+            volumeTimer?.invalidate()
+            volumeTimer = Timer.scheduledTimer(withTimeInterval: Self.volumeTick, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.tickVolume() }
+            }
+        } else if !now {
+            stopVolumeRamp()
+        }
+    }
+
+    private func tickVolume() {
+        let delta = (volumeUp ? 1 : 0) - (volumeDown ? 1 : 0)
+        guard delta != 0 else { stopVolumeRamp(); return }
+        let held = volumeHoldStarted.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
+        send(.volume(delta * Self.volumeStep(heldFor: held)))
+    }
+
+    /// 1 at press → 5 after ~1.2s (full 0–100 in ~0.7s at max).
+    static func volumeStep(heldFor: TimeInterval) -> Int {
+        min(5, 1 + Int(heldFor / 0.3))
+    }
+
+    private func stopVolumeRamp() {
+        volumeTimer?.invalidate()
+        volumeTimer = nil
+        volumeUp = false
+        volumeDown = false
+        volumeHoldStarted = nil
+    }
+
+    /// Right stick: same -0.5…0.5 tilt as mouse hover over a home tile.
+    private func tiltFocusedTile(x: Float, y: Float) {
+        guard let tv, tv.mode == .launcher, tv.movies == nil, tv.sheets.top == nil,
+              case .app = tv.focus else { return }
+        if max(abs(x), abs(y)) < 0.08 {
+            tv.tilt = .zero
+            return
+        }
+        // Stick Y is up-positive; mouse tilt Y is down-positive.
+        tv.tilt = CGSize(width: CGFloat(x) * 0.5, height: CGFloat(-y) * 0.5)
     }
 
     /// Stick and D-pad positions become one direction at a time; holding it repeats, like a remote.
@@ -150,8 +270,24 @@ final class ControllerInput {
 
 extension TVController {
     func controllerChanged(_ info: ControllerInfo, connected: Bool, remaining: ControllerInfo? = nil) {
+        // Haptics warm/clear happens in ControllerInput.connect/disconnect (once).
         controller = connected ? info : remaining
         showControllerNotice(ControllerNotice(info: info, connected: connected))
+    }
+
+    /// Xbox Menu / DualSense Options: toggle Settings on the home dock; otherwise behave like Home.
+    func handleControllerMenu() {
+        if settings != nil {
+            settings = nil
+            feedback.play(.back, from: .controller)
+            return
+        }
+        if mode == .launcher, sheets.top == nil, movies == nil {
+            openSettings()
+            feedback.play(.select, from: .controller)
+            return
+        }
+        handle(.home, from: .controller)
     }
 }
 
@@ -188,7 +324,7 @@ struct ControllerHints: View {
         HStack(spacing: 18) {
             hint(info.selectSymbol, "Open")
             hint(info.backSymbol, "Back")
-            hint(info.menuSymbol, "Home")
+            hint(info.menuSymbol, "Menu")
         }
         .font(.tv(.caption2))
         .padding(.horizontal, 20)
