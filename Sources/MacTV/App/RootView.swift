@@ -23,6 +23,15 @@ struct RootView: View {
         tv.launchCover != nil
     }
 
+    /// The Movies browser stays open underneath a film it started, but isn't drawn while the film
+    /// plays: it's opaque, so it would cover the player.
+    private var showsMoviesScreen: Bool { Self.showsMoviesScreen(tv) }
+
+    static func showsMoviesScreen(_ tv: TVController) -> Bool {
+        guard tv.movies != nil else { return false }
+        return !(tv.mode == .movie && tv.moviePlayer != nil)
+    }
+
     /// WebView stays hidden until the cover hands off into the page.
     private var webHiddenByLaunch: Bool {
         guard let cover = tv.launchCover, case .player = tv.mode else { return false }
@@ -79,7 +88,7 @@ struct RootView: View {
                             .transition(.opacity.animation(.easeInOut(duration: 1.2)))
                     }
                 }
-            } else if tv.movies != nil {
+            } else if showsMoviesScreen {
                 // Opaque, and the only screen drawn, so nothing shows through on the way back from a movie.
                 TVCanvas { MoviesScreen(tv: tv) }
                     .ignoresSafeArea()
