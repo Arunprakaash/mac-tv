@@ -51,8 +51,11 @@ final class ControllerInput {
     private var backPressStarted: TimeInterval?
     private var backLongFired = false
     private static let backLongPress: TimeInterval = 0.55
-    /// Base tick; step size grows the longer a trigger is held (see `volumeStep`).
-    private static let volumeTick: TimeInterval = 0.035
+    /// Base tick; step size grows the longer a trigger is held (see `volumeStep`). About as quick as
+    /// holding the phone remote's volume button, so a squeeze can't blast the TV.
+    private static let volumeTick: TimeInterval = 0.1
+    /// Analog triggers rest slightly above zero on worn pads; this needs a deliberate pull.
+    private static let triggerThreshold: Float = 0.3
 
     init(tv: TVController) {
         self.tv = tv
@@ -167,7 +170,7 @@ final class ControllerInput {
     private func volumeTrigger(_ button: GCControllerButtonInput, up: Bool) {
         button.valueChangedHandler = { [weak self] _, value, _ in
             MainActor.assumeIsolated {
-                self?.setVolumeHeld(up: up, held: value >= 0.08)
+                self?.setVolumeHeld(up: up, held: value >= Self.triggerThreshold)
             }
         }
     }
@@ -195,9 +198,9 @@ final class ControllerInput {
         send(.volume(delta * Self.volumeStep(heldFor: held)))
     }
 
-    /// 1 at press → 5 after ~1.2s (full 0–100 in ~0.7s at max).
+    /// 1 a tick at first, 3 after a second: about 20 in the first second, 30 a second after that.
     static func volumeStep(heldFor: TimeInterval) -> Int {
-        min(5, 1 + Int(heldFor / 0.3))
+        min(3, 1 + Int(heldFor / 0.5))
     }
 
     private func stopVolumeRamp() {
