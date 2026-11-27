@@ -66,7 +66,8 @@ struct OnScreenKeyboardFocusTests {
         let folder = root.appendingPathComponent("work/tests/\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let tv = TVController(library: AppLibrary(folder: folder))
-        tv.mode = .player(Catalog.services[0])
+        // Adder counts as a typing surface for canShow; webTyping drives auto-show.
+        tv.adder = AppAdder(tab: .website, row: 1)
         tv.controller = ControllerInfo(name: "Pad")
         tv.lastInputKind = .keyboard
 
