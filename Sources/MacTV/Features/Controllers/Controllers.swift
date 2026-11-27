@@ -372,6 +372,7 @@ struct ControllerHints: View {
         HStack(spacing: 18) {
             hint(info.selectSymbol, "Open")
             hint(info.backSymbol, "Back")
+            hint(info.ySymbol, "Keyboard")
             hint(info.menuSymbol, "Menu")
         }
         .font(.tv(.caption2))

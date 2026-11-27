@@ -53,6 +53,18 @@ struct OnScreenKeyboardFocusTests {
         #expect(!tv.openKeyboardFromControllerSelect())
     }
 
+    @Test func stepKeyboardLayoutGoesBothWays() {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let folder = root.appendingPathComponent("work/tests/\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let tv = TVController(library: AppLibrary(folder: folder))
+        tv.keyboardLayout = .qwerty
+        tv.stepKeyboardLayout(forward: true)
+        #expect(tv.keyboardLayout == .qwertz)
+        tv.stepKeyboardLayout(forward: false)
+        #expect(tv.keyboardLayout == .qwerty)
+    }
+
     @Test func autoShowPreferenceDefaultsOn() {
         let suite = "MacTV.OSKFocus.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

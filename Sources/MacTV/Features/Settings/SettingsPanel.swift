@@ -97,7 +97,7 @@ extension SettingsPanel.Section {
     var blurb: String {
         switch self {
         case .profiles: "Everyone gets their own apps and stays signed in separately."
-        case .remotes: "Use your phone as a remote, and see your game controllers."
+        case .remotes: "Phone remote, game controllers, and the on-screen keyboard (Y on a text field)."
         case .watching: "Skip intros and recaps, play the next episode, and set a sleep timer."
         case .screenSaver: "Shown after a few idle minutes on the home screen. Any press brings you back."
         case .sounds: "Quiet clicks as you move around, and a tap on the trackpad or controller."
@@ -220,7 +220,7 @@ extension TVController {
         case .launchAtLogin: setLaunchAtLogin(forward)
         case .sleepTimer: stepSleepTimer(by: forward ? 1 : -1, wrap: false)
         case .websitePlayer: stepWebsitePlayer(forward: forward)
-        case .keyboardLayout: stepKeyboardLayout()
+        case .keyboardLayout: stepKeyboardLayout(forward: forward)
         case .autoShowKeyboard: preferences.autoShowOnScreenKeyboard = forward
         case .wallpaper: ScreenSaverSettings.step(forward ? 1 : -1)
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(forward ? 1 : -1)
@@ -509,7 +509,7 @@ struct SettingsSheet: View {
             title("On-screen keyboard")
             stepper(tv.keyboardLayout.title, active: panel.section.rows[panel.row] == .keyboardLayout)
         case .autoShowKeyboard:
-            title("Open keyboard when typing")
+            title("Open when typing (or press Y)")
             SettingSwitch(on: tv.preferences.autoShowOnScreenKeyboard)
         case .autoSkip:
             title("Skip intros and recaps")

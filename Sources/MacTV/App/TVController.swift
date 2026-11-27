@@ -874,9 +874,10 @@ final class TVController: NSObject, ObservableObject {
         withAnimation(Motion.appear) { onScreenKeyboard.open(layout: keyboardLayout) }
     }
 
-    func stepKeyboardLayout() {
+    func stepKeyboardLayout(forward: Bool = true) {
         let all = OnScreenKeyboardState.Layout.allCases
-        let next = all[((all.firstIndex(of: keyboardLayout) ?? 0) + 1) % all.count]
+        let index = all.firstIndex(of: keyboardLayout) ?? 0
+        let next = all[(index + (forward ? 1 : all.count - 1)) % all.count]
         keyboardLayout = next
         if onScreenKeyboard.isOpen { onScreenKeyboard.layout = next }
     }
