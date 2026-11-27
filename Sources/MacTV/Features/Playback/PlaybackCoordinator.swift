@@ -121,6 +121,8 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
 
     func closeWebPlayback() {
         if let web = webView {
+            let content = web.configuration.userContentController
+            content.removeScriptMessageHandler(forName: TypingProbe.messageName)
             web.pauseAllMediaPlayback(completionHandler: nil)
             web.stopLoading()
         }
@@ -144,10 +146,13 @@ final class PlaybackCoordinator: NSObject, ObservableObject {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsAirPlayForMediaPlayback = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.userContentController.add(self, name: TypingProbe.messageName)
         config.userContentController.addUserScript(
             WKUserScript(source: WebPlayback.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(
             WKUserScript(source: StillMouse.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(
+            WKUserScript(source: TypingProbe.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(
             WKUserScript(source: AutoPlay.script(skip: tv?.autoSkip ?? true, next: tv?.autoNext ?? true),
                          injectionTime: .atDocumentEnd, forMainFrameOnly: true))
@@ -630,6 +635,38 @@ extension PlaybackCoordinator: WKUIDelegate {
         guard let popupWindow = popups.first(where: { $0.contentView === webView }) else { return }
         popupWindow.close()
         popups.removeAll { $0 === popupWindow }
+    }
+}
+
+// MARK: - Typing probe
+
+extension PlaybackCoordinator: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard webView != nil, message.name == TypingProbe.messageName, let flag = message.body as? Bool else { return }
+        tv?.setWebTyping(flag)
+    }
+}
+
+extension PlaybackCoordinator {
+    /// Drop focus from the page's text field so SpatialNav can move to other controls.
+    /// When `closeChrome` is set, fire a page-only Escape so Netflix/Prime collapse search —
+    /// never an NSEvent Escape, which exits Mac full screen.
+    func blurWebTypingField(closeChrome: Bool = false) {
+        let escape = closeChrome ? """
+              const opts = {key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true,cancelable:true};
+              for (const t of ['keydown','keyup']) {
+                window.dispatchEvent(new KeyboardEvent(t, opts));
+                document.dispatchEvent(new KeyboardEvent(t, opts));
+                if (document.activeElement) document.activeElement.dispatchEvent(new KeyboardEvent(t, opts));
+              }
+            """ : ""
+        webView?.evaluateJavaScript("""
+            (() => {
+              const a = document.activeElement;
+              if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) a.blur();
+              \(escape)
+            })();
+            """)
     }
 }
 

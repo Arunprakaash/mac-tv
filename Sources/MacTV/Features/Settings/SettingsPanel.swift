@@ -9,7 +9,7 @@ struct SettingsPanel: Equatable {
 
     /// One row on a section's page.
     enum Row: Equatable {
-        case phoneRemote, pairingCode, controller
+        case phoneRemote, pairingCode, controller, keyboardLayout, autoShowKeyboard
         case sleepTimer, autoSkip, autoNext, playbackCheck, websitePlayer
         case addApp, arrangeApps, topShelfPreferences, homeLayout
         case dedicatedTV, preferredDisplay, launchAtLogin
@@ -22,8 +22,9 @@ struct SettingsPanel: Equatable {
         var adjustsWithArrows: Bool {
             switch self {
             case .sleepTimer, .wallpaper, .aerialCategory, .saverDelay, .saverClock, .feedback,
-                 .autoSkip, .autoNext, .websitePlayer, .dedicatedTV, .preferredDisplay, .launchAtLogin,
-                 .keepMacAwake, .lidOverride, .analytics, .autoUpdate, .homeLayout:
+                 .autoSkip, .autoNext, .websitePlayer, .homeLayout, .keyboardLayout, .autoShowKeyboard,
+                 .dedicatedTV, .preferredDisplay, .launchAtLogin,
+                 .keepMacAwake, .lidOverride, .analytics, .autoUpdate:
                 true
             default:
                 false
@@ -34,10 +35,10 @@ struct SettingsPanel: Equatable {
         var okVerb: String {
             switch self {
             case .autoSkip, .autoNext, .saverClock, .feedback, .keepMacAwake, .lidOverride,
-                 .analytics, .autoUpdate, .dedicatedTV, .launchAtLogin:
+                 .analytics, .autoUpdate, .dedicatedTV, .launchAtLogin, .autoShowKeyboard:
                 "Toggle"
             case .sleepTimer, .websitePlayer, .preferredDisplay, .wallpaper, .aerialCategory, .saverDelay,
-                 .homeLayout:
+                 .homeLayout, .keyboardLayout:
                 // ←→ already says Change; OK advances the same value.
                 "Select"
             case .phoneRemote, .addApp, .arrangeApps, .topShelfPreferences, .playbackCheck, .audioOutput:
@@ -96,7 +97,7 @@ extension SettingsPanel.Section {
     var blurb: String {
         switch self {
         case .profiles: "Everyone gets their own apps and stays signed in separately."
-        case .remotes: "Use your phone as a remote, and see your game controllers."
+        case .remotes: "Phone remote, game controllers, and the on-screen keyboard (Y on a text field)."
         case .watching: "Skip intros and recaps, play the next episode, and set a sleep timer."
         case .screenSaver: "Shown after a few idle minutes on the home screen. Any press brings you back."
         case .sounds: "Quiet clicks as you move around, and a tap on the trackpad or controller."
@@ -111,7 +112,7 @@ extension SettingsPanel.Section {
     /// The rows on its page; empty for sections that open somewhere else.
     @MainActor var rows: [SettingsPanel.Row] {
         switch self {
-        case .remotes: [.phoneRemote, .pairingCode, .controller]
+        case .remotes: [.phoneRemote, .pairingCode, .controller, .keyboardLayout, .autoShowKeyboard]
         case .watching: [.sleepTimer, .autoSkip, .autoNext, .playbackCheck, .websitePlayer]
         case .screenSaver: ScreenSaverSettings.wallpaper == .aerials && !Aerials.categories.isEmpty
             ? [.wallpaper, .aerialCategory, .saverDelay, .saverClock, .saverPreview]
@@ -219,6 +220,8 @@ extension TVController {
         case .launchAtLogin: setLaunchAtLogin(forward)
         case .sleepTimer: stepSleepTimer(by: forward ? 1 : -1, wrap: false)
         case .websitePlayer: stepWebsitePlayer(forward: forward)
+        case .keyboardLayout: stepKeyboardLayout(forward: forward)
+        case .autoShowKeyboard: preferences.autoShowOnScreenKeyboard = forward
         case .wallpaper: ScreenSaverSettings.step(forward ? 1 : -1)
         case .aerialCategory: ScreenSaverSettings.stepAerialCategory(forward ? 1 : -1)
         case .saverDelay: ScreenSaverSettings.stepDelay(forward ? 1 : -1)
@@ -244,7 +247,7 @@ extension TVController {
             showToast(controller == nil ? "Pair a controller in System Settings › Bluetooth" : "Press its Menu button any time to come home")
         case .addApp:
             settings = nil
-            adder = AppAdder()
+            openAddApp()
         case .arrangeApps: openOrganizer()
         case .topShelfPreferences: openTopShelfPreferences()
         case .homeLayout: stepHomeLayout()
@@ -254,6 +257,8 @@ extension TVController {
         case .launchAtLogin: setLaunchAtLogin(!launchAtLogin)
         case .sleepTimer: stepSleepTimer(by: 1, wrap: true)
         case .websitePlayer: stepWebsitePlayer()
+        case .keyboardLayout: stepKeyboardLayout()
+        case .autoShowKeyboard: preferences.autoShowOnScreenKeyboard.toggle()
         case .autoSkip: autoSkip.toggle()
         case .autoNext: autoNext.toggle()
         case .wallpaper:
@@ -500,6 +505,12 @@ struct SettingsSheet: View {
         case .websitePlayer:
             title("Website player")
             stepper(tv.websitePlayerName, active: panel.section.rows[panel.row] == .websitePlayer)
+        case .keyboardLayout:
+            title("On-screen keyboard")
+            stepper(tv.keyboardLayout.title, active: panel.section.rows[panel.row] == .keyboardLayout)
+        case .autoShowKeyboard:
+            title("Open when typing (or press Y)")
+            SettingSwitch(on: tv.preferences.autoShowOnScreenKeyboard)
         case .autoSkip:
             title("Skip intros and recaps")
             SettingSwitch(on: tv.autoSkip)

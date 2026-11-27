@@ -183,18 +183,26 @@ extension TVController {
     private func handleShareForm(_ command: RemoteCommand) {
         guard var form = movies?.shareForm else { return }
         // While connecting, only Back does anything: it closes the form and the share keeps trying.
-        if form.connecting { if case .back = command { movies?.shareForm = nil }; return }
+        if form.connecting {
+            if case .back = command {
+                movies?.shareForm = nil
+                closeOnScreenKeyboard()
+            }
+            return
+        }
         form.message = nil
         form.failed = false
         switch command {
         case .back:
             movies?.shareForm = nil
+            closeOnScreenKeyboard()
             return
         case .move(.up): form.row = max(0, form.row - 1)
         case .move(.down): form.row = min(3, form.row + 1)
         case .select:
+            movies?.shareForm = form
+            if openKeyboardFromControllerSelect() { return }
             if form.row == 3 {
-                movies?.shareForm = form
                 form.jellyfin ? submitJellyfinForm() : submitShareForm()
                 return
             }
@@ -239,6 +247,7 @@ extension TVController {
                 switch shares.status[share.id] {
                 case .connected:
                     self.movies?.shareForm = nil
+                    self.closeOnScreenKeyboard()
                     self.showToast("Connected to \(share.name). Its movies are on the way.")
                     return
                 case .offline(let reason):
@@ -268,6 +277,7 @@ extension TVController {
                 self.movies?.shareForm?.failed = true
             } else {
                 self.movies?.shareForm = nil
+                self.closeOnScreenKeyboard()
                 let name = jellyfin.servers.last?.name ?? "the server"
                 self.showToast("Signed in to \(name). Its movies are on the way.")
             }
@@ -986,6 +996,7 @@ struct ShareFormSheet: View {
         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
+        .avoidsOnScreenKeyboard(tv: tv)
         .frame(width: canvas.width, height: canvas.height)
         .background(Color.black.opacity(0.35))
         .animation(Motion.focus, value: form)

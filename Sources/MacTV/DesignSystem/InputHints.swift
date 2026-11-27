@@ -116,7 +116,7 @@ struct InputHintsBar: View {
     var body: some View {
         let kind = forceKind ?? tv.lastInputKind
         HStack(spacing: 18) {
-            ForEach(Array(set.actions.enumerated()), id: \.offset) { _, action in
+            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
                 if case .back = action {
                     // The way out with a mouse or trackpad, now that sheets have no Done button.
                     InputHint(action: action, kind: kind, controller: tv.controller)
@@ -132,6 +132,24 @@ struct InputHintsBar: View {
         }
         .font(.tv(.caption2))
         .foregroundStyle(.white.opacity(0.65))
+    }
+
+    /// Typing fields: controller → Select becomes "Open keyboard"; keyboard/mouse → drop Select
+    /// (just start typing). Remote keeps its normal Select verb.
+    private var actions: [HintAction] {
+        let list = set.actions
+        let kind = forceKind ?? tv.lastInputKind
+        if tv.isTypingFieldFocused, kind == .keyboard {
+            return list.filter { if case .select = $0 { false } else { true } }
+        }
+        guard kind == .controller, tv.showsOpenKeyboardOnSelect else { return list }
+        var replaced = false
+        let mapped: [HintAction] = list.map { action in
+            guard case .select = action else { return action }
+            replaced = true
+            return .select("Open keyboard")
+        }
+        return replaced ? mapped : mapped + [.select("Open keyboard")]
     }
 }
 

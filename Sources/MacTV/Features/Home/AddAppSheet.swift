@@ -49,6 +49,7 @@ struct AddAppSheet: View {
         .frame(width: 1100, alignment: .leading)
         .tvPanel(in: RoundedRectangle(cornerRadius: 44, style: .continuous))
         .foregroundStyle(.white)
+        .avoidsOnScreenKeyboard(tv: tv)
         .frame(width: canvas.width, height: canvas.height)
         .task(id: "\(a.tab)-\(a.moreServicesExpanded)") {
             guard a.tab == .suggested else { return }
@@ -502,6 +503,7 @@ struct AdderField: View {
                 .background(focused ? .white : .white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
+        .reportsTypingFieldBottom(focused: focused)
         .contentShape(Rectangle())
         .onTapGesture(perform: tap)
     }

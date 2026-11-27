@@ -10,6 +10,9 @@ struct ControllerInfo: Equatable {
     /// Apple's symbols for this controller's own buttons: ✕ and ○ on PlayStation, A and B on Xbox.
     var selectSymbol = "a.circle"
     var backSymbol = "b.circle"
+    var xSymbol = "x.circle"
+    var ySymbol = "y.circle"
+    var leftTriggerSymbol = "l2.button.angledbottom.horizontal.left"
     var menuSymbol = "line.3.horizontal.circle"
 
     var batterySymbol: String {
@@ -34,10 +37,11 @@ struct ControllerNotice: Equatable {
 /// Game controllers drive Mac TV the way they drive Apple TV: the D-pad or left stick moves
 /// focus (repeating while held), A selects, B goes back, Menu/Start opens Settings on the home
 /// screen (elsewhere it goes home — Xbox's Menu button), X plays or pauses, and the shoulder
-/// buttons skip in playback or step values in Settings / Add App tabs.
-/// L2/R2 ramp volume while held; Options mutes. The right stick tilts the focused home-screen
-/// tile like pointer hover. A long B press goes Home. macOS delivers controller input only to
-/// the app in front, so while a Steam game is playing the controller belongs to the game.
+/// buttons skip in playback or step horizontal menus (Add App tabs, settings).
+/// Y opens the on-screen keyboard (while open: X deletes, Y spaces, L2 shifts); L2/R2 ramp volume while held; Options mutes.
+/// The right stick tilts the focused home-screen tile like pointer hover.
+/// A long B press goes Home. macOS delivers controller input only to the app in front, so while
+/// a Steam game is playing the controller belongs to the game.
 @MainActor
 final class ControllerInput {
     private weak var tv: TVController?
@@ -82,11 +86,13 @@ final class ControllerInput {
         controller.light?.color = GCColor(red: 0.25, green: 0.94, blue: 0.56)
         press(pad.buttonA, .select)
         pressBack(pad.buttonB)
-        press(pad.buttonX, .playPause)
+        pressDelete(pad.buttonX)
+        press(pad.buttonY, .keyboard)
         // Xbox Menu/Start (≡); DualSense Options mutes (View/Back stays separate when present).
         pressMenu(pad.buttonMenu)
         press(pad.leftShoulder, .seek(forward: false))
         press(pad.rightShoulder, .seek(forward: true))
+        pressShift(pad.leftTrigger)
         volumeTrigger(pad.leftTrigger, up: false)
         volumeTrigger(pad.rightTrigger, up: true)
         if let options = pad.buttonOptions {
@@ -140,7 +146,7 @@ final class ControllerInput {
         }
     }
 
-    /// B: short press is Back; hold ~0.55s jumps Home.
+    /// B: short press is Back; hold ~0.55s jumps Home (unless the on-screen keyboard is open).
     private func pressBack(_ button: GCControllerButtonInput) {
         button.pressedChangedHandler = { [weak self] _, _, pressed in
             MainActor.assumeIsolated {
@@ -152,6 +158,7 @@ final class ControllerInput {
                     DispatchQueue.main.asyncAfter(deadline: .now() + Self.backLongPress) {
                         MainActor.assumeIsolated {
                             guard self.backPressStarted == started, !self.backLongFired else { return }
+                            if self.tv?.onScreenKeyboard.isOpen == true { return }
                             self.backLongFired = true
                             self.send(.home)
                         }
@@ -166,11 +173,39 @@ final class ControllerInput {
         }
     }
 
-    /// Analog hold: keep stepping volume while the trigger is pulled.
+    /// L2 as Shift only while the on-screen keyboard is open.
+    private func pressShift(_ button: GCControllerButtonInput) {
+        button.pressedChangedHandler = { [weak self] _, _, pressed in
+            MainActor.assumeIsolated {
+                guard self?.tv?.onScreenKeyboard.isOpen == true else { return }
+                self?.send(.keyboardShift(pressed))
+            }
+        }
+    }
+
+    /// X: play/pause normally; while the keyboard is open, hold lights Delete and press deletes.
+    private func pressDelete(_ button: GCControllerButtonInput) {
+        button.pressedChangedHandler = { [weak self] _, _, pressed in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.tv?.onScreenKeyboard.isOpen == true {
+                    self.tv?.setKeyboardDeleteHeld(pressed)
+                    if pressed { self.send(.playPause) }
+                    return
+                }
+                if pressed { self.send(.playPause) }
+            }
+        }
+    }
+
+    /// Analog hold: keep stepping volume while the trigger is pulled (skipped while the keyboard uses L2).
     private func volumeTrigger(_ button: GCControllerButtonInput, up: Bool) {
         button.valueChangedHandler = { [weak self] _, value, _ in
             MainActor.assumeIsolated {
-                self?.setVolumeHeld(up: up, held: value >= Self.triggerThreshold)
+                guard let self else { return }
+                // L2 is Shift while the keyboard is open; tickVolume also bails if a ramp was mid-hold.
+                if self.tv?.onScreenKeyboard.isOpen == true { return }
+                self.setVolumeHeld(up: up, held: value >= Self.triggerThreshold)
             }
         }
     }
@@ -192,6 +227,10 @@ final class ControllerInput {
     }
 
     private func tickVolume() {
+        if tv?.onScreenKeyboard.isOpen == true {
+            stopVolumeRamp()
+            return
+        }
         let delta = (volumeUp ? 1 : 0) - (volumeDown ? 1 : 0)
         guard delta != 0 else { stopVolumeRamp(); return }
         let held = volumeHoldStarted.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
@@ -265,6 +304,9 @@ final class ControllerInput {
         if let pad = controller.extendedGamepad {
             info.selectSymbol = pad.buttonA.sfSymbolsName ?? info.selectSymbol
             info.backSymbol = pad.buttonB.sfSymbolsName ?? info.backSymbol
+            info.xSymbol = pad.buttonX.sfSymbolsName ?? info.xSymbol
+            info.ySymbol = pad.buttonY.sfSymbolsName ?? info.ySymbol
+            info.leftTriggerSymbol = pad.leftTrigger.sfSymbolsName ?? info.leftTriggerSymbol
             info.menuSymbol = pad.buttonMenu.sfSymbolsName ?? info.menuSymbol
         }
         return info
@@ -275,11 +317,17 @@ extension TVController {
     func controllerChanged(_ info: ControllerInfo, connected: Bool, remaining: ControllerInfo? = nil) {
         // Haptics warm/clear happens in ControllerInput.connect/disconnect (once).
         controller = connected ? info : remaining
+        if controller == nil { closeOnScreenKeyboard() }
         showControllerNotice(ControllerNotice(info: info, connected: connected))
     }
 
     /// Xbox Menu / DualSense Options: toggle Settings on the home dock; otherwise behave like Home.
     func handleControllerMenu() {
+        if onScreenKeyboard.isOpen || webTyping {
+            dismissWebTyping()
+            feedback.play(.back, from: .controller)
+            return
+        }
         if settings != nil {
             settings = nil
             feedback.play(.back, from: .controller)
@@ -327,6 +375,7 @@ struct ControllerHints: View {
         HStack(spacing: 18) {
             hint(info.selectSymbol, "Open")
             hint(info.backSymbol, "Back")
+            hint(info.ySymbol, "Keyboard")
             hint(info.menuSymbol, "Menu")
         }
         .font(.tv(.caption2))

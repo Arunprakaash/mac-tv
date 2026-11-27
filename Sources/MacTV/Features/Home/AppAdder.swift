@@ -260,6 +260,8 @@ extension TVController {
                 a.row = min(lastRow, a.row + 1)
             }
         case .select:
+            // Text field: A opens the on-screen keyboard; else normal select.
+            if openKeyboardFromControllerSelect() { return }
             adder = a
             switch (a.tab, a.row) {
             case (_, 0):

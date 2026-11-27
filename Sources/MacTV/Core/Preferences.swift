@@ -28,6 +28,12 @@ final class Preferences: ObservableObject {
         saverPhotos = defaults.string(forKey: Key.saverPhotos)
         dedicatedTVMode = defaults.bool(forKey: Key.dedicatedTVMode)
         preferredTVDisplay = defaults.string(forKey: Key.preferredTVDisplay)
+        let savedLayout = defaults.string(forKey: Key.keyboardLayout)
+        keyboardLayout = savedLayout
+            ?? OnScreenKeyboardState.Layout.from(
+                languageCode: Locale.current.language.languageCode?.identifier
+            ).rawValue
+        autoShowOnScreenKeyboard = defaults.object(forKey: Key.autoShowOnScreenKeyboard) as? Bool ?? true
         showPairingAtLaunch = defaults.object(forKey: Key.showPairingAtLaunch) as? Bool ?? true
         // Pages stays off until the viewer picks it (Scroll is the familiar dock + grid).
         homeLayout = defaults.string(forKey: Key.homeLayout) ?? HomeLayout.scroll.rawValue
@@ -77,8 +83,12 @@ final class Preferences: ObservableObject {
     /// The display Mac TV moves to; nil picks one automatically.
     @Published var preferredTVDisplay: String? { didSet { save(preferredTVDisplay, Key.preferredTVDisplay) } }
 
-    // MARK: Remote
+    // MARK: Controller
 
+    /// `OnScreenKeyboardState.Layout` raw value: `qwerty` or `qwertz`.
+    @Published var keyboardLayout: String { didSet { save(keyboardLayout, Key.keyboardLayout) } }
+    /// Open the controller keyboard when a text field gains focus.
+    @Published var autoShowOnScreenKeyboard: Bool { didSet { save(autoShowOnScreenKeyboard, Key.autoShowOnScreenKeyboard) } }
     /// Show the phone-remote pairing sheet when Mac TV launches.
     @Published var showPairingAtLaunch: Bool { didSet { save(showPairingAtLaunch, Key.showPairingAtLaunch) } }
 
@@ -105,6 +115,8 @@ final class Preferences: ObservableObject {
         static let saverPhotos = "saverPhotos"
         static let dedicatedTVMode = "dedicatedTVMode"
         static let preferredTVDisplay = "preferredTVDisplay"
+        static let keyboardLayout = "keyboardLayout"
+        static let autoShowOnScreenKeyboard = "autoShowOnScreenKeyboard"
         static let showPairingAtLaunch = "showPairingAtLaunch"
         static let homeLayout = "homeLayout"
     }
